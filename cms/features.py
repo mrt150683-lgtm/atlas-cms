@@ -355,7 +355,47 @@ def build_features(
             other_id = f"feature:{other}"
             if graph.has_node(other_id):
                 graph.add_edge(feat.node_id, other_id, type="CONNECTS")
+    _derive_feature_relations(graph, result)
     return result
+
+
+def _derive_feature_relations(graph: nx.DiGraph, features: list[Feature]) -> None:
+    """RELATES edges: structural feature-to-feature links inferred from the code —
+    a member (file or callable) of A imports/calls a member of B. Complements the
+    developer-declared CONNECTS edges and gives discovered features connections."""
+    expanded: dict[str, set[str]] = {}
+    files: dict[str, set[str]] = {}
+    for feat in features:
+        nodes = set(_expand_members(graph, feat.members))
+        expanded[feat.name] = nodes
+        files[feat.name] = {
+            f"file:{graph.nodes[n]['path']}"
+            for n in nodes if graph.nodes[n].get("path")
+        }
+
+    def short(node_id: str) -> str:
+        a = graph.nodes[node_id]
+        return a.get("qualname") or a.get("path") or a.get("name", node_id)
+
+    for a in features:
+        for b in features:
+            if a.name == b.name:
+                continue
+            if graph.has_edge(a.node_id, b.node_id):
+                continue  # declared CONNECTS (or an earlier RELATES) wins
+            via = next(
+                (f"{short(fa)} imports {short(fb)}"
+                 for fa in files[a.name] for fb in files[b.name]
+                 if graph.has_edge(fa, fb) and graph.edges[fa, fb].get("type") == "IMPORTS"),
+                None,
+            ) or next(
+                (f"{short(na)} calls {short(nb)}"
+                 for na in expanded[a.name] for nb in expanded[b.name]
+                 if graph.has_edge(na, nb) and graph.edges[na, nb].get("type") == "CALLS"),
+                None,
+            )
+            if via:
+                graph.add_edge(a.node_id, b.node_id, type="RELATES", via=via)
 
 
 def _write_to_graph(graph: nx.DiGraph, feat: Feature) -> None:

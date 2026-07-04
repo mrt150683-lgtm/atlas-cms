@@ -85,6 +85,21 @@ def test_build_features_writes_graph_nodes(tmp_path: Path) -> None:
     assert [f["name"] for f in listing] == ["DataPipeline", "Reporting"]
 
 
+def test_derived_relations_between_features(tmp_path: Path) -> None:
+    (tmp_path / "store.py").write_text(
+        "# @memory:feature:Storage\ndef save(x):\n    return x\n", encoding="utf-8"
+    )
+    (tmp_path / "api.py").write_text(
+        "from store import save\n\n\n# @memory:feature:Api\ndef handle(x):\n    return save(x)\n",
+        encoding="utf-8",
+    )
+    graph = build_graph(scan(tmp_path))
+    build_features(graph, MockProvider())
+    # no declared connects between Api and Storage, but handle() calls save()
+    edge = graph.edges["feature:Api", "feature:Storage"]
+    assert edge["type"] == "RELATES"
+
+
 def test_features_queryable(tmp_path: Path) -> None:
     graph = _graph(tmp_path)
     build_features(graph, MockProvider())

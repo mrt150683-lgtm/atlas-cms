@@ -121,6 +121,13 @@ Traces live in `.memory/features/*.md`, in the graph (`feature:` nodes, so
 `cms query` finds them), and in the UI — pick a feature in the explorer to see
 its flow rail and light up its member files on the graph.
 
+Features connect to each other two ways: **declared** links from `@memory:connects:`
+anchors, and **inferred** RELATES edges derived from the code (a member of one
+feature imports or calls a member of another) — so even LLM-discovered features
+join the web. Hit the `feat` button in the UI (or open `?view=features`) for the
+feature-level architecture map: amber nodes are declared features, green are
+discovered, solid edges declared, dashed inferred. Click any node for its trace.
+
 ## Memory viewer (`cms ui`)
 
 A local, zero-dependency web UI over the memory layer at `http://127.0.0.1:7717`:

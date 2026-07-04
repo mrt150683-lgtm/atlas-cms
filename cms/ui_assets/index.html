@@ -177,6 +177,22 @@
   #legend .note { color: var(--ink-3); font-size: 10.5px; margin-top: 3px; }
 
   #controls { bottom: 16px; right: 16px; display: flex; gap: 6px; }
+
+  #trail {
+    bottom: 16px; left: 16px; display: flex; flex-direction: column-reverse; gap: 4px;
+    max-width: 340px; pointer-events: none;
+  }
+  .trail-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px; border-radius: 7px;
+    background: rgba(13,13,13,0.85); border: 1px solid var(--border);
+    font: 11px var(--mono); color: var(--ink-2);
+    transition: opacity 1000ms ease; white-space: nowrap; overflow: hidden;
+  }
+  .trail-row .lv { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .trail-row .tool { color: var(--ink); }
+  .trail-row .lvname { color: var(--ink-3); font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .trail-row .lbl { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; }
   #controls button {
     min-width: 30px; height: 30px; padding: 0 10px;
     background: rgba(26,26,25,0.9); color: var(--ink-2);
@@ -296,7 +312,9 @@
   <main id="canvasWrap">
     <canvas id="graph"></canvas>
     <div class="overlay" id="legend"></div>
+    <div class="overlay" id="trail" style="display:none"></div>
     <div class="overlay" id="controls">
+      <button id="btnFeat" title="Feature map: features as nodes, connections between them" style="display:none">feat</button>
       <button id="btnHeat" title="Git heat: color by change frequency, show co-change coupling" style="display:none">heat</button>
       <button id="btnExt" title="Toggle external modules">ext</button>
       <button id="btnFit" title="Fit graph to view">fit</button>
@@ -336,6 +354,9 @@ const S = {
   featureFiles: null,                       // Set of file node ids highlighted for a feature
   heat: false, hasGit: false,               // git heat overlay
   cochanges: [],                            // {s, t, w} co-change edge refs
+  featMode: false,                          // feature-level graph view
+  hoverEdge: null,                          // feature edge under the cursor
+  fileNodes: null, fileEdges: null,         // stashed file view for toggling back
   pulses: new Map(),                        // file node id -> {t0} live MCP glow
   selected: null, hovered: null, showExt: false,
   sources: new Map(),
@@ -373,15 +394,24 @@ async function boot() {
   fit();
   requestAnimationFrame(loop);
   const params = new URLSearchParams(location.search);
+  if (params.get("view") === "features" && S.features.length) setFeatMode(true);
   if (params.get("file")) selectFile("file:" + params.get("file"), true);
   else if (params.get("feature")) selectFeature("feature:" + params.get("feature"));
-  if (params.get("heat") && S.hasGit) { S.heat = true; $("btnHeat").classList.add("on"); renderLegend(); }
+  if (params.get("heat") && S.hasGit && !S.featMode) { S.heat = true; $("btnHeat").classList.add("on"); renderLegend(); }
 }
 
 function index(graph) {
   for (const n of graph.nodes) S.byId.set(n.id, n);
   S.features = graph.nodes.filter(n => n.type === "feature")
     .sort((a, b) => a.name.localeCompare(b.name));
+  S.ownerFeature = new Map();  // member/file node id -> feature node id (for pulses)
+  for (const f of S.features) {
+    for (const m of f.members || []) {
+      S.ownerFeature.set(m, f.id);
+      const a = S.byId.get(m);
+      if (a && a.path) S.ownerFeature.set("file:" + a.path, f.id);
+    }
+  }
   for (const n of graph.nodes) {
     if ((n.type === "func" || n.type === "class") && n.path) {
       if (!S.comps.has(n.path)) S.comps.set(n.path, []);
@@ -445,7 +475,8 @@ function buildGraphView() {
   // git heat: percentile rank of commit counts -> ramp step
   const withGit = S.nodes.filter(n => n.attrs.git);
   S.hasGit = withGit.length > 0;
-  $("btnHeat").style.display = S.hasGit ? "" : "none";
+  $("btnHeat").style.display = (S.hasGit && !S.featMode) ? "" : "none";
+  $("btnFeat").style.display = S.features.length ? "" : "none";
   if (S.hasGit) {
     const sorted = withGit.map(n => n.attrs.git.commits).sort((a, b) => a - b);
     for (const n of S.nodes) {
@@ -456,6 +487,56 @@ function buildGraphView() {
     }
   }
   S.alpha = 1;
+}
+
+/* ── feature-level graph view ─────────────────────────────── */
+function buildFeatureView() {
+  const keep = new Map();
+  S.features.forEach((f, i) => {
+    const angle = (i / S.features.length) * Math.PI * 2;
+    keep.set(f.id, {
+      id: f.id, attrs: f, ext: false, feature: true,
+      label: f.name,
+      color: f.source === "discovered" ? "#199e70" : "#c98500",
+      r: Math.max(8, Math.min(20, 6 + (f.members || []).length * 2.5)),
+      x: Math.cos(angle) * 150 + (Math.random() - 0.5) * 30,
+      y: Math.sin(angle) * 150 + (Math.random() - 0.5) * 30,
+      vx: 0, vy: 0,
+    });
+  });
+  for (const old of S.nodes) { const n = keep.get(old.id); if (n) { n.x = old.x; n.y = old.y; } }
+  S.nodes = [...keep.values()];
+  S.edges = (S.graph.links || S.graph.edges || [])
+    .filter(e => (e.type === "CONNECTS" || e.type === "RELATES") && keep.has(e.source) && keep.has(e.target))
+    .map(e => ({
+      s: keep.get(e.source), t: keep.get(e.target),
+      derived: e.type === "RELATES",
+      via: e.via || "declared via @memory:connects anchor",
+    }));
+  S.cochanges = [];
+  S.alpha = 1;
+}
+
+function setFeatMode(on) {
+  S.featMode = on;
+  $("btnFeat").classList.toggle("on", on);
+  S.selected = null; S.featureFiles = null; S.hovered = null;
+  if (on) {
+    S.fileNodes = S.nodes; S.fileEdges = S.edges;
+    S.heat = false; $("btnHeat").classList.remove("on");
+    buildFeatureView();
+  } else if (S.fileNodes) {
+    S.nodes = S.fileNodes; S.edges = S.fileEdges;
+    const links = S.graph.links || S.graph.edges || [];
+    const byId = new Map(S.nodes.map(n => [n.id, n]));
+    S.cochanges = links
+      .filter(e => e.type === "CO_CHANGES" && byId.has(e.source) && byId.has(e.target))
+      .map(e => ({ s: byId.get(e.source), t: byId.get(e.target), w: e.weight || 1 }));
+    S.alpha = 1;
+  }
+  $("btnHeat").style.display = (S.hasGit && !on) ? "" : "none";
+  renderLegend();
+  setTimeout(fit, 400);  // let the layout settle before framing
 }
 
 /* ── file tree ────────────────────────────────────────────── */
@@ -486,6 +567,15 @@ function renderTree(node, host, prefix) {
 function renderLegend() {
   const el = $("legend");
   el.innerHTML = "";
+  if (S.featMode) {
+    el.insertAdjacentHTML("beforeend",
+      `<div class="li"><span class="sw" style="background:#c98500"></span>declared feature</div>
+       <div class="li"><span class="sw" style="background:#199e70"></span>discovered feature</div>
+       <div class="li"><span class="sw" style="background:transparent;border-top:2px solid rgba(201,133,0,0.7);height:0;border-radius:0"></span>declared connection</div>
+       <div class="li"><span class="sw" style="background:transparent;border-top:2px dashed rgba(255,255,255,0.45);height:0;border-radius:0"></span>inferred from code</div>
+       <div class="note">node size = member count · click for the feature trace</div>`);
+    return;
+  }
   if (S.heat) {
     const grad = `linear-gradient(to right, ${HEAT.join(",")})`;
     el.insertAdjacentHTML("beforeend",
@@ -571,10 +661,31 @@ function draw() {
   for (const e of S.edges) {
     const [x1, y1] = toScreen(e.s.x, e.s.y), [x2, y2] = toScreen(e.t.x, e.t.y);
     const lit = hood && (e.s.id === focus || e.t.id === focus);
-    ctx.strokeStyle = lit ? "rgba(57,135,229,0.65)" : (S.heat ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.10)");
-    ctx.lineWidth = lit ? 1.6 : 1;
+    if (S.featMode) {
+      const hovEdge = e === S.hoverEdge;
+      ctx.setLineDash(e.derived ? [4, 4] : []);
+      ctx.strokeStyle = (lit || hovEdge) ? "rgba(201,133,0,0.9)"
+        : e.derived ? "rgba(255,255,255,0.16)" : "rgba(201,133,0,0.42)";
+      ctx.lineWidth = (lit || hovEdge) ? 1.8 : (e.derived ? 1 : 1.4);
+    } else {
+      ctx.strokeStyle = lit ? "rgba(57,135,229,0.65)" : (S.heat ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.10)");
+      ctx.lineWidth = lit ? 1.6 : 1;
+    }
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    if (lit) {  // arrowhead at import target
+    ctx.setLineDash([]);
+    if (S.featMode) {  // arrowheads always visible in the feature map
+      const ang = Math.atan2(y2 - y1, x2 - x1);
+      const bx = x2 - Math.cos(ang) * (e.t.r * S.view.k + 5);
+      const by = y2 - Math.sin(ang) * (e.t.r * S.view.k + 5);
+      ctx.fillStyle = (lit || e === S.hoverEdge) ? "rgba(201,133,0,0.95)"
+        : e.derived ? "rgba(255,255,255,0.30)" : "rgba(201,133,0,0.6)";
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx - Math.cos(ang - 0.42) * 7, by - Math.sin(ang - 0.42) * 7);
+      ctx.lineTo(bx - Math.cos(ang + 0.42) * 7, by - Math.sin(ang + 0.42) * 7);
+      ctx.fill();
+    }
+    if (lit && !S.featMode) {  // arrowhead at import target
       const ang = Math.atan2(y2 - y1, x2 - x1);
       const bx = x2 - Math.cos(ang) * (e.t.r * S.view.k + 4);
       const by = y2 - Math.sin(ang) * (e.t.r * S.view.k + 4);
@@ -615,7 +726,7 @@ function draw() {
       ctx.strokeStyle = "#c98500"; ctx.lineWidth = 1.6;  // feature member ring
       ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke();
     }
-    const showLabel = !dim && (S.view.k > 0.85 || n.id === S.selected || inFeature || (hood && hood.has(n.id)));
+    const showLabel = !dim && (S.featMode || S.view.k > 0.85 || n.id === S.selected || inFeature || (hood && hood.has(n.id)));
     if (showLabel) {
       ctx.font = `11px ${getComputedStyle(document.body).getPropertyValue("--font")}`;
       ctx.fillStyle = n.id === S.selected ? "#ffffff" : "#c3c2b7";
@@ -648,6 +759,23 @@ function fit() {
 }
 
 /* ── canvas interaction ───────────────────────────────────── */
+function edgeAt(mx, my) {
+  if (!S.featMode) return null;
+  const [wx, wy] = toWorld(mx, my);
+  const tol = 7 / S.view.k;
+  let best = null, bd = tol;
+  for (const e of S.edges) {
+    const dx = e.t.x - e.s.x, dy = e.t.y - e.s.y;
+    const len2 = dx*dx + dy*dy || 1;
+    let u = ((wx - e.s.x) * dx + (wy - e.s.y) * dy) / len2;
+    u = Math.max(0.12, Math.min(0.88, u));  // ignore ends (node hover wins there)
+    const px = e.s.x + u * dx, py = e.s.y + u * dy;
+    const d = Math.hypot(wx - px, wy - py);
+    if (d < bd) { best = e; bd = d; }
+  }
+  return best;
+}
+
 function nodeAt(mx, my) {
   const [wx, wy] = toWorld(mx, my);
   let best = null, bd = 1e9;
@@ -660,12 +788,21 @@ function nodeAt(mx, my) {
 
 canvas.addEventListener("mousedown", e => {
   const n = nodeAt(e.offsetX, e.offsetY);
-  if (n) { S.dragging = n; S.alpha = Math.max(S.alpha, 0.3); }
+  if (n) {
+    S.dragging = n;
+    S.dragInfo = { mx: e.offsetX, my: e.offsetY, moved: false };
+    S.alpha = Math.max(S.alpha, 0.3);
+  }
   else S.panning = { mx: e.offsetX, my: e.offsetY, x: S.view.x, y: S.view.y, moved: false };
   canvas.classList.add("grabbing");
 });
 canvas.addEventListener("mousemove", e => {
   if (S.dragging) {
+    if (!S.dragInfo.moved &&
+        Math.hypot(e.offsetX - S.dragInfo.mx, e.offsetY - S.dragInfo.my) < 4) {
+      return;  // still a click, not a drag
+    }
+    S.dragInfo.moved = true;
     const [wx, wy] = toWorld(e.offsetX, e.offsetY);
     S.dragging.x = wx; S.dragging.y = wy;
     hideTip(); return;
@@ -678,15 +815,26 @@ canvas.addEventListener("mousemove", e => {
   }
   const n = nodeAt(e.offsetX, e.offsetY);
   S.hovered = n ? n.id : null;
+  S.hoverEdge = n ? null : edgeAt(e.offsetX, e.offsetY);
   canvas.classList.toggle("pointer", !!n);
-  if (n) showTip(n, e.offsetX, e.offsetY); else hideTip();
+  if (n) showTip(n, e.offsetX, e.offsetY);
+  else if (S.hoverEdge) showEdgeTip(S.hoverEdge, e.offsetX, e.offsetY);
+  else hideTip();
 });
 window.addEventListener("mouseup", e => {
-  if (S.dragging) { S.dragging = null; }
+  if (S.dragging) {
+    const n = S.dragging;
+    S.dragging = null;
+    if (!S.dragInfo.moved) {  // a clean click on the node -> open it
+      if (n.feature) selectFeature(n.id);
+      else if (!n.ext) selectFile(n.id, false);
+    }
+  }
   else if (S.panning) {
     if (!S.panning.moved) {
       const n = nodeAt(e.offsetX, e.offsetY);
-      if (n && !n.ext) selectFile(n.id, false);
+      if (n && n.feature) selectFeature(n.id);
+      else if (n && !n.ext) selectFile(n.id, false);
       else if (!n) {
         S.selected = null; S.featureFiles = null;
         document.querySelectorAll(".feat-row.selected").forEach(r => r.classList.remove("selected"));
@@ -711,6 +859,18 @@ canvas.addEventListener("wheel", e => {
 const tip = $("tooltip");
 function showTip(n, mx, my) {
   const a = n.attrs;
+  if (n.feature) {
+    const conn = (a.connects || []).length;
+    tip.innerHTML = `<div class="t-name">${esc(a.name)}</div>` +
+      `<div class="t-path">${esc(a.source || "declared")} feature · ${(a.members || []).length} member(s)` +
+      (conn ? ` · connects ${conn}` : "") + `</div>` +
+      (a.description ? `<div class="t-sum">${esc(a.description)}</div>` : "");
+    tip.style.display = "block";
+    const wrap = $("canvasWrap").getBoundingClientRect();
+    tip.style.left = Math.min(mx + 16, wrap.width - 336) + "px";
+    tip.style.top = (my + 14) + "px";
+    return;
+  }
   const sum = filePurpose(a.summary);
   let gitLine = "";
   if (a.git) {
@@ -728,6 +888,17 @@ function showTip(n, mx, my) {
   tip.style.top = (my + 14) + "px";
 }
 function hideTip() { tip.style.display = "none"; }
+
+function showEdgeTip(e, mx, my) {
+  tip.innerHTML =
+    `<div class="t-name">${esc(e.s.label)} → ${esc(e.t.label)}</div>` +
+    `<div class="t-path">${e.derived ? "inferred from code" : "declared connection"}</div>` +
+    `<div class="t-sum" style="font-family:var(--mono);font-size:11px">${esc(e.via)}</div>`;
+  tip.style.display = "block";
+  const wrap = $("canvasWrap").getBoundingClientRect();
+  tip.style.left = Math.min(mx + 16, wrap.width - 336) + "px";
+  tip.style.top = (my + 14) + "px";
+}
 
 function filePurpose(text) {
   /* Pull the "File Purpose" paragraph out of a summary, tolerant of format:
@@ -781,8 +952,8 @@ function memberFileIds(feat) {
 function selectFeature(featureId) {
   const feat = S.byId.get(featureId);
   if (!feat) return;
-  S.selected = null;
-  S.featureFiles = memberFileIds(feat);
+  S.selected = S.featMode ? featureId : null;  // ring the node in feature view
+  S.featureFiles = S.featMode ? null : memberFileIds(feat);
   markTree(null);
   document.querySelectorAll(".feat-row.selected").forEach(r => r.classList.remove("selected"));
   const row = document.querySelector(`.feat-row[data-fid="${CSS.escape(featureId)}"]`);
@@ -816,9 +987,23 @@ function renderFeatureInspector(feat) {
       <div class="stat"><div class="v">${(feat.entry_points || []).length}</div><div class="k">entries</div></div>
       <div class="stat"><div class="v">${(feat.flows || []).length}</div><div class="k">flows</div></div>
     </div>`;
-  if ((feat.connects || []).length) {
-    html += `<div class="i-section"><h3>Connects</h3><div class="anchor-chips">` +
-      feat.connects.map(c => `<span class="chip" data-feat="${esc(c)}" style="cursor:pointer">${esc(c)}</span>`).join("") +
+  const links = S.graph.links || S.graph.edges || [];
+  const related = new Map();  // name -> derived?
+  for (const c of feat.connects || []) related.set(c, false);
+  for (const e of links) {
+    if (e.type !== "CONNECTS" && e.type !== "RELATES") continue;
+    let other = null;
+    if (e.source === feat.id) other = e.target;
+    else if (e.target === feat.id) other = e.source;
+    if (!other) continue;
+    const name = (S.byId.get(other) || {}).name;
+    if (name && !related.has(name)) related.set(name, e.type === "RELATES");
+  }
+  if (related.size) {
+    html += `<div class="i-section"><h3>Connected Features</h3><div class="anchor-chips">` +
+      [...related.entries()].map(([c, derived]) =>
+        `<span class="chip" data-feat="${esc(c)}" style="cursor:pointer${derived ? ";border-style:dashed;opacity:0.85" : ""}"` +
+        ` title="${derived ? "inferred from code" : "declared via anchor"}">${esc(c)}</span>`).join("") +
       `</div></div>`;
   }
   html += `<div class="i-section"><h3>Flow</h3>${flowStepsHtml(feat)}</div>`;
@@ -1060,6 +1245,14 @@ async function runSearch(q) {
 const PULSE_MS = 5000;
 let activitySince = null, badgeTimer = null;
 
+/* memory level per tool: how deep the AI is reading */
+const TOOL_LEVEL = {
+  query_codebase: ["graph", "#3987e5"], list_features: ["graph", "#3987e5"],
+  get_feature_trace: ["graph", "#3987e5"], who_calls: ["graph", "#3987e5"],
+  who_imports: ["graph", "#3987e5"], get_impact: ["graph", "#3987e5"],
+  get_file_summary: ["summary", "#199e70"], get_source: ["source", "#c98500"],
+};
+
 function toFileId(nodeId) {
   if (nodeId.startsWith("file:")) return nodeId;
   if (nodeId.startsWith("func:") || nodeId.startsWith("class:")) {
@@ -1069,25 +1262,59 @@ function toFileId(nodeId) {
   return null;  // feature: handled via members
 }
 
+function toCanvasIds(raw) {
+  /* Map a touched node id to whatever is on the current canvas. */
+  if (S.featMode) {
+    if (raw.startsWith("feature:")) return [raw];
+    const owner = S.ownerFeature.get(raw) || S.ownerFeature.get(toFileId(raw) || "");
+    return owner ? [owner] : [];
+  }
+  if (raw.startsWith("feature:")) {
+    const feat = S.byId.get(raw);
+    return ((feat && feat.members) || []).map(toFileId).filter(Boolean);
+  }
+  const fid = toFileId(raw);
+  return fid ? [fid] : [];
+}
+
 function addPulses(event) {
   const now = performance.now();
+  const touched = [];
   for (const raw of event.nodes || []) {
-    if (raw.startsWith("feature:")) {
-      const feat = S.byId.get(raw);
-      for (const m of (feat && feat.members) || []) {
-        const fid = toFileId(m);
-        if (fid) S.pulses.set(fid, { t0: now });
-      }
-      continue;
+    for (const cid of toCanvasIds(raw)) {
+      if (!S.pulses.has(cid)) touched.push(cid);
+      S.pulses.set(cid, { t0: now });
     }
-    const fid = toFileId(raw);
-    if (fid) S.pulses.set(fid, { t0: now });
   }
+  // mild glow tracing: luminous threads between consecutively-touched nodes
+  S.traces = S.traces || [];
+  for (let i = 0; i + 1 < touched.length && i < 10; i++) {
+    S.traces.push({ a: touched[i], b: touched[i + 1], t0: now });
+  }
+  const [level, color] = TOOL_LEVEL[event.tool] || ["graph", "#3987e5"];
   const badge = $("mcpBadge");
   $("mcpBadgeText").textContent = "MCP · " + event.tool + (event.label ? ` — ${event.label.slice(0, 42)}` : "");
   badge.classList.add("live");
   clearTimeout(badgeTimer);
   badgeTimer = setTimeout(() => badge.classList.remove("live"), 4000);
+  pushTrail(event, level, color);
+}
+
+/* activity trail: last few MCP reads with their memory level */
+function pushTrail(event, level, color) {
+  const host = $("trail");
+  host.style.display = "";
+  const row = document.createElement("div");
+  row.className = "trail-row";
+  row.innerHTML =
+    `<span class="lv" style="background:${color}"></span>` +
+    `<span class="tool">${esc(event.tool)}</span>` +
+    `<span class="lvname">${level}</span>` +
+    (event.label ? `<span class="lbl">${esc(event.label.slice(0, 34))}</span>` : "");
+  host.prepend(row);
+  while (host.children.length > 6) host.lastChild.remove();
+  setTimeout(() => { row.style.opacity = "0"; }, 9000);
+  setTimeout(() => { row.remove(); if (!host.children.length) host.style.display = "none"; }, 10000);
 }
 
 async function pollActivity() {
@@ -1107,6 +1334,26 @@ setInterval(pollActivity, 1000);
 pollActivity().then(pollActivity);
 
 function drawPulses(now) {
+  // mild glow tracing: threads between nodes touched by the same MCP read
+  if (S.traces && S.traces.length) {
+    const byId = new Map(S.nodes.map(n => [n.id, n]));
+    S.traces = S.traces.filter(tr => now - tr.t0 <= PULSE_MS);
+    for (const tr of S.traces) {
+      const a = byId.get(tr.a), b = byId.get(tr.b);
+      if (!a || !b) continue;
+      const k = (now - tr.t0) / PULSE_MS;
+      const fade = Math.pow(1 - k, 1.8);
+      const [x1, y1] = toScreen(a.x, a.y), [x2, y2] = toScreen(b.x, b.y);
+      ctx.strokeStyle = `rgba(57,135,229,${(0.35 * fade).toFixed(3)})`;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      // a spark travelling along the thread
+      const sx = x1 + (x2 - x1) * Math.min(k * 2.2, 1);
+      const sy = y1 + (y2 - y1) * Math.min(k * 2.2, 1);
+      ctx.fillStyle = `rgba(57,135,229,${(0.8 * fade).toFixed(3)})`;
+      ctx.beginPath(); ctx.arc(sx, sy, 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
   for (const [fid, p] of S.pulses) {
     const age = now - p.t0;
     if (age > PULSE_MS) { S.pulses.delete(fid); continue; }
@@ -1130,6 +1377,7 @@ function drawPulses(now) {
 }
 
 /* ── controls ─────────────────────────────────────────────── */
+$("btnFeat").onclick = () => setFeatMode(!S.featMode);
 $("btnHeat").onclick = () => {
   S.heat = !S.heat;
   $("btnHeat").classList.toggle("on", S.heat);
