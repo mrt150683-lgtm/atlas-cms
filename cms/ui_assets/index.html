@@ -1427,9 +1427,19 @@ async function runSearch(q) {
       <span class="name">${esc(h.name)}</span>
       <span class="loc">${esc(loc)}</span>
     </div>`;
-  }).join("");
+  }).join("") +
+  `<div class="hit" id="promptExport" style="border-top:1px solid var(--border-strong)">
+     <span class="kind" style="color:var(--accent);border-color:rgba(57,135,229,0.4)">prompt</span>
+     <span class="name" style="color:var(--accent)">Export task prompt for this →</span>
+     <span class="loc">ultra-detailed brief from the memory</span>
+   </div>`;
+  const pe = document.getElementById("promptExport");
+  pe.onclick = () => {
+    resultsEl.classList.remove("open");
+    window.open(`/api/prompt?task=${encodeURIComponent(q)}`, "_blank");
+  };
   resultsEl.classList.add("open");
-  resultsEl.querySelectorAll(".hit").forEach(el => {
+  resultsEl.querySelectorAll(".hit[data-id]").forEach(el => {
     el.onclick = () => {
       resultsEl.classList.remove("open");
       const id = el.dataset.id, path = el.dataset.path;

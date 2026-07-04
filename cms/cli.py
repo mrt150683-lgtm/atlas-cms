@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import typer
+
+if sys.platform == "win32":  # graph data is UTF-8; don't let cp1252 consoles crash on it
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
 
 from . import config
 from .anchors import anchors_as_text
@@ -430,6 +438,25 @@ def suggest(
         if s["rationale"]:
             typer.echo(f"     why: {s['rationale']}")
     typer.echo(f"\nWritten to {out}")
+
+
+@app.command()
+def prompt(
+    task: str = typer.Argument(..., help="What you plan to do, in your own words."),
+    root: Path = RootOption,
+    as_json: bool = typer.Option(False, "--json", help="Full data pack as JSON instead of markdown."),
+    top_k: int = typer.Option(8, "--top-k", "-k", help="How many code targets to include."),
+) -> None:
+    """Export an ultra-detailed, ready-to-paste task prompt built from the memory."""
+    from .prompt_export import export_prompt
+
+    root = root.resolve()
+    if not (_memory_dir(root) / "graph.json").is_file():
+        typer.echo("No graph.json — run `cms run-all` first.", err=True)
+        raise typer.Exit(1)
+    content, out = export_prompt(root, task, as_json=as_json, top_k=top_k)
+    typer.echo(content)
+    typer.echo(f"\n--- written to {out}", err=True)
 
 
 @app.command()

@@ -101,6 +101,18 @@ TOOLS = [
         "inputSchema": {"type": "object", "properties": {}},
     },
     {
+        "name": "export_task_prompt",
+        "description": "Turn a plan ('what I intend to do') into an ultra-detailed task brief from the memory: relevant code with file:line + summaries, owning feature traces, blast radius, gaps to respect, conventions, verification steps. Use before starting any non-trivial change.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "The planned work, in plain words."},
+                "as_json": {"type": "boolean", "default": False},
+            },
+            "required": ["task"],
+        },
+    },
+    {
         "name": "get_source",
         "description": "Read an exact source snippet by path and line range (surgical read — prefer this over whole files).",
         "inputSchema": {
@@ -229,6 +241,12 @@ class MCPServer:
             return {"error": "no suggestions yet — run `cms suggest`"}
         node = graph.nodes["suggestions:app"]
         return {"provider": node.get("provider"), "items": node.get("items") or []}
+
+    def export_task_prompt(self, task: str, as_json: bool = False) -> dict:
+        from .prompt_export import export_prompt
+
+        content, out = export_prompt(self.root, task, as_json=as_json)
+        return {"path": str(out), "content": content}
 
     def get_source(self, path: str, start_line: int = 1, end_line: int | None = None) -> dict:
         target = (self.root / path).resolve()

@@ -88,6 +88,8 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._query(query)
                 elif url.path == "/api/activity":
                     self._activity(query)
+                elif url.path == "/api/prompt":
+                    self._prompt(query)
                 elif url.path == "/api/source":
                     self._source(query)
                 else:
@@ -124,6 +126,18 @@ def make_handler(root: Path, cache: _MemoryCache):
 
             since = float((query.get("since") or ["0"])[0])
             self._json({"now": _time.time(), "events": read_activity(memory_dir, since)})
+
+        def _prompt(self, query: dict) -> None:
+            from .prompt_export import export_prompt
+
+            task = (query.get("task") or [""])[0].strip()
+            if not task:
+                self._error(400, "task parameter required")
+                return
+            as_json = (query.get("format") or [""])[0] == "json"
+            content, out = export_prompt(root, task, as_json=as_json)
+            content_type = "application/json" if as_json else "text/plain"
+            self._send(200, content.encode("utf-8"), f"{content_type}; charset=utf-8")
 
         def _source(self, query: dict) -> None:
             rel = (query.get("path") or [""])[0]
