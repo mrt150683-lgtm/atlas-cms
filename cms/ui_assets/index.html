@@ -192,6 +192,14 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .feat-detail .fd-member:hover { background: rgba(255,255,255,0.05); color: var(--ink); }
+  .fd-conn { color: #c98500 !important; display: flex !important; align-items: baseline; gap: 5px; }
+  .fd-conn.derived { color: var(--ink-2) !important; }
+  .fd-kind { margin-left: auto; font-size: 9px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; }
+  .fd-conn.derived .fd-kind { border-bottom: 1px dashed var(--ink-3); }
+
+  .srow .fx { transform: none; border-radius: 50%; background: transparent !important; border: 1.5px dashed var(--accent); width: 8px; height: 8px; }
+  .srow .fname { color: var(--ink-2); }
+  .srow .roi { margin-left: auto; font: 10px var(--mono); color: var(--accent); flex: none; }
   .feat-detail .fd-meta { color: var(--ink-3); font-size: 10px; margin-top: 5px; }
   .feat-row .fchev {
     width: 0; height: 0; flex: none; cursor: pointer; padding: 4px;
@@ -1186,14 +1194,36 @@ function connectionCount(f) {
     (e.source === f.id || e.target === f.id)).length;
 }
 
+function connectionsOf(feat) {
+  const links = S.graph.links || S.graph.edges || [];
+  const out = [], seen = new Set();
+  for (const e of links) {
+    if (e.type !== "CONNECTS" && e.type !== "RELATES") continue;
+    const isOut = e.source === feat.id, isIn = e.target === feat.id;
+    if (!isOut && !isIn) continue;
+    const other = S.byId.get(isOut ? e.target : e.source);
+    if (!other || seen.has(other.name)) continue;
+    seen.add(other.name);
+    out.push({ name: other.name, out: isOut, derived: e.type === "RELATES" });
+  }
+  out.sort((a, b) => (a.derived - b.derived) || a.name.localeCompare(b.name));
+  return out;
+}
+
 function featureDetailHtml(f) {
   const members = (f.members || []).map(m => S.byId.get(m)).filter(Boolean);
+  const conns = connectionsOf(f);
   return (f.description ? `<div class="fd-desc">${esc(f.description)}</div>` : "") +
     members.slice(0, 8).map(m => {
       const loc = m.start_line ? `${m.path}:${m.start_line}` : (m.path || m.name);
       return `<a href="#" class="fd-member" data-goto-file="${esc(m.path || "")}">${esc(m.qualname || m.name)} · ${esc(loc)}</a>`;
     }).join("") +
-    `<div class="fd-meta">${connectionCount(f)} connection(s) · ${(f.flows || []).length} flow(s)` +
+    (conns.length ? `<div class="fd-meta" style="margin-bottom:2px">connections</div>` +
+      conns.map(c =>
+        `<a href="#" class="fd-member fd-conn${c.derived ? " derived" : ""}" data-goto-feat="${esc(c.name)}">` +
+        `${c.out ? "→" : "←"} ${esc(c.name)}<span class="fd-kind">${c.derived ? "inferred" : "declared"}</span></a>`
+      ).join("") : "") +
+    `<div class="fd-meta">${(f.flows || []).length} flow(s)` +
     ((f.verified_by || []).length ? ` · ${f.verified_by.length} test(s)` : "") + `</div>`;
 }
 
@@ -1202,10 +1232,10 @@ function renderFeatureList() {
   $("featuresWrap").style.display = "";
   $("featCount").textContent = S.features.length;
   const groups = [
-    ["Declared", "#c98500", S.features.filter(f => f.source !== "discovered")],
-    ["Discovered", "#199e70", S.features.filter(f => f.source === "discovered")],
+    ["Declared by you", "#c98500", S.features.filter(f => f.source !== "discovered")],
+    ["AI-found in code", "#199e70", S.features.filter(f => f.source === "discovered")],
   ];
-  $("featureList").innerHTML = groups.filter(([, , items]) => items.length).map(([title, color, items]) =>
+  let html = groups.filter(([, , items]) => items.length).map(([title, color, items]) =>
     `<div class="fgroup"><span class="gdot" style="background:${color}"></span>${title} · ${items.length}</div>` +
     items.map(f =>
       `<div class="feat-row" data-fid="${esc(f.id)}">
@@ -1217,7 +1247,41 @@ function renderFeatureList() {
        <div class="feat-detail" data-detail="${esc(f.id)}"></div>`).join("")
   ).join("");
 
-  document.querySelectorAll(".feat-row").forEach(el => {
+  // suggested-to-build: NOT features of the codebase — plans from cms suggest
+  const sugg = S.byId.get("suggestions:app");
+  if (sugg && (sugg.items || []).length) {
+    html += `<div class="fgroup"><span class="gdot" style="background:transparent;border:1.5px dashed var(--accent);border-radius:50%;transform:none"></span>Suggested to build · ${sugg.items.length}</div>` +
+      sugg.items.map((s, i) =>
+        `<div class="feat-row srow" data-sug="${i}">
+           <span class="fchev" title="Show detail"></span>
+           <span class="fx"></span>
+           <span class="fname">${esc(s.title)}</span>
+           <span class="roi">${s.roi}×</span>
+         </div>
+         <div class="feat-detail" data-sdetail="${i}"></div>`).join("");
+  }
+  $("featureList").innerHTML = html;
+
+  document.querySelectorAll(".feat-row.srow").forEach(el => {
+    const items = (S.byId.get("suggestions:app") || {}).items || [];
+    const s = items[+el.dataset.sug];
+    const detail = document.querySelector(`.feat-detail[data-sdetail="${el.dataset.sug}"]`);
+    const toggle = () => {
+      if (!detail.innerHTML && s) {
+        detail.innerHTML =
+          `<div class="fd-desc">${esc(s.description)}</div>` +
+          (s.rationale ? `<div class="fd-desc" style="color:#86b6ef">why: ${esc(s.rationale)}</div>` : "") +
+          `<div class="fd-meta">${esc(s.kind)} · value ${s.value}/5 · effort ${s.effort}/5` +
+          ((s.builds_on || []).length ? ` · builds on ${s.builds_on.map(esc).join(", ")}` : "") + `</div>`;
+      }
+      const opening = !detail.classList.contains("open");
+      detail.classList.toggle("open", opening);
+      el.classList.toggle("open", opening);
+    };
+    el.onclick = toggle;
+  });
+
+  document.querySelectorAll(".feat-row[data-fid]").forEach(el => {
     const chev = el.querySelector(".fchev");
     chev.onclick = ev => {
       ev.stopPropagation();
@@ -1229,6 +1293,12 @@ function renderFeatureList() {
           a.onclick = e2 => {
             e2.preventDefault(); e2.stopPropagation();
             if (a.dataset.gotoFile) { if (S.featMode) setFeatMode(false); selectFile("file:" + a.dataset.gotoFile, true); }
+          };
+        });
+        detail.querySelectorAll("[data-goto-feat]").forEach(a => {
+          a.onclick = e2 => {
+            e2.preventDefault(); e2.stopPropagation();
+            selectFeature("feature:" + a.dataset.gotoFeat);
           };
         });
       }
