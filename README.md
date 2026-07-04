@@ -147,6 +147,21 @@ Results live in `.memory/review.md`, on the graph (agents get them via the
 for the overlay — one line per feature, expand for detail, "zoom into this
 feature on the map" for the full evidence.
 
+## Suggestions (`cms suggest`)
+
+CMS plans what's worth building next. It studies its own memory — review
+verdicts and gaps, features with no verifying tests, git churn hotspots, hidden
+coupling — and proposes suggestions each scored **value (1–5) vs effort (1–5)**,
+ranked by **ROI = value/effort**, highest return on investment first.
+
+```bash
+cms suggest          # ranked plan -> terminal + .memory/suggestions.md
+```
+
+Suggestions also appear in the review overlay ("Suggested next") and are served
+to agents via the `get_suggestions` MCP tool — so your AI can pick its own next
+task by ROI.
+
 ## Memory viewer (`cms ui`)
 
 A local, zero-dependency web UI over the memory layer at `http://127.0.0.1:7717`:
