@@ -129,6 +129,23 @@
   .flow-step .floc a:hover { color: var(--accent); }
   .flow-step .out { color: var(--ink-3); font-size: 10px; font-style: italic; }
   .flow-rail { border-left: 1px solid var(--grid); margin-left: 10px; padding-left: 18px; margin-bottom: 10px; }
+
+  .fconn {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 8px 11px; margin-bottom: 6px; cursor: pointer;
+    transition: border-color 130ms ease;
+  }
+  .fconn:hover { border-color: rgba(201,133,0,0.5); }
+  .fc-head { display: flex; align-items: baseline; gap: 8px; }
+  .fc-dir { color: #c98500; font-weight: 600; flex: none; }
+  .fc-name { color: var(--ink); font-weight: 550; font-size: 12.5px; }
+  .fc-kind {
+    margin-left: auto; font: 10px var(--mono); text-transform: uppercase;
+    letter-spacing: 0.07em; padding: 1px 7px; border-radius: 4px; flex: none;
+  }
+  .fc-kind.declared { color: #c98500; border: 1px solid rgba(201,133,0,0.45); }
+  .fc-kind.inferred { color: var(--ink-3); border: 1px dashed var(--border-strong); }
+  .fc-via { color: var(--ink-3); font: 10.5px var(--mono); margin-top: 3px; word-break: break-all; }
   .hit .name { color: var(--ink); font-weight: 500; white-space: nowrap; }
   .hit .loc { color: var(--ink-3); font: 11px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -665,7 +682,7 @@ function draw() {
       const hovEdge = e === S.hoverEdge;
       ctx.setLineDash(e.derived ? [4, 4] : []);
       ctx.strokeStyle = (lit || hovEdge) ? "rgba(201,133,0,0.9)"
-        : e.derived ? "rgba(255,255,255,0.16)" : "rgba(201,133,0,0.42)";
+        : e.derived ? "rgba(255,255,255,0.28)" : "rgba(201,133,0,0.55)";
       ctx.lineWidth = (lit || hovEdge) ? 1.8 : (e.derived ? 1 : 1.4);
     } else {
       ctx.strokeStyle = lit ? "rgba(57,135,229,0.65)" : (S.heat ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.10)");
@@ -988,23 +1005,34 @@ function renderFeatureInspector(feat) {
       <div class="stat"><div class="v">${(feat.flows || []).length}</div><div class="k">flows</div></div>
     </div>`;
   const links = S.graph.links || S.graph.edges || [];
-  const related = new Map();  // name -> derived?
-  for (const c of feat.connects || []) related.set(c, false);
+  const conns = [];  // {name, out, derived, via}
+  const seen = new Set();
   for (const e of links) {
     if (e.type !== "CONNECTS" && e.type !== "RELATES") continue;
-    let other = null;
-    if (e.source === feat.id) other = e.target;
-    else if (e.target === feat.id) other = e.source;
-    if (!other) continue;
-    const name = (S.byId.get(other) || {}).name;
-    if (name && !related.has(name)) related.set(name, e.type === "RELATES");
+    const out = e.source === feat.id, incoming = e.target === feat.id;
+    if (!out && !incoming) continue;
+    const other = S.byId.get(out ? e.target : e.source);
+    if (!other || seen.has(other.name + out)) continue;
+    seen.add(other.name + out);
+    conns.push({
+      name: other.name, out,
+      derived: e.type === "RELATES",
+      via: e.via || "declared via @memory:connects anchor",
+    });
   }
-  if (related.size) {
-    html += `<div class="i-section"><h3>Connected Features</h3><div class="anchor-chips">` +
-      [...related.entries()].map(([c, derived]) =>
-        `<span class="chip" data-feat="${esc(c)}" style="cursor:pointer${derived ? ";border-style:dashed;opacity:0.85" : ""}"` +
-        ` title="${derived ? "inferred from code" : "declared via anchor"}">${esc(c)}</span>`).join("") +
-      `</div></div>`;
+  conns.sort((a, b) => (a.derived - b.derived) || a.name.localeCompare(b.name));
+  if (conns.length) {
+    html += `<div class="i-section"><h3>Connections (${conns.length})</h3>` +
+      conns.map(c => `
+        <div class="fconn" data-feat="${esc(c.name)}">
+          <div class="fc-head">
+            <span class="fc-dir">${c.out ? "→" : "←"}</span>
+            <span class="fc-name">${esc(c.name)}</span>
+            <span class="fc-kind ${c.derived ? "inferred" : "declared"}">${c.derived ? "inferred" : "declared"}</span>
+          </div>
+          <div class="fc-via">${esc(c.via)}</div>
+        </div>`).join("") +
+      `</div>`;
   }
   html += `<div class="i-section"><h3>Flow</h3>${flowStepsHtml(feat)}</div>`;
   if (feat.summary) {
@@ -1022,7 +1050,7 @@ function renderFeatureInspector(feat) {
       if (S.byId.has(el.dataset.goto)) { S.featureFiles = null; selectFile(el.dataset.goto, true); }
     };
   });
-  document.querySelectorAll("#inspector .chip[data-feat]").forEach(el => {
+  document.querySelectorAll("#inspector .chip[data-feat], #inspector .fconn[data-feat]").forEach(el => {
     el.onclick = () => selectFeature("feature:" + el.dataset.feat);
   });
   $("inspector").scrollTop = 0;
