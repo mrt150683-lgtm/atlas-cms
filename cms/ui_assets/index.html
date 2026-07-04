@@ -1,0 +1,1156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CMS — Codebase Memory</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #141413;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.14);
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-3: #898781;
+    --accent: #3987e5;
+    --grid: #2c2c2a;
+    --radius: 8px;
+    --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink-2);
+    font: 13px/1.5 var(--font);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  ::selection { background: rgba(57,135,229,0.35); }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2c2c2a; border-radius: 5px; border: 2px solid var(--bg); }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  #app {
+    display: grid; height: 100vh;
+    grid-template-rows: 52px 1fr;
+    grid-template-columns: 248px 1fr 372px;
+    grid-template-areas: "top top top" "tree canvas inspect";
+  }
+
+  /* ── Top bar ─────────────────────────────────────────── */
+  header {
+    grid-area: top; display: flex; align-items: center; gap: 14px;
+    padding: 0 18px; border-bottom: 1px solid var(--border);
+    background: var(--bg); z-index: 30;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; user-select: none; }
+  .brand .mark { color: var(--ink); font-weight: 650; font-size: 14px; letter-spacing: 0.16em; }
+  .brand .project { color: var(--ink-3); font-size: 12.5px; }
+  .brand .project b { color: var(--ink-2); font-weight: 500; }
+
+  #mcpBadge {
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 11px; border-radius: 999px;
+    border: 1px solid rgba(57,135,229,0.35); background: rgba(57,135,229,0.07);
+    font: 11px var(--mono); color: #86b6ef;
+    opacity: 0; transition: opacity 600ms ease; pointer-events: none;
+  }
+  #mcpBadge.live { opacity: 1; }
+  #mcpBadge .pulse-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+    animation: mcpdot 1.4s ease-in-out infinite;
+  }
+  @keyframes mcpdot {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(57,135,229,0.5); }
+    50% { box-shadow: 0 0 0 5px rgba(57,135,229,0); }
+  }
+
+  .search { position: relative; margin-left: auto; width: 380px; }
+  .search input {
+    width: 100%; padding: 7px 12px 7px 32px;
+    background: var(--surface-2); color: var(--ink);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    font: 12.5px var(--font); outline: none;
+    transition: border-color 150ms ease;
+  }
+  .search input::placeholder { color: var(--ink-3); }
+  .search input:focus { border-color: var(--border-strong); }
+  .search .icon {
+    position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+    width: 12px; height: 12px; border: 1.6px solid var(--ink-3); border-radius: 50%;
+  }
+  .search .icon::after {
+    content: ""; position: absolute; width: 5px; height: 1.6px;
+    background: var(--ink-3); transform: rotate(45deg); left: 9px; top: 10px;
+  }
+  #results {
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+    background: var(--surface); border: 1px solid var(--border-strong);
+    border-radius: var(--radius); overflow: hidden; display: none;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.5); max-height: 420px; overflow-y: auto;
+  }
+  #results.open { display: block; }
+  .hit { padding: 9px 12px; cursor: pointer; display: flex; align-items: baseline; gap: 8px; }
+  .hit:hover, .hit.active { background: rgba(255,255,255,0.05); }
+  .hit + .hit { border-top: 1px solid var(--border); }
+  .hit .kind {
+    font: 10px var(--mono); text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border-strong); color: var(--ink-3);
+    flex: none;
+  }
+  .hit .kind.func { color: #199e70; border-color: rgba(25,158,112,0.4); }
+  .hit .kind.class { color: #9085e9; border-color: rgba(144,133,233,0.4); }
+  .hit .kind.file { color: var(--accent); border-color: rgba(57,135,229,0.4); }
+  .hit .kind.feature { color: #c98500; border-color: rgba(201,133,0,0.45); }
+
+  .feat-row {
+    display: flex; align-items: center; gap: 7px;
+    padding: 4px 8px; border-radius: 6px; cursor: pointer;
+    color: var(--ink-2); font-size: 12.5px; user-select: none;
+  }
+  .feat-row:hover { background: rgba(255,255,255,0.04); }
+  .feat-row.selected { background: rgba(201,133,0,0.14); color: var(--ink); }
+  .feat-row .fx { width: 7px; height: 7px; flex: none; transform: rotate(45deg); background: #c98500; }
+  .feat-row .count { margin-left: auto; color: var(--ink-3); font: 10.5px var(--mono); }
+
+  .flow-step { display: flex; gap: 9px; padding: 5px 0; }
+  .flow-step .n {
+    flex: none; width: 20px; height: 20px; border-radius: 50%;
+    border: 1px solid rgba(201,133,0,0.5); color: #c98500;
+    font: 10.5px var(--mono); display: flex; align-items: center; justify-content: center;
+  }
+  .flow-step .body { min-width: 0; }
+  .flow-step .fn { color: var(--ink); font-size: 12px; font-weight: 550; }
+  .flow-step .floc { color: var(--ink-3); font: 10.5px var(--mono); }
+  .flow-step .floc a { color: var(--ink-3); text-decoration: none; }
+  .flow-step .floc a:hover { color: var(--accent); }
+  .flow-step .out { color: var(--ink-3); font-size: 10px; font-style: italic; }
+  .flow-rail { border-left: 1px solid var(--grid); margin-left: 10px; padding-left: 18px; margin-bottom: 10px; }
+  .hit .name { color: var(--ink); font-weight: 500; white-space: nowrap; }
+  .hit .loc { color: var(--ink-3); font: 11px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── File tree ───────────────────────────────────────── */
+  nav {
+    grid-area: tree; overflow-y: auto; padding: 14px 8px 24px;
+    border-right: 1px solid var(--border); background: var(--bg);
+  }
+  nav .section {
+    font: 10.5px var(--font); text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--ink-3); padding: 0 10px 8px;
+  }
+  .row {
+    display: flex; align-items: center; gap: 7px;
+    padding: 3px 8px; border-radius: 6px; cursor: pointer;
+    color: var(--ink-2); white-space: nowrap; user-select: none;
+  }
+  .row:hover { background: rgba(255,255,255,0.04); }
+  .row.selected { background: rgba(57,135,229,0.14); color: var(--ink); }
+  .row .chev {
+    width: 0; height: 0; flex: none;
+    border-left: 4px solid var(--ink-3); border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent;
+    transition: transform 120ms ease;
+  }
+  .row.open .chev { transform: rotate(90deg); }
+  .row .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .row .fname { overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+  .row .meta { margin-left: auto; color: var(--ink-3); font: 10.5px var(--mono); }
+  .children { padding-left: 14px; }
+  .children.hidden { display: none; }
+
+  /* ── Canvas ──────────────────────────────────────────── */
+  main { grid-area: canvas; position: relative; background: var(--bg); overflow: hidden; }
+  canvas { display: block; cursor: default; }
+  canvas.grabbing { cursor: grabbing; }
+  canvas.pointer { cursor: pointer; }
+
+  .overlay { position: absolute; z-index: 10; }
+  #legend {
+    top: 16px; left: 16px; display: flex; flex-direction: column; gap: 5px;
+    padding: 10px 12px; background: rgba(13,13,13,0.82); backdrop-filter: blur(6px);
+    border: 1px solid var(--border); border-radius: var(--radius);
+  }
+  #legend .li { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-2); }
+  #legend .sw { width: 8px; height: 8px; border-radius: 50%; }
+  #legend .note { color: var(--ink-3); font-size: 10.5px; margin-top: 3px; }
+
+  #controls { bottom: 16px; right: 16px; display: flex; gap: 6px; }
+  #controls button {
+    min-width: 30px; height: 30px; padding: 0 10px;
+    background: rgba(26,26,25,0.9); color: var(--ink-2);
+    border: 1px solid var(--border-strong); border-radius: 7px;
+    font: 12px var(--font); cursor: pointer; transition: color 120ms, border-color 120ms;
+  }
+  #controls button:hover { color: var(--ink); border-color: rgba(255,255,255,0.28); }
+  #controls button.on { color: var(--accent); border-color: rgba(57,135,229,0.5); }
+
+  #tooltip {
+    position: absolute; pointer-events: none; z-index: 20; display: none;
+    background: rgba(13,13,13,0.92); border: 1px solid var(--border-strong);
+    border-radius: 7px; padding: 7px 10px; max-width: 320px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  #tooltip .t-name { color: var(--ink); font-weight: 550; font-size: 12.5px; }
+  #tooltip .t-path { color: var(--ink-3); font: 10.5px var(--mono); margin-top: 1px; }
+  #tooltip .t-sum { color: var(--ink-2); font-size: 11.5px; margin-top: 5px; }
+
+  #empty {
+    inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+  }
+  #empty .big { color: var(--ink-2); font-size: 15px; }
+  #empty code {
+    font: 12.5px var(--mono); color: var(--accent);
+    background: var(--surface-2); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  }
+
+  /* ── Inspector ───────────────────────────────────────── */
+  aside {
+    grid-area: inspect; overflow-y: auto; background: var(--bg);
+    border-left: 1px solid var(--border); padding: 20px 20px 40px;
+  }
+  aside .placeholder { color: var(--ink-3); font-size: 12.5px; padding-top: 8px; }
+  .i-kind { font: 10.5px var(--font); text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-3); }
+  .i-name { color: var(--ink); font-size: 17px; font-weight: 600; margin: 3px 0 2px; word-break: break-word; }
+  .i-path { color: var(--ink-3); font: 11px var(--mono); word-break: break-all; }
+  .i-stats { display: flex; gap: 16px; margin: 14px 0; }
+  .stat .v { color: var(--ink); font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat .k { color: var(--ink-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; }
+
+  .i-section { margin-top: 18px; }
+  .i-section > h3 {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--ink-3); font-weight: 600; margin-bottom: 8px;
+  }
+  .anchor-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid rgba(57,135,229,0.4); color: #86b6ef; background: rgba(57,135,229,0.08);
+  }
+  .chip .ck { color: var(--ink-3); margin-right: 4px; }
+
+  .summary {
+    color: var(--ink-2); font-size: 12.5px; white-space: pre-wrap; word-break: break-word;
+    border-left: 2px solid var(--grid); padding-left: 12px;
+  }
+  .summary strong { color: var(--ink); font-weight: 600; }
+  .summary code { font: 11.5px var(--mono); color: #86b6ef; }
+
+  .comp {
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 9px 12px; margin-bottom: 7px; cursor: pointer;
+    transition: border-color 130ms ease;
+  }
+  .comp:hover { border-color: var(--border-strong); }
+  .comp.open { border-color: rgba(57,135,229,0.45); }
+  .comp .c-head { display: flex; align-items: baseline; gap: 8px; }
+  .comp .c-kind { font: 10px var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; flex: none; }
+  .comp .c-kind.func { color: #199e70; }
+  .comp .c-kind.class { color: #9085e9; }
+  .comp .c-name { color: var(--ink); font-weight: 550; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .comp .c-lines { margin-left: auto; color: var(--ink-3); font: 10.5px var(--mono); flex: none; }
+  .comp .c-sum { color: var(--ink-3); font-size: 11.5px; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .comp .c-conn { color: var(--ink-3); font-size: 10.5px; margin-top: 4px; }
+  .comp .c-conn b { color: var(--ink-2); font-weight: 500; }
+
+  .snippet {
+    margin-top: 9px; border-top: 1px solid var(--border); padding-top: 9px;
+    font: 11px/1.6 var(--mono); color: var(--ink-2);
+    max-height: 260px; overflow: auto; white-space: pre; cursor: text;
+  }
+  .snippet .ln { color: #52514e; user-select: none; display: inline-block; width: 3.5em; }
+
+  .conn-list a {
+    display: block; color: var(--ink-2); text-decoration: none;
+    font: 11.5px var(--mono); padding: 4px 8px; border-radius: 5px;
+  }
+  .conn-list a:hover { background: rgba(255,255,255,0.05); color: var(--ink); }
+  .conn-list .dir { color: var(--ink-3); margin-right: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <span class="mark">CMS</span>
+      <span class="project">memory of <b id="projectName">…</b></span>
+    </div>
+    <div id="mcpBadge"><span class="pulse-dot"></span><span id="mcpBadgeText">MCP</span></div>
+    <div class="search">
+      <span class="icon"></span>
+      <input id="searchInput" type="text" placeholder="Ask the codebase… e.g. where is the ignore filtering?" autocomplete="off" spellcheck="false">
+      <div id="results"></div>
+    </div>
+  </header>
+
+  <nav id="tree">
+    <div id="featuresWrap" style="display:none">
+      <div class="section">Features</div>
+      <div id="featureList"></div>
+      <div style="height:14px"></div>
+    </div>
+    <div class="section">Explorer</div><div id="treeRoot"></div>
+  </nav>
+
+  <main id="canvasWrap">
+    <canvas id="graph"></canvas>
+    <div class="overlay" id="legend"></div>
+    <div class="overlay" id="controls">
+      <button id="btnHeat" title="Git heat: color by change frequency, show co-change coupling" style="display:none">heat</button>
+      <button id="btnExt" title="Toggle external modules">ext</button>
+      <button id="btnFit" title="Fit graph to view">fit</button>
+      <button id="btnZoomOut">−</button>
+      <button id="btnZoomIn">+</button>
+    </div>
+    <div id="tooltip"></div>
+    <div class="overlay" id="empty">
+      <div class="big">No memory layer found</div>
+      <code>cms run-all</code>
+    </div>
+  </main>
+
+  <aside id="inspector">
+    <div class="placeholder">Select a file in the graph or the explorer.<br><br>
+    Drag to pan · scroll to zoom · click a node to inspect its summary, anchors, components and connections.</div>
+  </aside>
+</div>
+
+<script>
+"use strict";
+/* Palette: validated dark categorical slots (dataviz reference palette). */
+const SLOTS = ["#3987e5","#199e70","#c98500","#008300","#9085e9","#e66767","#d55181","#d95926"];
+const OTHER = "#898781", EXT = "#52514e";
+/* Sequential blue ramp for git heat, dark-surface steps, low -> high change frequency. */
+const HEAT = ["#104281","#1c5cab","#2a78d6","#5598e7","#9ec5f4"];
+
+const S = {
+  graph: null, meta: null, tree: null,
+  nodes: [], edges: [],                    // graph-view nodes/edges (files + optional ext)
+  byId: new Map(),                          // node id -> attrs (all graph nodes)
+  comps: new Map(),                         // file path -> [component attrs]
+  calls: new Map(), calledBy: new Map(),    // node id -> [ids]
+  imports: new Map(), importedBy: new Map(),// file id -> [file ids]
+  dirSlot: new Map(),
+  features: [],                             // feature node attrs
+  featureFiles: null,                       // Set of file node ids highlighted for a feature
+  heat: false, hasGit: false,               // git heat overlay
+  cochanges: [],                            // {s, t, w} co-change edge refs
+  pulses: new Map(),                        // file node id -> {t0} live MCP glow
+  selected: null, hovered: null, showExt: false,
+  sources: new Map(),
+  view: { k: 1, x: 0, y: 0 },
+  alpha: 1, dragging: null, panning: null,
+};
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+/* ── data loading ─────────────────────────────────────────── */
+window.addEventListener("error", e => showFatal(e.message));
+window.addEventListener("unhandledrejection", e => showFatal(e.reason && e.reason.message || String(e.reason)));
+function showFatal(msg) {
+  const el = $("empty");
+  el.style.display = "flex";
+  el.innerHTML = `<div class="big">Something broke in the viewer</div><code>${esc(msg)}</code>`;
+}
+
+async function boot() {
+  const [meta, graph, tree] = await Promise.all([
+    fetch("/api/meta").then(r => r.json()),
+    fetch("/api/graph").then(r => r.ok ? r.json() : null),
+    fetch("/api/tree").then(r => r.ok ? r.json() : null),
+  ]);
+  S.meta = meta; $("projectName").textContent = meta.project;
+  document.title = `CMS — ${meta.project}`;
+  if (!graph) { $("empty").style.display = "flex"; return; }
+  S.graph = graph; S.tree = tree;
+  index(graph);
+  buildGraphView();
+  if (tree) renderTree(tree.tree, $("treeRoot"), "");
+  renderFeatureList();
+  renderLegend();
+  fit();
+  requestAnimationFrame(loop);
+  const params = new URLSearchParams(location.search);
+  if (params.get("file")) selectFile("file:" + params.get("file"), true);
+  else if (params.get("feature")) selectFeature("feature:" + params.get("feature"));
+  if (params.get("heat") && S.hasGit) { S.heat = true; $("btnHeat").classList.add("on"); renderLegend(); }
+}
+
+function index(graph) {
+  for (const n of graph.nodes) S.byId.set(n.id, n);
+  S.features = graph.nodes.filter(n => n.type === "feature")
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const n of graph.nodes) {
+    if ((n.type === "func" || n.type === "class") && n.path) {
+      if (!S.comps.has(n.path)) S.comps.set(n.path, []);
+      S.comps.get(n.path).push(n);
+    }
+  }
+  for (const list of S.comps.values()) list.sort((a, b) => (a.start_line||0) - (b.start_line||0));
+  for (const e of (graph.links || graph.edges || [])) {
+    const t = e.type;
+    if (t === "CALLS") {
+      push(S.calls, e.source, e.target); push(S.calledBy, e.target, e.source);
+    } else if (t === "IMPORTS") {
+      push(S.imports, e.source, e.target); push(S.importedBy, e.target, e.source);
+    }
+  }
+}
+function push(map, k, v) { if (!map.has(k)) map.set(k, []); map.get(k).push(v); }
+
+function topDir(path) { return path.includes("/") ? path.split("/")[0] : "(root)"; }
+function slotColor(dir) {
+  if (!S.dirSlot.has(dir)) return OTHER;
+  const i = S.dirSlot.get(dir);
+  return i < SLOTS.length ? SLOTS[i] : OTHER;
+}
+
+function buildGraphView() {
+  const files = S.graph.nodes.filter(n => n.type === "file");
+  const dirs = [...new Set(files.map(n => topDir(n.path)))].sort();
+  dirs.forEach((d, i) => S.dirSlot.set(d, i));
+
+  const keep = new Map();
+  const mk = (n, isExt) => {
+    const dir = isExt ? null : topDir(n.path);
+    const group = isExt ? Math.PI * 1.5 : (S.dirSlot.get(dir) / Math.max(dirs.length,1)) * Math.PI * 2;
+    const jr = 60 + Math.random() * 120;
+    return {
+      id: n.id, attrs: n, ext: isExt,
+      label: isExt ? n.name : n.path.split("/").pop(),
+      color: isExt ? EXT : slotColor(dir),
+      r: isExt ? 5 : Math.max(5, Math.min(18, 4 + Math.sqrt(n.line_count || 1) * 0.55)),
+      x: Math.cos(group) * jr + (Math.random()-0.5) * 40,
+      y: Math.sin(group) * jr + (Math.random()-0.5) * 40,
+      vx: 0, vy: 0,
+    };
+  };
+  for (const f of files) keep.set(f.id, mk(f, false));
+  if (S.showExt) {
+    for (const n of S.graph.nodes) if (n.type === "external") keep.set(n.id, mk(n, true));
+  }
+  // preserve positions across rebuilds
+  for (const old of S.nodes) { const n = keep.get(old.id); if (n) { n.x = old.x; n.y = old.y; } }
+  S.nodes = [...keep.values()];
+  const links = S.graph.links || S.graph.edges || [];
+  S.edges = links
+    .filter(e => e.type === "IMPORTS" && keep.has(e.source) && keep.has(e.target))
+    .map(e => ({ s: keep.get(e.source), t: keep.get(e.target) }));
+  S.cochanges = links
+    .filter(e => e.type === "CO_CHANGES" && keep.has(e.source) && keep.has(e.target))
+    .map(e => ({ s: keep.get(e.source), t: keep.get(e.target), w: e.weight || 1 }));
+
+  // git heat: percentile rank of commit counts -> ramp step
+  const withGit = S.nodes.filter(n => n.attrs.git);
+  S.hasGit = withGit.length > 0;
+  $("btnHeat").style.display = S.hasGit ? "" : "none";
+  if (S.hasGit) {
+    const sorted = withGit.map(n => n.attrs.git.commits).sort((a, b) => a - b);
+    for (const n of S.nodes) {
+      if (!n.attrs.git) { n.heatColor = "#383835"; continue; }
+      const rank = sorted.findIndex(v => v >= n.attrs.git.commits);
+      const p = sorted.length > 1 ? rank / (sorted.length - 1) : 1;
+      n.heatColor = HEAT[Math.min(HEAT.length - 1, Math.floor(p * HEAT.length))];
+    }
+  }
+  S.alpha = 1;
+}
+
+/* ── file tree ────────────────────────────────────────────── */
+function renderTree(node, host, prefix) {
+  for (const [name, sub] of Object.entries(node.dirs || {})) {
+    const row = document.createElement("div");
+    row.className = "row open";
+    row.innerHTML = `<span class="chev"></span><span class="fname">${esc(name)}/</span>`;
+    const kids = document.createElement("div");
+    kids.className = "children";
+    row.onclick = () => { row.classList.toggle("open"); kids.classList.toggle("hidden"); };
+    host.append(row, kids);
+    renderTree(sub, kids, prefix + name + "/");
+  }
+  for (const f of node.files || []) {
+    const row = document.createElement("div");
+    row.className = "row file";
+    row.dataset.path = f.rel_path;
+    const color = slotColor(topDir(f.rel_path));
+    row.innerHTML = `<span class="dot" style="background:${color}"></span>` +
+      `<span class="fname">${esc(f.rel_path.split("/").pop())}</span>` +
+      `<span class="meta">${f.line_count}</span>`;
+    row.onclick = () => selectFile("file:" + f.rel_path, true);
+    host.append(row);
+  }
+}
+
+function renderLegend() {
+  const el = $("legend");
+  el.innerHTML = "";
+  if (S.heat) {
+    const grad = `linear-gradient(to right, ${HEAT.join(",")})`;
+    el.insertAdjacentHTML("beforeend",
+      `<div class="li"><span style="display:inline-block;width:64px;height:8px;border-radius:4px;background:${grad}"></span></div>
+       <div class="li" style="justify-content:space-between;width:80px">
+         <span style="font-size:10px;color:var(--ink-3)">calm</span>
+         <span style="font-size:10px;color:var(--ink-3)">hot</span>
+       </div>
+       <div class="li"><span class="sw" style="background:transparent;border-top:2px dashed rgba(201,133,0,0.8);height:0;border-radius:0"></span>co-change coupling</div>
+       <div class="note">heat = commit frequency · dashed = files that change together without imports</div>`);
+    return;
+  }
+  for (const [dir, i] of [...S.dirSlot.entries()].sort((a,b) => a[1]-b[1])) {
+    const c = i < SLOTS.length ? SLOTS[i] : OTHER;
+    el.insertAdjacentHTML("beforeend",
+      `<div class="li"><span class="sw" style="background:${c}"></span>${esc(dir)}</div>`);
+  }
+  el.insertAdjacentHTML("beforeend", `<div class="note">node size = lines · edge = imports</div>`);
+}
+
+/* ── force simulation ─────────────────────────────────────── */
+function physics() {
+  const N = S.nodes;
+  for (let i = 0; i < N.length; i++) {
+    for (let j = i + 1; j < N.length; j++) {
+      const a = N[i], b = N[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let d2 = dx*dx + dy*dy || 1;
+      const d = Math.sqrt(d2);
+      const f = Math.min(2200 / d2, 4);
+      dx /= d; dy /= d;
+      a.vx -= dx * f; a.vy -= dy * f;
+      b.vx += dx * f; b.vy += dy * f;
+    }
+  }
+  for (const e of S.edges) {
+    const dx = e.t.x - e.s.x, dy = e.t.y - e.s.y;
+    const d = Math.sqrt(dx*dx + dy*dy) || 1;
+    const f = (d - 110) * 0.012;
+    e.s.vx += (dx/d) * f; e.s.vy += (dy/d) * f;
+    e.t.vx -= (dx/d) * f; e.t.vy -= (dy/d) * f;
+  }
+  for (const n of N) {
+    n.vx -= n.x * 0.004; n.vy -= n.y * 0.004;   // gentle gravity
+    if (S.dragging === n) { n.vx = n.vy = 0; continue; }
+    n.vx *= 0.82; n.vy *= 0.82;
+    n.x += n.vx * S.alpha * 2; n.y += n.vy * S.alpha * 2;
+  }
+  S.alpha = Math.max(S.alpha * 0.992, S.dragging ? 0.3 : 0.005);
+}
+
+/* ── rendering ────────────────────────────────────────────── */
+const canvas = $("graph"), ctx = canvas.getContext("2d");
+let W = 0, H = 0, DPR = 1;
+
+function resize() {
+  const wrap = $("canvasWrap");
+  DPR = window.devicePixelRatio || 1;
+  W = wrap.clientWidth; H = wrap.clientHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+}
+window.addEventListener("resize", resize); resize();
+
+const toScreen = (x, y) => [x * S.view.k + S.view.x, y * S.view.k + S.view.y];
+const toWorld = (x, y) => [(x - S.view.x) / S.view.k, (y - S.view.y) / S.view.k];
+
+function neighborhood(id) {
+  const set = new Set([id]);
+  for (const e of S.edges) {
+    if (e.s.id === id) set.add(e.t.id);
+    if (e.t.id === id) set.add(e.s.id);
+  }
+  return set;
+}
+
+function draw() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  const focus = S.hovered || S.selected;
+  const hood = focus ? neighborhood(focus) : null;
+
+  for (const e of S.edges) {
+    const [x1, y1] = toScreen(e.s.x, e.s.y), [x2, y2] = toScreen(e.t.x, e.t.y);
+    const lit = hood && (e.s.id === focus || e.t.id === focus);
+    ctx.strokeStyle = lit ? "rgba(57,135,229,0.65)" : (S.heat ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.10)");
+    ctx.lineWidth = lit ? 1.6 : 1;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    if (lit) {  // arrowhead at import target
+      const ang = Math.atan2(y2 - y1, x2 - x1);
+      const bx = x2 - Math.cos(ang) * (e.t.r * S.view.k + 4);
+      const by = y2 - Math.sin(ang) * (e.t.r * S.view.k + 4);
+      ctx.fillStyle = "rgba(57,135,229,0.85)";
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(bx - Math.cos(ang - 0.42) * 7, by - Math.sin(ang - 0.42) * 7);
+      ctx.lineTo(bx - Math.cos(ang + 0.42) * 7, by - Math.sin(ang + 0.42) * 7);
+      ctx.fill();
+    }
+  }
+
+  if (S.heat) {  // co-change coupling: dashed amber, width by strength
+    ctx.setLineDash([5, 4]);
+    for (const e of S.cochanges) {
+      const [x1, y1] = toScreen(e.s.x, e.s.y), [x2, y2] = toScreen(e.t.x, e.t.y);
+      ctx.strokeStyle = "rgba(201,133,0,0.55)";
+      ctx.lineWidth = Math.min(1 + e.w * 0.4, 3.5);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  for (const n of S.nodes) {
+    const [x, y] = toScreen(n.x, n.y);
+    const r = Math.max(2.5, n.r * S.view.k);
+    const inFeature = S.featureFiles && S.featureFiles.has(n.id);
+    const dim = hood ? !hood.has(n.id) : (S.featureFiles ? !inFeature : false);
+    ctx.globalAlpha = dim ? 0.22 : 1;
+    ctx.fillStyle = S.heat ? (n.heatColor || "#383835") : n.color;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(13,13,13,0.9)"; ctx.lineWidth = 2;  // 2px surface ring
+    ctx.stroke();
+    if (n.id === S.selected) {
+      ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.6;
+      ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke();
+    } else if (inFeature && !hood) {
+      ctx.strokeStyle = "#c98500"; ctx.lineWidth = 1.6;  // feature member ring
+      ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke();
+    }
+    const showLabel = !dim && (S.view.k > 0.85 || n.id === S.selected || inFeature || (hood && hood.has(n.id)));
+    if (showLabel) {
+      ctx.font = `11px ${getComputedStyle(document.body).getPropertyValue("--font")}`;
+      ctx.fillStyle = n.id === S.selected ? "#ffffff" : "#c3c2b7";
+      ctx.textAlign = "center";
+      ctx.fillText(n.label, x, y + r + 13);
+    }
+    ctx.globalAlpha = 1;
+  }
+  drawPulses(performance.now());
+}
+
+function loop() {
+  if (S.alpha > 0.006 || S.dragging) physics();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function fit() {
+  if (!S.nodes.length) return;
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const n of S.nodes) {
+    x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y);
+    x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y);
+  }
+  const pad = 90;
+  const k = Math.min((W - pad*2) / Math.max(x1-x0, 60), (H - pad*2) / Math.max(y1-y0, 60), 2.2);
+  S.view.k = k;
+  S.view.x = W/2 - (x0+x1)/2 * k;
+  S.view.y = H/2 - (y0+y1)/2 * k;
+}
+
+/* ── canvas interaction ───────────────────────────────────── */
+function nodeAt(mx, my) {
+  const [wx, wy] = toWorld(mx, my);
+  let best = null, bd = 1e9;
+  for (const n of S.nodes) {
+    const d = Math.hypot(n.x - wx, n.y - wy);
+    if (d < n.r + 6 / S.view.k && d < bd) { best = n; bd = d; }
+  }
+  return best;
+}
+
+canvas.addEventListener("mousedown", e => {
+  const n = nodeAt(e.offsetX, e.offsetY);
+  if (n) { S.dragging = n; S.alpha = Math.max(S.alpha, 0.3); }
+  else S.panning = { mx: e.offsetX, my: e.offsetY, x: S.view.x, y: S.view.y, moved: false };
+  canvas.classList.add("grabbing");
+});
+canvas.addEventListener("mousemove", e => {
+  if (S.dragging) {
+    const [wx, wy] = toWorld(e.offsetX, e.offsetY);
+    S.dragging.x = wx; S.dragging.y = wy;
+    hideTip(); return;
+  }
+  if (S.panning) {
+    S.panning.moved = true;
+    S.view.x = S.panning.x + (e.offsetX - S.panning.mx);
+    S.view.y = S.panning.y + (e.offsetY - S.panning.my);
+    hideTip(); return;
+  }
+  const n = nodeAt(e.offsetX, e.offsetY);
+  S.hovered = n ? n.id : null;
+  canvas.classList.toggle("pointer", !!n);
+  if (n) showTip(n, e.offsetX, e.offsetY); else hideTip();
+});
+window.addEventListener("mouseup", e => {
+  if (S.dragging) { S.dragging = null; }
+  else if (S.panning) {
+    if (!S.panning.moved) {
+      const n = nodeAt(e.offsetX, e.offsetY);
+      if (n && !n.ext) selectFile(n.id, false);
+      else if (!n) {
+        S.selected = null; S.featureFiles = null;
+        document.querySelectorAll(".feat-row.selected").forEach(r => r.classList.remove("selected"));
+        renderInspectorPlaceholder(); markTree(null);
+        history.replaceState(null, "", location.pathname);
+      }
+    }
+    S.panning = null;
+  }
+  canvas.classList.remove("grabbing");
+});
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const f = Math.exp(-e.deltaY * 0.0012);
+  const k2 = Math.min(Math.max(S.view.k * f, 0.15), 4);
+  const [wx, wy] = toWorld(e.offsetX, e.offsetY);
+  S.view.x = e.offsetX - wx * k2;
+  S.view.y = e.offsetY - wy * k2;
+  S.view.k = k2;
+}, { passive: false });
+
+const tip = $("tooltip");
+function showTip(n, mx, my) {
+  const a = n.attrs;
+  const sum = filePurpose(a.summary);
+  let gitLine = "";
+  if (a.git) {
+    const age = a.git.age_days < 1 ? "today" : `${Math.round(a.git.age_days)}d ago`;
+    gitLine = `<div class="t-path">${a.git.commits} commits · ${a.git.authors.length} author${a.git.authors.length > 1 ? "s" : ""} · last change ${age}</div>`;
+  }
+  tip.innerHTML = `<div class="t-name">${esc(n.label)}</div>` +
+    (n.ext ? `<div class="t-path">external module</div>`
+           : `<div class="t-path">${esc(a.path)} · ${a.line_count} lines</div>`) +
+    gitLine +
+    (sum ? `<div class="t-sum">${esc(sum)}</div>` : "");
+  tip.style.display = "block";
+  const wrap = $("canvasWrap").getBoundingClientRect();
+  tip.style.left = Math.min(mx + 16, wrap.width - 336) + "px";
+  tip.style.top = (my + 14) + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+
+function filePurpose(text) {
+  /* Pull the "File Purpose" paragraph out of a summary, tolerant of format:
+     "## File Purpose", "**File Purpose**", "1. **File Purpose**", etc. */
+  if (!text) return "";
+  const lines = text.split(/\r?\n/);
+  const buf = [];
+  const i = lines.findIndex(l => /file purpose/i.test(l));
+  if (i >= 0) {
+    const trailing = lines[i].replace(/^.*file purpose[*:\s]*/i, "").trim();
+    if (trailing) buf.push(trailing);
+    for (let j = i + 1; j < lines.length; j++) {
+      const t = lines[j].trim();
+      if (!t) { if (buf.length) break; continue; }
+      if (/^(#{1,6}\s|\d+\.\s|\*\*[A-Z])/.test(t)) break;   // next section starts
+      buf.push(t);
+    }
+  }
+  if (!buf.length) {  // no marker: first substantive line
+    const first = lines.map(l => l.trim()).find(t => t && !/^#/.test(t));
+    if (first) buf.push(first);
+  }
+  const s = buf.join(" ").replace(/^[-–•]\s*/, "").replace(/[*`#]/g, "").replace(/\s+/g, " ").trim();
+  return s.length > 240 ? s.slice(0, 237) + "…" : s;
+}
+
+/* ── features ─────────────────────────────────────────────── */
+function renderFeatureList() {
+  if (!S.features.length) return;
+  $("featuresWrap").style.display = "";
+  $("featureList").innerHTML = S.features.map(f =>
+    `<div class="feat-row" data-fid="${esc(f.id)}">
+       <span class="fx"></span>
+       <span class="fname">${esc(f.name)}</span>
+       <span class="count">${(f.members || []).length}</span>
+     </div>`).join("");
+  document.querySelectorAll(".feat-row").forEach(el => {
+    el.onclick = () => selectFeature(el.dataset.fid);
+  });
+}
+
+function memberFileIds(feat) {
+  const set = new Set();
+  for (const m of feat.members || []) {
+    const a = S.byId.get(m);
+    if (a && a.path) set.add("file:" + a.path);
+  }
+  return set;
+}
+
+function selectFeature(featureId) {
+  const feat = S.byId.get(featureId);
+  if (!feat) return;
+  S.selected = null;
+  S.featureFiles = memberFileIds(feat);
+  markTree(null);
+  document.querySelectorAll(".feat-row.selected").forEach(r => r.classList.remove("selected"));
+  const row = document.querySelector(`.feat-row[data-fid="${CSS.escape(featureId)}"]`);
+  if (row) row.classList.add("selected");
+  renderFeatureInspector(feat);
+  history.replaceState(null, "", "?feature=" + encodeURIComponent(feat.name));
+}
+
+function flowStepsHtml(feat) {
+  const flows = feat.flows || [];
+  if (!flows.length) return `<div class="placeholder">No call flows traced.</div>`;
+  return flows.map(flow =>
+    `<div class="flow-rail">` + flow.map((s, i) =>
+      `<div class="flow-step">
+         <span class="n">${i + 1}</span>
+         <div class="body">
+           <div class="fn">${esc(s.name)}${s.in_feature ? "" : ` <span class="out">outside feature</span>`}</div>
+           <div class="floc"><a href="#" data-goto="file:${esc(s.path)}">${esc(s.path)}${s.line ? ":" + s.line : ""}</a></div>
+         </div>
+       </div>`).join("") + `</div>`).join("");
+}
+
+function renderFeatureInspector(feat) {
+  const members = (feat.members || []).map(m => S.byId.get(m)).filter(Boolean);
+  let html = `
+    <div class="i-kind">feature · ${esc(feat.source || "declared")}</div>
+    <div class="i-name">${esc(feat.name)}</div>
+    ${feat.description ? `<div class="i-path" style="font-family:var(--font);font-size:12px">${esc(feat.description)}</div>` : ""}
+    <div class="i-stats">
+      <div class="stat"><div class="v">${members.length}</div><div class="k">members</div></div>
+      <div class="stat"><div class="v">${(feat.entry_points || []).length}</div><div class="k">entries</div></div>
+      <div class="stat"><div class="v">${(feat.flows || []).length}</div><div class="k">flows</div></div>
+    </div>`;
+  if ((feat.connects || []).length) {
+    html += `<div class="i-section"><h3>Connects</h3><div class="anchor-chips">` +
+      feat.connects.map(c => `<span class="chip" data-feat="${esc(c)}" style="cursor:pointer">${esc(c)}</span>`).join("") +
+      `</div></div>`;
+  }
+  html += `<div class="i-section"><h3>Flow</h3>${flowStepsHtml(feat)}</div>`;
+  if (feat.summary) {
+    html += `<div class="i-section"><h3>Trace</h3><div class="summary">${mdLite(feat.summary)}</div></div>`;
+  }
+  html += `<div class="i-section"><h3>Members</h3><div class="conn-list">` +
+    members.map(m => {
+      const loc = m.start_line ? `${m.path}:${m.start_line}` : (m.path || m.name);
+      return `<a href="#" data-goto="file:${esc(m.path || "")}"><span class="dir">${esc(m.type)}</span>${esc(m.qualname || m.name)} · ${esc(loc)}</a>`;
+    }).join("") + `</div></div>`;
+  $("inspector").innerHTML = html;
+  document.querySelectorAll("#inspector [data-goto]").forEach(el => {
+    el.onclick = ev => {
+      ev.preventDefault();
+      if (S.byId.has(el.dataset.goto)) { S.featureFiles = null; selectFile(el.dataset.goto, true); }
+    };
+  });
+  document.querySelectorAll("#inspector .chip[data-feat]").forEach(el => {
+    el.onclick = () => selectFeature("feature:" + el.dataset.feat);
+  });
+  $("inspector").scrollTop = 0;
+}
+
+/* ── selection & inspector ────────────────────────────────── */
+function selectFile(fileId, focusGraph) {
+  if (!S.byId.has(fileId)) return;
+  S.selected = fileId;
+  S.featureFiles = null;
+  document.querySelectorAll(".feat-row.selected").forEach(r => r.classList.remove("selected"));
+  renderInspector(fileId);
+  markTree(fileId);
+  history.replaceState(null, "", "?file=" + encodeURIComponent(fileId.slice(5)));
+  if (focusGraph) {
+    const n = S.nodes.find(n => n.id === fileId);
+    if (n) {
+      S.view.x = W/2 - n.x * S.view.k;
+      S.view.y = H/2 - n.y * S.view.k;
+    }
+  }
+}
+
+function markTree(fileId) {
+  document.querySelectorAll("nav .row.selected").forEach(r => r.classList.remove("selected"));
+  if (!fileId) return;
+  const row = document.querySelector(`nav .row[data-path="${CSS.escape(fileId.slice(5))}"]`);
+  if (row) { row.classList.add("selected"); row.scrollIntoView({ block: "nearest" }); }
+}
+
+function renderInspectorPlaceholder() {
+  $("inspector").innerHTML = `<div class="placeholder">Select a file in the graph or the explorer.</div>`;
+}
+
+function mdLite(text) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+}
+
+function anchorChips(anchors) {
+  if (!anchors || !Object.keys(anchors).length) return "";
+  let html = `<div class="i-section"><h3>Anchors</h3><div class="anchor-chips">`;
+  for (const [k, vals] of Object.entries(anchors)) {
+    for (const v of vals) html += `<span class="chip"><span class="ck">${esc(k)}</span>${esc(v)}</span>`;
+  }
+  return html + `</div></div>`;
+}
+
+function fileLink(id) {
+  const a = S.byId.get(id);
+  const label = a ? (a.path || a.name || id) : id;
+  return `<a href="#" data-goto="${esc(id)}">${esc(label)}</a>`;
+}
+
+function renderInspector(fileId) {
+  const a = S.byId.get(fileId);
+  const comps = S.comps.get(a.path) || [];
+  const kb = (a.size_bytes / 1024).toFixed(1);
+
+  let html = `
+    <div class="i-kind">${esc(a.language || "file")}</div>
+    <div class="i-name">${esc(a.name)}</div>
+    <div class="i-path">${esc(a.path)}</div>
+    <div class="i-stats">
+      <div class="stat"><div class="v">${a.line_count ?? "—"}</div><div class="k">lines</div></div>
+      <div class="stat"><div class="v">${kb}</div><div class="k">KB</div></div>
+      <div class="stat"><div class="v">${comps.length}</div><div class="k">components</div></div>
+    </div>`;
+
+  if (a.git) {
+    const age = a.git.age_days < 1 ? "today" : `${Math.round(a.git.age_days)} days ago`;
+    html += `
+    <div class="i-section"><h3>History</h3>
+      <div class="i-stats" style="margin:6px 0 0">
+        <div class="stat"><div class="v">${a.git.commits}</div><div class="k">commits</div></div>
+        <div class="stat"><div class="v">${a.git.authors.length}</div><div class="k">authors</div></div>
+        <div class="stat"><div class="v">${a.git.churn}</div><div class="k">churn</div></div>
+      </div>
+      <div style="color:var(--ink-3);font-size:11px;margin-top:4px">last change ${esc(age)} · ${esc(a.git.authors.slice(0,4).join(", "))}</div>
+    </div>`;
+  }
+
+  html += anchorChips(a.anchors);
+
+  if (a.summary) {
+    html += `<div class="i-section"><h3>Summary</h3><div class="summary">${mdLite(a.summary)}</div></div>`;
+  }
+
+  if (comps.length) {
+    html += `<div class="i-section"><h3>Components</h3>`;
+    for (const c of comps) {
+      const callers = (S.calledBy.get(c.id) || []).length;
+      const callees = (S.calls.get(c.id) || []).length;
+      const conn = [];
+      if (callers) conn.push(`<b>${callers}</b> caller${callers > 1 ? "s" : ""}`);
+      if (callees) conn.push(`calls <b>${callees}</b>`);
+      html += `
+        <div class="comp" data-comp="${esc(c.id)}">
+          <div class="c-head">
+            <span class="c-kind ${c.type}">${c.type === "func" ? "fn" : "cls"}</span>
+            <span class="c-name">${esc(c.qualname || c.name)}</span>
+            <span class="c-lines">${c.start_line}–${c.end_line}</span>
+          </div>
+          ${c.summary ? `<div class="c-sum">${esc(c.summary.replace(/[`*]/g, ""))}</div>` : ""}
+          ${conn.length ? `<div class="c-conn">${conn.join(" · ")}</div>` : ""}
+          <div class="snippet" style="display:none"></div>
+        </div>`;
+    }
+    html += `</div>`;
+  }
+
+  const imports = (S.imports.get(fileId) || []).filter(id => S.byId.get(id));
+  const importedBy = S.importedBy.get(fileId) || [];
+  if (imports.length || importedBy.length) {
+    html += `<div class="i-section"><h3>Connections</h3><div class="conn-list"></div></div>`;
+  }
+  $("inspector").innerHTML = html;
+  wireInspector(fileId, imports, importedBy);
+}
+
+function wireInspector(fileId, imports, importedBy) {
+  // rebuild connections section properly (imports + imported-by rows)
+  const conn = document.querySelector("#inspector .conn-list");
+  if (conn) {
+    conn.innerHTML =
+      imports.map(id => `<a href="#" data-goto="${esc(id)}"><span class="dir">imports →</span>${esc(linkLabel(id))}</a>`).join("") +
+      importedBy.map(id => `<a href="#" data-goto="${esc(id)}"><span class="dir">← imported by</span>${esc(linkLabel(id))}</a>`).join("");
+  }
+  document.querySelectorAll("#inspector [data-goto]").forEach(el => {
+    el.onclick = ev => {
+      ev.preventDefault();
+      const id = el.dataset.goto;
+      if (id.startsWith("file:")) selectFile(id, true);
+    };
+  });
+  document.querySelectorAll("#inspector .comp").forEach(el => {
+    el.onclick = async ev => {
+      if (ev.target.closest(".snippet")) return;
+      const snip = el.querySelector(".snippet");
+      const open = snip.style.display !== "none";
+      if (open) { snip.style.display = "none"; el.classList.remove("open"); return; }
+      const c = S.byId.get(el.dataset.comp);
+      snip.innerHTML = "loading…"; snip.style.display = "block"; el.classList.add("open");
+      snip.innerHTML = await snippetHtml(c);
+    };
+  });
+}
+
+function linkLabel(id) {
+  const a = S.byId.get(id);
+  return a ? (a.path || a.name || id) : id.replace(/^(file|ext):/, "");
+}
+
+async function snippetHtml(c) {
+  if (!S.sources.has(c.path)) {
+    const r = await fetch(`/api/source?path=${encodeURIComponent(c.path)}`);
+    if (!r.ok) return "source unavailable";
+    S.sources.set(c.path, (await r.json()).text.split(/\r?\n/));
+  }
+  const lines = S.sources.get(c.path);
+  const a = Math.max(0, c.start_line - 1), b = Math.min(lines.length, c.end_line);
+  let out = "";
+  for (let i = a; i < b; i++) {
+    out += `<span class="ln">${i + 1}</span>${esc(lines[i])}\n`;
+  }
+  return out;
+}
+
+/* ── search ───────────────────────────────────────────────── */
+const input = $("searchInput"), resultsEl = $("results");
+let debounce = null;
+input.addEventListener("input", () => {
+  clearTimeout(debounce);
+  const q = input.value.trim();
+  if (!q) { resultsEl.classList.remove("open"); return; }
+  debounce = setTimeout(() => runSearch(q), 220);
+});
+input.addEventListener("keydown", e => { if (e.key === "Escape") { resultsEl.classList.remove("open"); input.blur(); } });
+document.addEventListener("click", e => { if (!e.target.closest(".search")) resultsEl.classList.remove("open"); });
+window.addEventListener("keydown", e => {
+  if (e.key === "/" && document.activeElement !== input) { e.preventDefault(); input.focus(); }
+});
+
+async function runSearch(q) {
+  const r = await fetch(`/api/query?q=${encodeURIComponent(q)}&k=8`);
+  const data = await r.json();
+  const hits = data.results || [];
+  if (!hits.length) {
+    resultsEl.innerHTML = `<div class="hit"><span class="loc">no matches</span></div>`;
+    resultsEl.classList.add("open");
+    return;
+  }
+  resultsEl.innerHTML = hits.map(h => {
+    const loc = h.start_line ? `${h.path}:${h.start_line}–${h.end_line}` : h.path;
+    return `<div class="hit" data-id="${esc(h.node_id)}" data-path="${esc(h.path)}">
+      <span class="kind ${h.kind}">${h.kind}</span>
+      <span class="name">${esc(h.name)}</span>
+      <span class="loc">${esc(loc)}</span>
+    </div>`;
+  }).join("");
+  resultsEl.classList.add("open");
+  resultsEl.querySelectorAll(".hit").forEach(el => {
+    el.onclick = () => {
+      resultsEl.classList.remove("open");
+      const id = el.dataset.id, path = el.dataset.path;
+      if (id.startsWith("feature:")) { selectFeature(id); return; }
+      selectFile("file:" + path, true);
+      if (!id.startsWith("file:")) {
+        setTimeout(() => {
+          const comp = document.querySelector(`#inspector .comp[data-comp="${CSS.escape(id)}"]`);
+          if (comp) { comp.scrollIntoView({ block: "center", behavior: "smooth" }); comp.click(); }
+        }, 60);
+      }
+    };
+  });
+}
+
+/* ── MCP activity pulses ──────────────────────────────────── */
+const PULSE_MS = 5000;
+let activitySince = null, badgeTimer = null;
+
+function toFileId(nodeId) {
+  if (nodeId.startsWith("file:")) return nodeId;
+  if (nodeId.startsWith("func:") || nodeId.startsWith("class:")) {
+    const path = nodeId.slice(nodeId.indexOf(":") + 1).split("::")[0];
+    return "file:" + path;
+  }
+  return null;  // feature: handled via members
+}
+
+function addPulses(event) {
+  const now = performance.now();
+  for (const raw of event.nodes || []) {
+    if (raw.startsWith("feature:")) {
+      const feat = S.byId.get(raw);
+      for (const m of (feat && feat.members) || []) {
+        const fid = toFileId(m);
+        if (fid) S.pulses.set(fid, { t0: now });
+      }
+      continue;
+    }
+    const fid = toFileId(raw);
+    if (fid) S.pulses.set(fid, { t0: now });
+  }
+  const badge = $("mcpBadge");
+  $("mcpBadgeText").textContent = "MCP · " + event.tool + (event.label ? ` — ${event.label.slice(0, 42)}` : "");
+  badge.classList.add("live");
+  clearTimeout(badgeTimer);
+  badgeTimer = setTimeout(() => badge.classList.remove("live"), 4000);
+}
+
+async function pollActivity() {
+  if (document.hidden) return;
+  try {
+    const r = await fetch(`/api/activity?since=${activitySince === null ? 9e12 : activitySince}`);
+    if (!r.ok) return;
+    const data = await r.json();
+    if (activitySince === null) { activitySince = data.now - 8; return; }  // pick up very recent on open
+    for (const e of data.events) {
+      activitySince = Math.max(activitySince, e.ts);
+      addPulses(e);
+    }
+  } catch (err) { /* feed is cosmetic */ }
+}
+setInterval(pollActivity, 1000);
+pollActivity().then(pollActivity);
+
+function drawPulses(now) {
+  for (const [fid, p] of S.pulses) {
+    const age = now - p.t0;
+    if (age > PULSE_MS) { S.pulses.delete(fid); continue; }
+    const n = S.nodes.find(n => n.id === fid);
+    if (!n) continue;
+    const [x, y] = toScreen(n.x, n.y);
+    const r = Math.max(2.5, n.r * S.view.k);
+    const k = age / PULSE_MS;                      // 0 -> 1
+    const fade = Math.pow(1 - k, 1.6);
+    // expanding soft ring
+    ctx.strokeStyle = `rgba(57,135,229,${(0.55 * fade).toFixed(3)})`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(x, y, r + 4 + k * 26, 0, Math.PI * 2); ctx.stroke();
+    // inner glow wash
+    const g = ctx.createRadialGradient(x, y, r * 0.4, x, y, r + 14);
+    g.addColorStop(0, `rgba(57,135,229,${(0.30 * fade).toFixed(3)})`);
+    g.addColorStop(1, "rgba(57,135,229,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r + 14, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+/* ── controls ─────────────────────────────────────────────── */
+$("btnHeat").onclick = () => {
+  S.heat = !S.heat;
+  $("btnHeat").classList.toggle("on", S.heat);
+  renderLegend();
+};
+$("btnFit").onclick = fit;
+$("btnZoomIn").onclick = () => zoomBy(1.35);
+$("btnZoomOut").onclick = () => zoomBy(1 / 1.35);
+$("btnExt").onclick = () => {
+  S.showExt = !S.showExt;
+  $("btnExt").classList.toggle("on", S.showExt);
+  buildGraphView();
+};
+function zoomBy(f) {
+  const k2 = Math.min(Math.max(S.view.k * f, 0.15), 4);
+  const cx = W / 2, cy = H / 2;
+  const [wx, wy] = toWorld(cx, cy);
+  S.view.x = cx - wx * k2; S.view.y = cy - wy * k2; S.view.k = k2;
+}
+
+boot();
+</script>
+</body>
+</html>

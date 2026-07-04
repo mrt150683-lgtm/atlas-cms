@@ -1,0 +1,2 @@
+# Project-specific ignore patterns for CMS (gitignore syntax).
+# These extend the built-in defaults in cms/config.py.

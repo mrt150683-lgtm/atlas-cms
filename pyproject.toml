@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cms"
+version = "0.1.0"
+description = "Codebase Memory System - a structural + semantic memory layer for codebases, built for AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "networkx>=3.0",
+    "pathspec>=0.11",
+    "typer>=0.9",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40"]
+dev = ["pytest>=8", "coverage>=7"]
+
+[project.scripts]
+cms = "cms.cli:app"
+
+[tool.setuptools]
+packages = ["cms"]
+
+[tool.setuptools.package-data]
+cms = ["ui_assets/*.html"]

@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# Build output (CMS.exe is rebuilt from source; 45+ MB doesn't belong in git)
+build/
+dist/
+*.spec
+
+# CMS generated memory layer — regenerable via `cms run-all`.
+# Delete this line if you want agents to get the memory map on clone.
+.memory/
+
+# Per-machine workspace link
+cms.workspace.json
