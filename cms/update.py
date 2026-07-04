@@ -152,12 +152,18 @@ def incremental_update(
     stats.features = len(feats)
 
     if old is not None:
-        # test↔feature mapping survives updates for features whose members didn't change
+        # verified_by mapping and AI reviews survive updates for features whose
+        # members didn't change (same freshness rule as narratives)
         for feat in feats:
             if old.has_node(feat.node_id) and feat.name in narrative_cache:
-                verified = old.nodes[feat.node_id].get("verified_by")
-                if verified:
-                    graph.nodes[feat.node_id]["verified_by"] = verified
+                for attr in ("verified_by", "review"):
+                    value = old.nodes[feat.node_id].get(attr)
+                    if value:
+                        graph.nodes[feat.node_id][attr] = value
+        # app-level rollups carry over wholesale (regenerate with cms review/suggest)
+        for node_id in ("review:app", "suggestions:app"):
+            if old.has_node(node_id) and not graph.has_node(node_id):
+                graph.add_node(node_id, **dict(old.nodes[node_id]))
 
     git_info = enrich_graph_with_git(graph, root)
     if git_info:

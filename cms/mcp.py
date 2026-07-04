@@ -96,6 +96,11 @@ TOOLS = [
         },
     },
     {
+        "name": "get_suggestions",
+        "description": "Planned next features/improvements ranked by return on investment (value 1-5 vs effort 1-5), grounded in review gaps, untested features, git hotspots and hidden coupling.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
         "name": "get_source",
         "description": "Read an exact source snippet by path and line range (surgical read — prefer this over whole files).",
         "inputSchema": {
@@ -217,6 +222,13 @@ class MCPServer:
             "app": app,
             "features": {f["name"]: f["review"] for f in feats if f.get("review")},
         }
+
+    def get_suggestions(self) -> dict:
+        graph = self.memory().graph
+        if not graph.has_node("suggestions:app"):
+            return {"error": "no suggestions yet — run `cms suggest`"}
+        node = graph.nodes["suggestions:app"]
+        return {"provider": node.get("provider"), "items": node.get("items") or []}
 
     def get_source(self, path: str, start_line: int = 1, end_line: int | None = None) -> dict:
         target = (self.root / path).resolve()

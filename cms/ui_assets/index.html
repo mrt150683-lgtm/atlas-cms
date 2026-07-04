@@ -1629,6 +1629,29 @@ function openReview() {
     </div>`;
   }).join("") : `<div style="padding:20px 22px;color:var(--ink-3)">No review yet — run <code style="color:var(--accent)">cms review</code> first.</div>`;
 
+  const sugg = S.byId.get("suggestions:app");
+  if (sugg && (sugg.items || []).length) {
+    $("reviewBody").insertAdjacentHTML("beforeend",
+      `<div style="padding:16px 22px 6px;border-top:1px solid var(--border-strong)">
+         <h3 style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-3)">
+           Suggested next · ranked by return on investment</h3></div>` +
+      sugg.items.map((s, i) => `
+        <div class="rv-row">
+          <div class="rv-line">
+            <span style="color:var(--accent);font:11px var(--mono);flex:none;min-width:52px">ROI ${s.roi}×</span>
+            <span class="rv-name">${esc(s.title)}</span>
+            <span class="verdict unverified" style="margin-left:auto">${esc(s.kind)}</span>
+            <span class="rv-chev"></span>
+          </div>
+          <div class="rv-detail">
+            <p>${esc(s.description)}</p>
+            <h4>Why now</h4><p>${esc(s.rationale)}</p>
+            <h4>Score</h4>
+            <p>value ${s.value}/5 · effort ${s.effort}/5${(s.builds_on || []).length ? " · builds on " + s.builds_on.map(esc).join(", ") : ""}</p>
+          </div>
+        </div>`).join(""));
+  }
+
   $("reviewOverlay").classList.add("open");
   document.querySelectorAll("#reviewBody .rv-line").forEach(el => {
     el.onclick = () => el.parentElement.classList.toggle("open");

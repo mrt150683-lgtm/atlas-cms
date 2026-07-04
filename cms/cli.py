@@ -403,6 +403,36 @@ def review(
 
 
 @app.command()
+def suggest(
+    root: Path = RootOption,
+    provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai | mock"),
+    top: int = typer.Option(8, "--top", "-n", help="How many to show."),
+) -> None:
+    """Plan what's worth building next, ranked by return on investment."""
+    from .exporter import export_graph
+    from .suggest import build_suggestions, export_suggestions
+
+    root = root.resolve()
+    memory_dir = _memory_dir(root)
+    graph_path = memory_dir / "graph.json"
+    if not graph_path.is_file():
+        typer.echo("No graph.json — run `cms run-all` first.", err=True)
+        raise typer.Exit(1)
+    mem = CodebaseMemory.load(graph_path)
+    llm = get_provider(provider)
+    typer.echo(f"Planning suggestions with provider: {llm.name}\n")
+    suggestions = build_suggestions(mem.graph, root, llm)
+    export_graph(mem.graph, memory_dir)
+    out = export_suggestions(mem.graph, memory_dir)
+    for i, s in enumerate(suggestions[:top], 1):
+        typer.echo(f"{i}. [ROI {s['roi']}×] {s['title']}   ({s['kind']} · value {s['value']} · effort {s['effort']})")
+        typer.echo(f"     {s['description']}")
+        if s["rationale"]:
+            typer.echo(f"     why: {s['rationale']}")
+    typer.echo(f"\nWritten to {out}")
+
+
+@app.command()
 def mcp(root: Path = RootOption) -> None:
     """Run the MCP server (stdio) so AI agents can query this memory natively."""
     from .mcp import MCPServer

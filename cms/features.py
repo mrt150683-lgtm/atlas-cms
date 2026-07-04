@@ -73,7 +73,9 @@ already known, skip test-only concerns, skip vague umbrella names.
 Files:
 {file_lines}
 
-Already known features: {known}
+Already known features (name -> files they cover — do NOT re-propose these under
+any name, and do NOT propose features centred on files they already cover):
+{known}
 
 Respond with ONLY a JSON array, no prose:
 [{{"name": "PascalCaseName", "description": "one sentence", "files": ["rel/path.py", ...]}}]
@@ -82,7 +84,8 @@ Use exact rel paths from the list. Return [] if nothing new is clear.
 
 
 def discover_features_llm(
-    graph: nx.DiGraph, provider: SummaryProvider, known: list[str], max_new: int = 6
+    graph: nx.DiGraph, provider: SummaryProvider, known: list[str],
+    known_files: dict[str, set[str]] | None = None, max_new: int = 6,
 ) -> list[Feature]:
     if provider.name == "mock":
         return []
@@ -92,8 +95,11 @@ def discover_features_llm(
             purpose = attrs["summary"].strip().splitlines()
             head = next((l.strip() for l in purpose if l.strip() and not l.strip().startswith("#")), "")
             file_lines.append(f"- {attrs['path']}: {head[:160]}")
+    known_desc = "\n".join(
+        f"- {name} -> {', '.join(sorted((known_files or {}).get(name, [])))}" for name in known
+    ) or "(none)"
     prompt = DISCOVERY_PROMPT.format(
-        max_new=max_new, file_lines="\n".join(file_lines), known=", ".join(known) or "(none)"
+        max_new=max_new, file_lines="\n".join(file_lines), known=known_desc
     )
     try:
         raw = provider.summarize(prompt, {})
@@ -327,19 +333,26 @@ def build_features(
     declared_files = [file_set(f) for f in features.values()]
 
     def is_duplicate(feat: Feature) -> bool:
-        """Discovered features are noise when they mostly re-cover files that
-        already belong to a declared feature (LLM synonym of an existing one)."""
+        """Discovered features are noise when they substantially re-cover files
+        that already belong to a declared feature (LLM synonym of an existing
+        one). Multi-file synonym lists dodge high thresholds, so: a third of my
+        files overlapping one feature, or any 2-file intersection, is a dup."""
         mine = file_set(feat)
         if not mine:
             return True
-        return any(len(mine & existing) / len(mine) >= 0.5 for existing in declared_files)
+        for existing in declared_files:
+            shared = len(mine & existing)
+            if shared and (shared / len(mine) >= 0.34 or shared >= 2):
+                return True
+        return False
 
     for feat in extra_features or []:
         feat.members = [m for m in feat.members if graph.has_node(m)]
         if feat.members and feat.name not in features and not is_duplicate(feat):
             features[feat.name] = feat
     if discover:
-        for feat in discover_features_llm(graph, provider, known=list(features)):
+        known_files = {name: file_set(f) for name, f in features.items()}
+        for feat in discover_features_llm(graph, provider, known=list(features), known_files=known_files):
             if not is_duplicate(feat):
                 features[feat.name] = feat
 
