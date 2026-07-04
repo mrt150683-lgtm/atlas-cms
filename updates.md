@@ -1,0 +1,78 @@
+# Codebase Memory System - Build Updates & Living Notes
+
+**This file is a living document for the model (and human) to modify and store important data, decisions, progress, architecture refinements, discovered issues, and new feature ideas as the build progresses.**  
+Use it to track state, log major changes, note self-analysis results, embed memory anchors, and maintain context across sessions. Keep it organized with clear sections and dates.
+
+## Recent Features & Enhancements (as of July 2026)
+
+### Embedded Memory Anchors (Custom Auto-Finding Structuring)
+- **Description**: Allows developers to explicitly guide the memory layer with special markers in source code. These are extracted during scanning/summarization and enrich graph nodes with high-level intent, responsibilities, connections, and architecture notes that pure AST analysis cannot infer.
+- **Proposed Syntax**:
+  ```python
+  # @memory:feature:UserAuthentication
+  # @memory:connects:LoginFlow, TokenService, RateLimiter
+  # @memory:summary:Handles JWT issuance, refresh, and blacklisting with device fingerprinting.
+  def login_user(...):
+      ...
+
+  # Or block-level:
+  # === @memory:module:GraphLayer ===
+  # Purpose: Maintains the runtime knowledge graph
+  # Key flows: scan → parse → summarize → persist
+  class MemoryEngine:
+      ...
+  ```
+- **Integration**:
+  - Parser extracts `@memory:` tags and boosts graph nodes.
+  - Enriches lightweight summaries with developer-curated understanding.
+  - Improves AI navigation and self-bootstrapping by combining auto-analysis with human intent.
+- **Status**: ✅ IMPLEMENTED (2026-07-04) in `cms/anchors.py`.
+  - Extraction uses Python's `tokenize` module (real COMMENT tokens only), so anchor-like text inside strings/docstrings is ignored.
+  - Line-form groups attach to the def/class starting within 6 lines below; `module` tags and orphan groups attach to the file node.
+  - `connects` values are comma-split lists; block-form (`===`) plain comment lines become `notes`.
+  - Anchors are stored on graph nodes (`anchors` attr), fed into LLM prompts as authoritative intent, included in mock summaries, shown in `cms query` output, and boosted in ranking (+2.5/token — above generated summaries at +2.0).
+  - CMS's own source is dogfooded with anchors: CleanDirectoryScanner, KnowledgeGraphConstruction, SummaryGenerator, QueryEngine, MemoryAnchors.
+
+### Self-Bootstrapping Core
+- The system will first analyze its own directory (`./` or `./cms/`) to generate `.memory/` layer.
+- Uses its own clean tree, graph, and summaries to inform future improvements.
+- Creates a compounding intelligence flywheel with top-tier models.
+
+### Core Vision Reminders
+- Clean scanner with strong ignore patterns (no node_modules, venv, build artifacts, etc.).
+- Knowledge graph with embedded lightweight summaries (low-res pseudo-code + line numbers + connections).
+- Queryable memory layer for AI agents to understand full codebase context efficiently.
+- Goal: State-of-the-art codebase understanding tool that improves itself over time.
+
+## Build Progress Log
+*(Model: Add entries here as phases complete, issues arise, or decisions are made. Include dates/timestamps.)*
+
+- **2026-07-04**: Initial spec created. Embedded Memory Anchors feature proposed and documented. Self-bootstrapping confirmed as core goal.
+- **2026-07-04**: Phases 1–4 built and self-hosting. Package `cms` (pip install -e .): scanner (`pathspec` gitignore-style filtering + `.cmsignore`), AST knowledge graph (networkx; CONTAINS/IMPORTS/CALLS/INHERITS), pluggable summary providers (anthropic / openai-compatible / mock fallback), query engine + typer CLI (`scan`, `build-graph`, `summarize`, `query`, `run-all`). Self-analysis: 19 files → 134 nodes / 282 edges, 15 files summarized. 12/12 tests pass.
+- **2026-07-04**: Embedded Memory Anchors implemented end-to-end (see feature section above). Discovered + fixed a self-referential bug: the naive line-regex parser picked up example anchors inside `cms/anchors.py`'s own docstring; switched to `tokenize`-based comment extraction.
+- **2026-07-04**: API key entry added: `cms config set anthropic_api_key <key>` stores settings in `~/.cms/config.json` (also `provider`, `anthropic_model`, `openai_api_key`, `openai_base_url`, `openai_model`); values are loaded into the environment at startup, real env vars take precedence. `cms config show` masks secrets; `cms config path` prints the location.
+- **2026-07-04**: Memory Viewer UI shipped (`cms ui`, Phase 6 power-up). Local server (`cms/ui.py`, stdlib http.server, 127.0.0.1 only, HTTP/1.1 keep-alive) + single-file frontend (`cms/ui_assets/index.html`, zero external deps). Three-pane layout: VS Code-style explorer · force-directed knowledge graph on canvas (nodes = files colored by top-level dir + sized by line count, edges = imports; hover tooltip, click-to-inspect with neighborhood highlight + arrowheads, drag/pan/zoom, ext-modules toggle) · inspector (stats, anchor chips, LLM summary, components with expandable source snippets and caller/callee counts, import connections as links). Intent search in the top bar hits `/api/query`. Deep-linking via `?file=path`. Dark theme built on the validated dataviz reference palette. Path traversal guarded on `/api/source` (403). Confirmed first real Anthropic-provider summaries in graph.json — anchors visibly woven into the generated text.
+- **2026-07-04**: Full Feature Tracing shipped (`cms/features.py`). Features become first-class graph nodes (`feature:{Name}`, `PART_OF`/`CONNECTS` edges) from two sources: declared via `@memory:feature:` anchors, and LLM-discovered from file summaries (skipped on mock). For each feature: members expand through CONTAINS, entry points = members not called by other members, flows = branching call-chain walks (one per direct callee, depth 6, file:line at every step), then an LLM narrative with Purpose / Flow / Inputs & Outputs / **Verification Checklist** so users can confirm implementation matches intent. Graceful fallback to structural (mock) narrative if the LLM is unreachable mid-run. CLI: `cms trace` (build), `cms trace <Name>` (show), `cms features` (list); wired into `run-all` as step 4/4. Exports `.memory/features/<Name>.md` + README index. UI: Features section in explorer, amber member-highlighting on the graph, feature inspector with numbered flow rail (clickable file:line), connects chips, trace narrative; features rank in search; deep-link `?feature=Name`. Note: `cms trace` run from the agent sandbox hit APIConnectionError (no outbound net) — narratives here are structural; run `cms trace` in your own terminal for full AI traces.
+- **2026-07-04 (batch: highest-impact power-ups)**:
+  - **Impact analysis** (`cms/impact.py`, `cms impact <target>`): reverse CALLS/IMPORTS traversal → blast radius grouped as functions/files/features/tests, with suggested pytest command. Accepts node id, path::qualname, rel path, or bare name.
+  - **Git history layer** (`cms/githistory.py`): per-file commits/authors/churn/age from `git log --numstat` (capped 1000 commits); co-change coupling — file pairs changing together ≥3× **without** an import edge become CO_CHANGES edges (hidden coupling). Silently no-ops outside a repo. **UI (mandatory ask)**: `heat` toggle — nodes recolored by commit-frequency percentile on a validated sequential blue ramp, dashed amber co-change edges (width=strength), calm→hot gradient legend, git stats in hover tooltip + History section (commits/authors/churn/last change) in inspector, `?heat=1` deep link.
+  - **Incremental updates** (`cms/update.py`, `cms update`, `cms watch`): structural graph always rebuilt (fast); summaries carried over for mtime-unchanged files; feature narratives reused when no member changed; discovered features re-injected; LLM discovery only on full builds/new files; verified_by mapping survives updates. Verified: second update on unchanged repo = 0 LLM calls. `cms watch` polls (default 2s) with debounce.
+  - **Test↔feature verification** (`cms/verify.py`, `cms verify [Feature]`): runs pytest under coverage dynamic contexts (per-test), intersects executed lines with feature member ranges → `verified_by` on feature nodes; `cms verify <Name>` runs exactly those tests → PASS/FAIL. Gotcha fixed: pytest strips package prefixes from module contexts (`test_x` not `tests.test_x`) — resolver matches against scanned file paths. Self-run: CleanDirectoryScanner verified by 25 tests, PASS.
+  - **MCP server** (`cms/mcp.py`, `cms mcp`): stdlib stdio JSON-RPC (protocol 2024-11-05). Tools: query_codebase, get_file_summary, list_features, get_feature_trace, who_calls, who_imports, get_impact, get_source (traversal-guarded). Register: `claude mcp add cms -- cms mcp --root <path>`.
+  - **MCP activity pulses** (`cms/activity.py` + UI): every MCP tool call logs touched node ids to `.memory/activity.jsonl` (size-capped rotation, cosmetic-only failure mode); UI polls `/api/activity` 1/s and renders soft expanding glow rings + radial wash (5s fade) on touched files — feature hits pulse their members — plus a quiet `MCP · tool — label` badge in the top bar (4s fade). Verified live via screenshot with real MCP calls.
+  - Gotcha logged: running `python -c` with cwd inside a repo that contains a `cms/` source copy shadows the installed package (cwd on sys.path) — old code runs silently. Pass explicit roots / run from elsewhere.
+  - Suite: 29 tests passing.
+- **2026-07-04 (memory freshness audit)**: User asked whether summaries/connections kept pace with the build. Audit: graph structure fully current; summaries split 12 anthropic (files unchanged since the user's key run) / 17 mock (everything built after — agent sandbox has no outbound network, all pipeline runs here used `-p mock`). Found + fixed a real healing bug: `cms update` treated any existing summary as done for unchanged files, so mock summaries/narratives would persist forever even with a key present. Now: when the active provider isn't mock, mock-provider summaries are treated as stale and regenerated; feature nodes track `narrative_provider` (preserved through cache reuse) so mock narratives upgrade too. Regression test added (mock→real upgrade, then real→real no-op). **To heal: run `cms update` in a terminal with the API key — only the ~17 mock files + narratives will be regenerated.** 30 tests passing.
+- **2026-07-04 (CMS.exe verified end-to-end)**: Lean rebuild 498 MB → **45.6 MB** (exclude list works). Smoke-tested from the exe: `--help` clean (rich excluded, plain typer help), `query` returns real summaries, wrong-folder guard exits with a helpful message when no source files found (added to `run_app`). Full app-mode loop proven from the frozen exe: served UI (200s on / and /api/graph), created `_watch_probe.py` → watcher detected it, re-summarized exactly 1 file, and the live `/api/query` immediately returned `file:_watch_probe.py`. First-build gotcha: rebuild failed with PermissionError while stray CMS.exe processes were running — kill them before rebuilding. 30 tests passing.
+- **2026-07-04 (exe build gotchas)**: First PyInstaller build was 498 MB — networkx probes optional backends (numpy/scipy/pandas/matplotlib) at import, so PyInstaller bundled the global site-packages heavies including torch (~400 MB). Rebuilt with --exclude-module list (see README Packaging). Also: rich's pretty help crashes under the frozen console — excluded rich, typer falls back to plain help. Verified pre-exclusion exe worked end-to-end (query returned the real anthropic summaries — confirms user's `cms update` heal).
+- **2026-07-04 (app mode + exe)**: User confirmed `cms update` healed all summaries with the real provider. Confirmed skip-unchanged is already in scope: unchanged files (same mtime) carry summaries over with zero LLM calls (regression-tested); only the local AST re-parse runs, deliberately, to keep cross-file edges consistent. New `cms app` command (also the default when `cms` runs with no args / CMS.exe is double-clicked): startup sync → background watcher thread → UI server + browser, one Ctrl+C stops all. Concurrency hardening: graph.json now written atomically (temp + replace) since watcher writes while UI reads. Frozen-exe support: ui_assets resolved via sys._MEIPASS, verify shells out to installed python (sys.executable is the exe when frozen). Packaged with PyInstaller (onefile, console) via cms_exe.py entry — build command in README.
+- **2026-07-04 (feature docs caught up + MCP production pass)**: User flagged that new features weren't documented in the memory — correct: only the original 5 anchors existed; the 9 modules built since (features/impact/githistory/update/verify/mcp/activity/app/ui) were never anchored, and LLM discovery never ran (all sandbox runs were mock, which skips discovery). Anchored all 9 with feature/connects/summary tags → **14 features** now traced, fully cross-linked, exported to `.memory/features/`. `cms verify` remapped: 11/14 features have executable test coverage (AppMode, FeatureVerification, MemoryViewer at 0 — they orchestrate subprocesses/servers; integration-test candidates). **MCP production pass over stdio** (registered tools not yet loaded in this agent session — they load at session start): initialize, list_features (14 + verified counts), get_feature_trace (entries + verified_by correct), query_codebase (nuanced query hit the exact regression test), get_impact (correct upstream chain + owning features), get_source — all correct; activity feed written for every call. CMS.exe rebuilt with anchored code. Note: the 9 re-anchored files carry mock summaries again (sandbox); next `cms update` with the key auto-upgrades them.
+- **2026-07-04 (installer-style first run)**: User diagnosed why double-clicked CMS.exe never opened the UI — exe cwd is its own folder (no source there), the wrong-folder guard printed and the console closed instantly. New flow in `cms/app.py`: root resolution = explicit `--root` → cwd if it has `.memory/` or source files → saved `cms.workspace.json` beside the exe → interactive first-run setup (prompts for the codebase root, validates it has source, saves per-exe-copy). One CMS.exe copy per codebase, each remembering its own root; delete the workspace file to re-link. Console now pauses on messages when frozen (`Press Enter to close`) so errors are readable, and a port-in-use failure gives a helpful hint instead of a traceback. `cms.workspace.json` added to default ignores. 5 new tests (35 total). Exe rebuilt.
+- **Known limitations / next up**: summaries in this environment are mock (no API key present at build time); call resolution is best-effort static (bare names, `self.method`, `module.func`); Phase 5 incremental updates not yet implemented (mtime is already recorded per file); Python-only parsing (tree-sitter later); query ranking is keyword-based (embeddings later).
+
+---
+
+**Instructions for Model**: 
+- Regularly update this file with progress, new ideas, architecture changes, test results from self-analysis, and any discovered limitations.
+- Use this as a persistent knowledge store alongside the `.memory/` layer.
+- Keep entries concise but informative.
