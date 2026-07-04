@@ -352,6 +352,57 @@ def verify(
 
 
 @app.command()
+def review(
+    feature: str = typer.Argument(None, help="Feature to show; omit to (re)build the full review."),
+    root: Path = RootOption,
+    provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai | mock"),
+) -> None:
+    """AI review: does what was built align with what you expect? Per feature + overall."""
+    from .exporter import export_graph
+    from .review import build_review, export_review
+
+    root = root.resolve()
+    memory_dir = _memory_dir(root)
+    graph_path = memory_dir / "graph.json"
+    if not graph_path.is_file():
+        typer.echo("No graph.json — run `cms run-all` first.", err=True)
+        raise typer.Exit(1)
+    mem = CodebaseMemory.load(graph_path)
+
+    if feature:
+        from .features import get_features
+
+        matches = [f for f in get_features(mem.graph) if f["name"].lower() == feature.lower()]
+        if not matches or not matches[0].get("review"):
+            typer.echo(f"No review for {feature!r} — run `cms review` first.", err=True)
+            raise typer.Exit(1)
+        r = matches[0]["review"]
+        typer.echo(f"\n{matches[0]['name']}  [{r['verdict'].upper()}]")
+        typer.echo(f"  {r['headline']}\n")
+        typer.echo(f"Expected: {r['expected']}\n")
+        typer.echo(f"Built:    {r['built']}")
+        if r.get("gaps"):
+            typer.echo("\nGaps:")
+            for g in r["gaps"]:
+                typer.echo(f"  - {g}")
+        typer.echo(f"\nHow it works: {r['education']}")
+        return
+
+    llm = get_provider(provider)
+    typer.echo(f"Reviewing with provider: {llm.name}")
+    result = build_review(
+        mem.graph, root, llm,
+        on_progress=lambda name, d, t: typer.echo(f"  [{d}/{t}] {name}"),
+    )
+    export_graph(mem.graph, memory_dir)
+    out = export_review(mem.graph, memory_dir)
+    app_r = result["app"]
+    typer.echo(f"\nOverall: {app_r['verdict'].upper()} — {app_r['headline']}")
+    typer.echo(f"Verdicts: " + ", ".join(f"{n} {v}" for v, n in app_r["counts"].items() if n))
+    typer.echo(f"Written to {out}")
+
+
+@app.command()
 def mcp(root: Path = RootOption) -> None:
     """Run the MCP server (stdio) so AI agents can query this memory natively."""
     from .mcp import MCPServer

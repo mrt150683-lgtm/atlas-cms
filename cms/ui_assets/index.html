@@ -273,6 +273,68 @@
   #empty {
     inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 10px;
   }
+
+  /* ── AI review overlay ─────────────────────────────────── */
+  #reviewOverlay {
+    position: absolute; inset: 0; z-index: 25; display: none;
+    background: rgba(13,13,13,0.72); backdrop-filter: blur(4px);
+    align-items: flex-start; justify-content: center; overflow-y: auto; padding: 36px 20px;
+  }
+  #reviewOverlay.open { display: flex; }
+  #reviewCard {
+    width: 100%; max-width: 700px;
+    background: var(--surface-2); border: 1px solid var(--border-strong);
+    border-radius: 12px; box-shadow: 0 24px 64px rgba(0,0,0,0.6); overflow: hidden;
+  }
+  #reviewHead { padding: 20px 22px 16px; border-bottom: 1px solid var(--border); }
+  #reviewHead .rh-top { display: flex; align-items: center; gap: 10px; }
+  #reviewHead h2 { color: var(--ink); font-size: 15px; font-weight: 650; }
+  #reviewHead .rh-close {
+    margin-left: auto; cursor: pointer; color: var(--ink-3); font-size: 18px; line-height: 1;
+    padding: 2px 8px; border-radius: 6px;
+  }
+  #reviewHead .rh-close:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
+  #reviewHead .rh-line { color: var(--ink-2); font-size: 13px; margin-top: 8px; }
+  #reviewHead .rh-sum { color: var(--ink-3); font-size: 12px; margin-top: 6px; }
+  #reviewHead .rh-counts { display: flex; gap: 12px; margin-top: 12px; }
+  .verdict {
+    font: 10px var(--mono); text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid; flex: none;
+  }
+  .verdict.aligned { color: #0ca30c; border-color: rgba(12,163,12,0.5); }
+  .verdict.partial { color: #fab219; border-color: rgba(250,178,25,0.5); }
+  .verdict.drift { color: #d03b3b; border-color: rgba(208,59,59,0.55); }
+  .verdict.unverified { color: var(--ink-3); border-color: var(--border-strong); }
+  .vdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .vdot.aligned { background: #0ca30c; } .vdot.partial { background: #fab219; }
+  .vdot.drift { background: #d03b3b; } .vdot.unverified { background: #898781; }
+
+  .rv-row { border-bottom: 1px solid var(--border); }
+  .rv-row:last-child { border-bottom: none; }
+  .rv-line { display: flex; align-items: center; gap: 10px; padding: 13px 22px; cursor: pointer; }
+  .rv-line:hover { background: rgba(255,255,255,0.03); }
+  .rv-line .rv-name { color: var(--ink); font-weight: 550; font-size: 13px; flex: none; }
+  .rv-line .rv-head { color: var(--ink-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-line .rv-chev {
+    margin-left: auto; flex: none; width: 0; height: 0;
+    border-left: 4px solid var(--ink-3); border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent;
+    transition: transform 120ms ease;
+  }
+  .rv-row.open .rv-chev { transform: rotate(90deg); }
+  .rv-detail { display: none; padding: 2px 22px 16px 40px; }
+  .rv-row.open .rv-detail { display: block; }
+  .rv-detail h4 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--ink-3); margin: 12px 0 4px;
+  }
+  .rv-detail p { color: var(--ink-2); font-size: 12.5px; }
+  .rv-detail .rv-gap { color: #fab219; font-size: 12px; padding: 2px 0; }
+  .rv-detail .rv-gap::before { content: "▲ "; font-size: 9px; }
+  .rv-detail .rv-zoom {
+    display: inline-block; margin-top: 12px; color: var(--accent);
+    font-size: 12px; text-decoration: none; cursor: pointer;
+  }
+  .rv-detail .rv-zoom:hover { text-decoration: underline; }
   #empty .big { color: var(--ink-2); font-size: 15px; }
   #empty code {
     font: 12.5px var(--mono); color: var(--accent);
@@ -372,6 +434,7 @@
     <div class="overlay" id="legend"></div>
     <div class="overlay" id="trail" style="display:none"></div>
     <div class="overlay" id="controls">
+      <button id="btnReview" title="AI review: built vs expected, per feature" style="display:none">review</button>
       <button id="btnFeat" title="Feature map: features as nodes, connections between them" style="display:none">feat</button>
       <button id="btnHeat" title="Git heat: color by change frequency, show co-change coupling" style="display:none">heat</button>
       <button id="btnExt" title="Toggle external modules">ext</button>
@@ -380,6 +443,12 @@
       <button id="btnZoomIn">+</button>
     </div>
     <div id="tooltip"></div>
+    <div id="reviewOverlay">
+      <div id="reviewCard">
+        <div id="reviewHead"></div>
+        <div id="reviewBody"></div>
+      </div>
+    </div>
     <div class="overlay" id="empty">
       <div class="big">No memory layer found</div>
       <code>cms run-all</code>
@@ -458,6 +527,7 @@ async function boot() {
   if (params.get("file")) selectFile("file:" + params.get("file"), true);
   else if (params.get("feature")) selectFeature("feature:" + params.get("feature"));
   if (params.get("heat") && S.hasGit && !S.featMode) { S.heat = true; $("btnHeat").classList.add("on"); renderLegend(); }
+  if (params.get("review")) openReview();
 }
 
 function index(graph) {
@@ -537,6 +607,7 @@ function buildGraphView() {
   S.hasGit = withGit.length > 0;
   $("btnHeat").style.display = (S.hasGit && !S.featMode) ? "" : "none";
   $("btnFeat").style.display = S.features.length ? "" : "none";
+  $("btnReview").style.display = S.features.some(f => f.review) ? "" : "none";
   if (S.hasGit) {
     const sorted = withGit.map(n => n.attrs.git.commits).sort((a, b) => a - b);
     for (const n of S.nodes) {
@@ -1509,7 +1580,77 @@ function drawPulses(now) {
   }
 }
 
+/* ── AI review overlay ────────────────────────────────────── */
+function reviewData() {
+  const app = S.byId.get("review:app") || null;
+  const feats = S.features.filter(f => f.review);
+  return { app, feats };
+}
+
+function openReview() {
+  const { app, feats } = reviewData();
+  const order = { drift: 0, partial: 1, unverified: 2, aligned: 3 };
+  feats.sort((a, b) => (order[a.review.verdict] - order[b.review.verdict]) || a.name.localeCompare(b.name));
+
+  let head = `<div class="rh-top"><h2>AI Review — built vs expected</h2><span class="rh-close" title="Close">×</span></div>`;
+  if (app) {
+    const counts = app.counts || {};
+    head = `<div class="rh-top">
+        <span class="verdict ${esc(app.verdict)}">${esc(app.verdict)}</span>
+        <h2>AI Review — built vs expected</h2>
+        <span class="rh-close" title="Close">×</span></div>
+      <div class="rh-line">${esc(app.headline || "")}</div>
+      <div class="rh-sum">${esc(app.summary || "")}</div>
+      <div class="rh-counts">` +
+      ["aligned", "partial", "drift", "unverified"]
+        .filter(v => counts[v])
+        .map(v => `<span style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-2)"><span class="vdot ${v}"></span>${counts[v]} ${v}</span>`)
+        .join("") + `</div>`;
+  }
+  $("reviewHead").innerHTML = head;
+
+  $("reviewBody").innerHTML = feats.length ? feats.map(f => {
+    const r = f.review;
+    return `<div class="rv-row" data-rv="${esc(f.name)}">
+      <div class="rv-line">
+        <span class="vdot ${esc(r.verdict)}"></span>
+        <span class="rv-name">${esc(f.name)}</span>
+        <span class="rv-head">${esc(r.headline)}</span>
+        <span class="verdict ${esc(r.verdict)}" style="margin-left:auto">${esc(r.verdict)}</span>
+        <span class="rv-chev"></span>
+      </div>
+      <div class="rv-detail">
+        <h4>You expect</h4><p>${esc(r.expected)}</p>
+        <h4>What was built</h4><p>${esc(r.built)}</p>
+        ${(r.gaps || []).length ? `<h4>Gaps</h4>` + r.gaps.map(g => `<div class="rv-gap">${esc(g)}</div>`).join("") : ""}
+        <h4>How it works</h4><p>${esc(r.education)}</p>
+        <a class="rv-zoom" data-zoom="${esc(f.id)}">Zoom into this feature on the map →</a>
+      </div>
+    </div>`;
+  }).join("") : `<div style="padding:20px 22px;color:var(--ink-3)">No review yet — run <code style="color:var(--accent)">cms review</code> first.</div>`;
+
+  $("reviewOverlay").classList.add("open");
+  document.querySelectorAll("#reviewBody .rv-line").forEach(el => {
+    el.onclick = () => el.parentElement.classList.toggle("open");
+  });
+  document.querySelectorAll("#reviewBody .rv-zoom").forEach(el => {
+    el.onclick = () => {
+      $("reviewOverlay").classList.remove("open");
+      if (!S.featMode) setFeatMode(true);
+      setTimeout(() => selectFeature(el.dataset.zoom), 450);
+    };
+  });
+  document.querySelector("#reviewHead .rh-close").onclick = () => $("reviewOverlay").classList.remove("open");
+}
+$("reviewOverlay").addEventListener("click", e => {
+  if (e.target === $("reviewOverlay")) $("reviewOverlay").classList.remove("open");
+});
+window.addEventListener("keydown", e => {
+  if (e.key === "Escape") $("reviewOverlay").classList.remove("open");
+});
+
 /* ── controls ─────────────────────────────────────────────── */
+$("btnReview").onclick = openReview;
 $("btnFeat").onclick = () => setFeatMode(!S.featMode);
 $("btnHeat").onclick = () => {
   S.heat = !S.heat;

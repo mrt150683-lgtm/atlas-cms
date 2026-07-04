@@ -316,13 +316,32 @@ def build_features(
     re-injects previously discovered features (whose source is not anchors);
     `discover=False` skips the LLM discovery pass (incremental updates)."""
     features = collect_declared_features(graph)
+
+    def file_set(feat: Feature) -> set[str]:
+        return {
+            graph.nodes[m]["path"]
+            for m in _expand_members(graph, feat.members)
+            if graph.nodes[m].get("path")
+        }
+
+    declared_files = [file_set(f) for f in features.values()]
+
+    def is_duplicate(feat: Feature) -> bool:
+        """Discovered features are noise when they mostly re-cover files that
+        already belong to a declared feature (LLM synonym of an existing one)."""
+        mine = file_set(feat)
+        if not mine:
+            return True
+        return any(len(mine & existing) / len(mine) >= 0.5 for existing in declared_files)
+
     for feat in extra_features or []:
         feat.members = [m for m in feat.members if graph.has_node(m)]
-        if feat.members and feat.name not in features:
+        if feat.members and feat.name not in features and not is_duplicate(feat):
             features[feat.name] = feat
     if discover:
         for feat in discover_features_llm(graph, provider, known=list(features)):
-            features[feat.name] = feat
+            if not is_duplicate(feat):
+                features[feat.name] = feat
 
     result = []
     for i, feat in enumerate(sorted(features.values(), key=lambda f: f.name), 1):

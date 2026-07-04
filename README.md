@@ -128,6 +128,25 @@ join the web. Hit the `feat` button in the UI (or open `?view=features`) for the
 feature-level architecture map: amber nodes are declared features, green are
 discovered, solid edges declared, dashed inferred. Click any node for its trace.
 
+## AI review (`cms review`)
+
+The alignment audit: for every feature the AI compares what you *expect* (the
+declared intent) against what was actually *built* (traced flows, member
+summaries, verifying tests) and hands down a verdict — **aligned / partial /
+drift / unverified** — with a one-line plain-English headline, an
+expected-vs-built explanation, concrete gaps, and an education note teaching
+you how it really works under the hood. Plus an app-level rollup.
+
+```bash
+cms review                    # build/refresh the full review
+cms review CleanDirectoryScanner   # print one feature's review
+```
+
+Results live in `.memory/review.md`, on the graph (agents get them via the
+`get_review` MCP tool), and in the UI: hit the `review` button (or `?review=1`)
+for the overlay — one line per feature, expand for detail, "zoom into this
+feature on the map" for the full evidence.
+
 ## Memory viewer (`cms ui`)
 
 A local, zero-dependency web UI over the memory layer at `http://127.0.0.1:7717`:

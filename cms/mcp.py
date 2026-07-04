@@ -88,6 +88,14 @@ TOOLS = [
         },
     },
     {
+        "name": "get_review",
+        "description": "The AI alignment review: per-feature verdicts (aligned/partial/drift/unverified) on whether the built code matches declared intent, with expected-vs-built explanations and gaps, plus the app-level rollup.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"feature": {"type": "string", "description": "Optional: one feature's review; omit for all + overall."}},
+        },
+    },
+    {
         "name": "get_source",
         "description": "Read an exact source snippet by path and line range (surgical read — prefer this over whole files).",
         "inputSchema": {
@@ -194,6 +202,22 @@ class MCPServer:
             return {"error": f"could not resolve {target!r}"}
         return asdict(impact)
 
+    def get_review(self, feature: str | None = None) -> dict:
+        from .features import get_features
+
+        graph = self.memory().graph
+        feats = get_features(graph)
+        if feature:
+            for f in feats:
+                if f["name"].lower() == feature.lower():
+                    return f.get("review") or {"error": "no review yet — run `cms review`"}
+            return {"error": f"unknown feature {feature!r}"}
+        app = dict(graph.nodes["review:app"]) if graph.has_node("review:app") else None
+        return {
+            "app": app,
+            "features": {f["name"]: f["review"] for f in feats if f.get("review")},
+        }
+
     def get_source(self, path: str, start_line: int = 1, end_line: int | None = None) -> dict:
         target = (self.root / path).resolve()
         if self.root not in target.parents and target != self.root:
@@ -266,6 +290,9 @@ class MCPServer:
                 nodes = [f"feature:{payload.get('name', '')}", *payload.get("members", [])]
             elif tool == "list_features" and isinstance(payload, list):
                 nodes = [f"feature:{f['name']}" for f in payload]
+            elif tool == "get_review" and isinstance(payload, dict):
+                nodes = [f"feature:{n}" for n in (payload.get("features") or {})] or \
+                        ([f"feature:{args['feature']}"] if "feature" in args else [])
             elif tool == "get_impact" and isinstance(payload, dict):
                 nodes = [payload.get("target", "")]
                 nodes += [f"file:{p}" for p in payload.get("files", [])]
