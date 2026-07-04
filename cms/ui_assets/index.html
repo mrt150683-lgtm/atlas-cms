@@ -59,6 +59,10 @@
     opacity: 0; transition: opacity 600ms ease; pointer-events: none;
   }
   #mcpBadge.live { opacity: 1; }
+  #mcpBadge.connected {
+    border-color: rgba(12,163,12,0.45); background: rgba(12,163,12,0.08); color: #4fc26b;
+  }
+  #mcpBadge.connected .pulse-dot { background: #0ca30c; animation-duration: 2.2s; }
   #mcpBadge .pulse-dot {
     width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
     animation: mcpdot 1.4s ease-in-out infinite;
@@ -1688,6 +1692,17 @@ function toCanvasIds(raw) {
 
 function addPulses(event) {
   const now = performance.now();
+  if (event.tool === "connected") {  // a model joined: announce, ripple, done
+    const badge = $("mcpBadge");
+    $("mcpBadgeText").textContent = `${event.label || "AI model"} connected`;
+    badge.classList.add("live", "connected");
+    clearTimeout(badgeTimer);
+    badgeTimer = setTimeout(() => badge.classList.remove("live", "connected"), 6000);
+    S.ripples = S.ripples || [];
+    S.ripples.push({ t0: now });
+    pushTrail({ tool: "connected", label: event.label }, "session", "#0ca30c");
+    return;
+  }
   const touched = [];
   for (const raw of event.nodes || []) {
     for (const cid of toCanvasIds(raw)) {
@@ -1743,6 +1758,19 @@ setInterval(pollActivity, 1000);
 pollActivity().then(pollActivity);
 
 function drawPulses(now) {
+  // connection ripple: one soft ring breathing out from the canvas centre
+  if (S.ripples && S.ripples.length) {
+    S.ripples = S.ripples.filter(rp => now - rp.t0 <= 2600);
+    for (const rp of S.ripples) {
+      const k = (now - rp.t0) / 2600;
+      const fade = Math.pow(1 - k, 1.5);
+      ctx.strokeStyle = `rgba(12,163,12,${(0.35 * fade).toFixed(3)})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, 30 + k * Math.max(W, H) * 0.45, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
   // mild glow tracing: threads between nodes touched by the same MCP read
   if (S.traces && S.traces.length) {
     const byId = new Map(S.nodes.map(n => [n.id, n]));

@@ -266,6 +266,13 @@ class MCPServer:
         method = message.get("method", "")
         msg_id = message.get("id")
         if method == "initialize":
+            client = (message.get("params") or {}).get("clientInfo") or {}
+            label = client.get("name") or "AI model"
+            if client.get("version"):
+                label += f" {client['version']}"
+            log_activity(
+                self.root / config.MEMORY_DIR_NAME, "connected", [], label=label
+            )
             return self._result(msg_id, {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},

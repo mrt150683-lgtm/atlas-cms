@@ -41,8 +41,13 @@ def _tool(server: MCPServer, name: str, args: dict) -> dict:
 
 def test_initialize_and_list_tools(tmp_path: Path) -> None:
     server = _server(tmp_path)
-    init = _call(server, "initialize")
+    init = _call(server, "initialize", {"clientInfo": {"name": "Claude Code", "version": "2.1"}})
     assert init["result"]["serverInfo"]["name"] == "cms"
+    # the handshake announces the model in the activity feed
+    line = (tmp_path / ".memory" / "activity.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    event = json.loads(line)
+    assert event["tool"] == "connected"
+    assert event["label"] == "Claude Code 2.1"
     tools = _call(server, "tools/list")["result"]["tools"]
     names = {t["name"] for t in tools}
     assert {"query_codebase", "get_feature_trace", "get_impact", "get_source"} <= names
