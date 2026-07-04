@@ -482,6 +482,7 @@ const S = {
   heat: false, hasGit: false,               // git heat overlay
   cochanges: [],                            // {s, t, w} co-change edge refs
   featMode: false,                          // feature-level graph view
+  expanded: new Set(),                      // file ids destructured into components
   hoverEdge: null,                          // feature edge under the cursor
   fileNodes: null, fileEdges: null,         // stashed file view for toggling back
   pulses: new Map(),                        // file node id -> {t0} live MCP glow
@@ -523,6 +524,10 @@ async function boot() {
   fit();
   requestAnimationFrame(loop);
   const params = new URLSearchParams(location.search);
+  for (const p of (params.get("expand") || "").split(",").filter(Boolean)) {
+    if (S.byId.has("file:" + p)) S.expanded.add("file:" + p);
+  }
+  if (S.expanded.size) buildGraphView();
   if (params.get("view") === "features" && S.features.length) setFeatMode(true);
   if (params.get("file")) selectFile("file:" + params.get("file"), true);
   else if (params.get("feature")) selectFeature("feature:" + params.get("feature"));
@@ -587,9 +592,30 @@ function buildGraphView() {
       vx: 0, vy: 0,
     };
   };
-  for (const f of files) keep.set(f.id, mk(f, false));
+  for (const f of files) {
+    const node = mk(f, false);
+    node.hull = S.expanded.has(f.id);   // destructured files render as a hull
+    keep.set(f.id, node);
+  }
   if (S.showExt) {
     for (const n of S.graph.nodes) if (n.type === "external") keep.set(n.id, mk(n, true));
+  }
+  // sub-level destructuring: expanded files spill their components onto the canvas
+  for (const fid of S.expanded) {
+    const parent = keep.get(fid);
+    if (!parent) continue;
+    for (const c of S.comps.get(parent.attrs.path) || []) {
+      const span = Math.max(1, (c.end_line || 1) - (c.start_line || 1));
+      keep.set(c.id, {
+        id: c.id, attrs: c, ext: false, comp: true, parentId: fid,
+        label: c.name,
+        color: c.type === "class" ? "#9085e9" : parent.color,
+        r: Math.max(3.5, Math.min(9, 3 + Math.sqrt(span) * 0.8)),
+        x: parent.x + (Math.random() - 0.5) * 40,
+        y: parent.y + (Math.random() - 0.5) * 40,
+        vx: 0, vy: 0,
+      });
+    }
   }
   // preserve positions across rebuilds
   for (const old of S.nodes) { const n = keep.get(old.id); if (n) { n.x = old.x; n.y = old.y; } }
@@ -598,6 +624,24 @@ function buildGraphView() {
   S.edges = links
     .filter(e => e.type === "IMPORTS" && keep.has(e.source) && keep.has(e.target))
     .map(e => ({ s: keep.get(e.source), t: keep.get(e.target) }));
+  // CALLS edges surface wherever at least one endpoint is a visible component
+  const toVisible = id => {
+    if (keep.has(id) && keep.get(id).comp) return keep.get(id);
+    const a = S.byId.get(id);
+    if (a && a.path && keep.has("file:" + a.path)) return keep.get("file:" + a.path);
+    return null;
+  };
+  const seenCalls = new Set();
+  for (const e of links) {
+    if (e.type !== "CALLS") continue;
+    const s = toVisible(e.source), t = toVisible(e.target);
+    if (!s || !t || s === t) continue;
+    if (!s.comp && !t.comp) continue;           // both collapsed: imports already cover it
+    const key = s.id + "→" + t.id;
+    if (seenCalls.has(key)) continue;
+    seenCalls.add(key);
+    S.edges.push({ s, t, call: true });
+  }
   S.cochanges = links
     .filter(e => e.type === "CO_CHANGES" && keep.has(e.source) && keep.has(e.target))
     .map(e => ({ s: keep.get(e.source), t: keep.get(e.target), w: e.weight || 1 }));
@@ -724,7 +768,7 @@ function renderLegend() {
     el.insertAdjacentHTML("beforeend",
       `<div class="li"><span class="sw" style="background:${c}"></span>${esc(dir)}</div>`);
   }
-  el.insertAdjacentHTML("beforeend", `<div class="note">node size = lines · edge = imports</div>`);
+  el.insertAdjacentHTML("beforeend", `<div class="note">node size = lines · edge = imports<br>double-click a file to destructure it —<br>functions spill out, aqua threads = calls</div>`);
 }
 
 /* ── force simulation ─────────────────────────────────────── */
@@ -749,7 +793,16 @@ function physics() {
     e.s.vx += (dx/d) * f; e.s.vy += (dy/d) * f;
     e.t.vx -= (dx/d) * f; e.t.vy -= (dy/d) * f;
   }
+  const byId = new Map(N.map(n => [n.id, n]));
   for (const n of N) {
+    if (n.comp) {  // components cling to their file hull
+      const p = byId.get(n.parentId);
+      if (p) {
+        const d = Math.hypot(p.x - n.x, p.y - n.y);
+        const k = d > 55 ? 0.22 : 0.08;  // hard leash beyond the hull radius
+        n.vx += (p.x - n.x) * k; n.vy += (p.y - n.y) * k;
+      }
+    }
     n.vx -= n.x * 0.004; n.vy -= n.y * 0.004;   // gentle gravity
     if (S.dragging === n) { n.vx = n.vy = 0; continue; }
     n.vx *= 0.82; n.vy *= 0.82;
@@ -789,6 +842,24 @@ function draw() {
   const focus = S.hovered || S.selected;
   const hood = focus ? neighborhood(focus) : null;
 
+  // hulls first: dashed halo around each destructured file's components
+  for (const n of S.nodes) {
+    if (!n.hull) continue;
+    const comps = S.nodes.filter(c => c.comp && c.parentId === n.id);
+    let hr = 34;
+    for (const c of comps) hr = Math.max(hr, Math.hypot(c.x - n.x, c.y - n.y) + c.r + 14);
+    const [hx, hy] = toScreen(n.x, n.y);
+    ctx.setLineDash([6, 5]);
+    ctx.strokeStyle = n.color + "55";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(hx, hy, hr * S.view.k, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font = `10.5px ${getComputedStyle(document.body).getPropertyValue("--font")}`;
+    ctx.fillStyle = "#898781";
+    ctx.textAlign = "center";
+    ctx.fillText(n.label, hx, hy - hr * S.view.k - 6);
+  }
+
   for (const e of S.edges) {
     const [x1, y1] = toScreen(e.s.x, e.s.y), [x2, y2] = toScreen(e.t.x, e.t.y);
     const lit = hood && (e.s.id === focus || e.t.id === focus);
@@ -798,6 +869,9 @@ function draw() {
       ctx.strokeStyle = (lit || hovEdge) ? "rgba(201,133,0,0.9)"
         : e.derived ? "rgba(255,255,255,0.28)" : "rgba(201,133,0,0.55)";
       ctx.lineWidth = (lit || hovEdge) ? 1.8 : (e.derived ? 1 : 1.4);
+    } else if (e.call) {  // sub-level call edges: fine aqua threads
+      ctx.strokeStyle = lit ? "rgba(25,158,112,0.85)" : "rgba(25,158,112,0.30)";
+      ctx.lineWidth = lit ? 1.5 : 0.9;
     } else {
       ctx.strokeStyle = lit ? "rgba(57,135,229,0.65)" : (S.heat ? "rgba(255,255,255,0.05)" : "rgba(255,255,255,0.10)");
       ctx.lineWidth = lit ? 1.6 : 1;
@@ -841,6 +915,7 @@ function draw() {
   }
 
   for (const n of S.nodes) {
+    if (n.hull) continue;  // hulls already drawn
     const [x, y] = toScreen(n.x, n.y);
     const r = Math.max(2.5, n.r * S.view.k);
     const inFeature = S.featureFiles && S.featureFiles.has(n.id);
@@ -850,6 +925,10 @@ function draw() {
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = "rgba(13,13,13,0.9)"; ctx.lineWidth = 2;  // 2px surface ring
     ctx.stroke();
+    if (n.comp && n.attrs.type === "class") {  // classes get a second ring
+      ctx.strokeStyle = n.color + "88"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(x, y, r + 2.5, 0, Math.PI * 2); ctx.stroke();
+    }
     if (n.id === S.selected) {
       ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1.6;
       ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke();
@@ -857,9 +936,9 @@ function draw() {
       ctx.strokeStyle = "#c98500"; ctx.lineWidth = 1.6;  // feature member ring
       ctx.beginPath(); ctx.arc(x, y, r + 3.5, 0, Math.PI * 2); ctx.stroke();
     }
-    const showLabel = !dim && (S.featMode || S.view.k > 0.85 || n.id === S.selected || inFeature || (hood && hood.has(n.id)));
+    const showLabel = !dim && (S.featMode || S.view.k > (n.comp ? 1.15 : 0.85) || n.id === S.selected || inFeature || (hood && hood.has(n.id)));
     if (showLabel) {
-      ctx.font = `11px ${getComputedStyle(document.body).getPropertyValue("--font")}`;
+      ctx.font = `${n.comp ? 9.5 : 11}px ${getComputedStyle(document.body).getPropertyValue("--font")}`;
       ctx.fillStyle = n.id === S.selected ? "#ffffff" : "#c3c2b7";
       ctx.textAlign = "center";
       ctx.fillText(n.label, x, y + r + 13);
@@ -911,11 +990,34 @@ function nodeAt(mx, my) {
   const [wx, wy] = toWorld(mx, my);
   let best = null, bd = 1e9;
   for (const n of S.nodes) {
+    if (n.hull) continue;  // hulls are background; their components are pickable
     const d = Math.hypot(n.x - wx, n.y - wy);
     if (d < n.r + 6 / S.view.k && d < bd) { best = n; bd = d; }
   }
   return best;
 }
+
+canvas.addEventListener("dblclick", e => {
+  if (S.featMode) return;
+  const n = nodeAt(e.offsetX, e.offsetY);
+  if (n && !n.ext && !n.comp && !n.hull) {           // file -> destructure
+    S.expanded.add(n.id);
+    buildGraphView();
+  } else if (n && n.comp) {                          // component -> fold its file
+    S.expanded.delete(n.parentId);
+    buildGraphView();
+  } else if (!n) {
+    // dblclick inside a hull collapses it
+    const [wx, wy] = toWorld(e.offsetX, e.offsetY);
+    for (const h of S.nodes) {
+      if (h.hull && Math.hypot(h.x - wx, h.y - wy) < 60) {
+        S.expanded.delete(h.id);
+        buildGraphView();
+        break;
+      }
+    }
+  }
+});
 
 canvas.addEventListener("mousedown", e => {
   const n = nodeAt(e.offsetX, e.offsetY);
@@ -958,6 +1060,13 @@ window.addEventListener("mouseup", e => {
     S.dragging = null;
     if (!S.dragInfo.moved) {  // a clean click on the node -> open it
       if (n.feature) selectFeature(n.id);
+      else if (n.comp) {      // component -> its file's inspector, scrolled to it
+        selectFile("file:" + n.attrs.path, false);
+        setTimeout(() => {
+          const el = document.querySelector(`#inspector .comp[data-comp="${CSS.escape(n.id)}"]`);
+          if (el) { el.scrollIntoView({ block: "center", behavior: "smooth" }); el.click(); }
+        }, 60);
+      }
       else if (!n.ext) selectFile(n.id, false);
     }
   }
@@ -990,6 +1099,19 @@ canvas.addEventListener("wheel", e => {
 const tip = $("tooltip");
 function showTip(n, mx, my) {
   const a = n.attrs;
+  if (n.comp) {
+    const sig = a.signature || (a.type === "class" ? `class ${a.name}` : a.name);
+    const doc = (a.summary || a.docstring || "").trim().split(/\r?\n/)[0];
+    tip.innerHTML = `<div class="t-name">${esc(sig)}</div>` +
+      `<div class="t-path">${esc(a.path)}:${a.start_line}-${a.end_line}</div>` +
+      (doc ? `<div class="t-sum">${esc(doc.replace(/[*`#]/g, "").slice(0, 180))}</div>` : "") +
+      `<div class="t-path" style="margin-top:4px">double-click to fold the file back</div>`;
+    tip.style.display = "block";
+    const wrap = $("canvasWrap").getBoundingClientRect();
+    tip.style.left = Math.min(mx + 16, wrap.width - 336) + "px";
+    tip.style.top = (my + 14) + "px";
+    return;
+  }
   if (n.feature) {
     const conn = (a.connects || []).length;
     tip.innerHTML = `<div class="t-name">${esc(a.name)}</div>` +
@@ -1488,6 +1610,9 @@ function toCanvasIds(raw) {
     return ((feat && feat.members) || []).map(toFileId).filter(Boolean);
   }
   const fid = toFileId(raw);
+  // sub-level precision: if the touched node's file is destructured, pulse the
+  // exact component instead of the whole file
+  if (fid && raw !== fid && S.expanded.has(fid)) return [raw];
   return fid ? [fid] : [];
 }
 
