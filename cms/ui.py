@@ -47,6 +47,8 @@ class _MemoryCache:
             return self._memory
 
 
+# @memory:feature:MemoryViewer
+# @memory:summary:HTTP request handler for the viewer — serves the single-page UI and the JSON API (graph, tree, query, source with traversal guard, activity feed, prompt export).
 def make_handler(root: Path, cache: _MemoryCache):
     memory_dir = root / config.MEMORY_DIR_NAME
 
