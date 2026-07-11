@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>CMS — Codebase Memory</title>
+<title>Atlas — Codebase Map</title>
 <style>
   :root {
     --bg: #0d0d0d;
@@ -46,10 +46,28 @@
     padding: 0 18px; border-bottom: 1px solid var(--border);
     background: var(--bg); z-index: 30;
   }
-  .brand { display: flex; align-items: baseline; gap: 10px; user-select: none; }
-  .brand .mark { color: var(--ink); font-weight: 650; font-size: 14px; letter-spacing: 0.16em; }
-  .brand .project { color: var(--ink-3); font-size: 12.5px; }
+  .brand { display: flex; align-items: center; gap: 9px; user-select: none; }
+  .brand .logo { width: 22px; height: 22px; flex: none; display: block; }
+  .brand .logo .lg-peak { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; }
+  .brand .logo .lg-inner { fill: rgba(57,135,229,0.16); stroke: rgba(57,135,229,0.55); stroke-width: 1; stroke-linejoin: round; }
+  .brand .logo .lg-star { fill: #eaf3ff; }
+  .brand .mark { color: var(--ink); font-weight: 660; font-size: 14px; letter-spacing: 0.22em; }
+  .brand .project { color: var(--ink-3); font-size: 12.5px; letter-spacing: 0; }
   .brand .project b { color: var(--ink-2); font-weight: 500; }
+  .brand .sep { color: var(--ink-3); opacity: 0.5; }
+
+  #sentinelLink {
+    color: var(--ink-3); font-size: 12px; text-decoration: none;
+    padding: 4px 11px; border: 1px solid var(--border); border-radius: 999px;
+    transition: color 130ms ease, border-color 130ms ease;
+  }
+  #sentinelLink:hover { color: #c98500; border-color: rgba(201,133,0,0.5); }
+  #setupLink {
+    color: var(--ink-3); font-size: 12px; text-decoration: none;
+    padding: 4px 11px; border: 1px solid var(--border); border-radius: 999px;
+    transition: color 130ms ease, border-color 130ms ease;
+  }
+  #setupLink:hover { color: var(--accent); border-color: rgba(57,135,229,0.5); }
 
   #mcpBadge {
     display: flex; align-items: center; gap: 7px;
@@ -286,6 +304,177 @@
     inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; gap: 10px;
   }
 
+  /* ── File viewer (reader + source + annotations) ───────── */
+  .i-view {
+    display: inline-flex; align-items: center; gap: 8px; margin: 12px 0 4px;
+    padding: 8px 14px; border-radius: var(--radius); cursor: pointer;
+    background: linear-gradient(180deg, rgba(57,135,229,0.16), rgba(57,135,229,0.06));
+    border: 1px solid rgba(57,135,229,0.4); color: #bcd8fb;
+    font: 500 12.5px var(--font); transition: all 140ms ease; width: 100%;
+  }
+  .i-view:hover { border-color: var(--accent); color: #eaf3ff; transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(57,135,229,0.16); }
+  .i-view .vi-eye {
+    width: 15px; height: 11px; border: 1.6px solid currentColor; border-radius: 0 100% 0 100%/60%;
+    position: relative; flex: none; transform: rotate(0deg);
+  }
+  .i-view .vi-eye::after { content: ""; position: absolute; inset: 0; margin: auto;
+    width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+  .i-view .vi-notes { margin-left: auto; font: 10px var(--mono);
+    color: #f0c05a; background: rgba(201,133,0,0.16); border: 1px solid rgba(201,133,0,0.4);
+    padding: 1px 7px; border-radius: 999px; }
+
+  #viewer { position: fixed; inset: 0; z-index: 60; display: none;
+    background: rgba(8,8,8,0.78); backdrop-filter: blur(6px);
+    align-items: center; justify-content: center; padding: 26px; }
+  #viewer.open { display: flex; animation: vwIn 180ms ease; }
+  @keyframes vwIn { from { opacity: 0; } to { opacity: 1; } }
+  #viewerCard {
+    width: min(1240px, 100%); height: 100%; display: flex; flex-direction: column;
+    background: var(--bg); border: 1px solid var(--border-strong); border-radius: 14px;
+    overflow: hidden; box-shadow: 0 40px 120px rgba(0,0,0,0.7);
+    animation: vwCard 220ms cubic-bezier(0.2,0.8,0.2,1);
+  }
+  @keyframes vwCard { from { transform: translateY(14px) scale(0.985); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  #vwHead { display: flex; align-items: center; gap: 14px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border); background: var(--surface-2); flex: none; }
+  .vw-title { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .vw-lang { font: 10px var(--mono); text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--accent); border: 1px solid rgba(57,135,229,0.4); border-radius: 5px;
+    padding: 2px 8px; flex: none; }
+  .vw-path { color: var(--ink); font: 13px var(--mono); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; }
+  .vw-modes { margin-left: auto; display: flex; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+  .vw-modes button { background: none; border: none; color: var(--ink-3);
+    font: 11.5px var(--font); padding: 5px 13px; border-radius: 6px; cursor: pointer; transition: all 120ms; }
+  .vw-modes button.active { background: var(--surface); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,0.3); }
+  .vw-modes button:hover:not(.active) { color: var(--ink-2); }
+  .vw-modes.hidden { display: none; }
+  .vw-icon { background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-2);
+    font: 12px var(--font); padding: 6px 12px; border-radius: 7px; cursor: pointer; transition: all 130ms; }
+  .vw-icon:hover { border-color: var(--border-strong); color: var(--ink); }
+  .vw-close { font-size: 18px; line-height: 1; padding: 4px 11px; color: var(--ink-3); }
+
+  #vwMain { flex: 1; display: flex; align-items: stretch; min-height: 0; }
+  #vwContent { flex: 1; min-width: 0; overflow-y: auto; padding: 34px 46px 140px; position: relative; outline: none; }
+  #vwContent::selection, #vwContent *::selection { background: rgba(57,135,229,0.34); }
+
+  /* markdown reader typography */
+  .md { max-width: 820px; margin: 0 auto; color: var(--ink-2); font: 15.5px/1.75 var(--font); }
+  .md h1, .md h2, .md h3, .md h4 { color: var(--ink); font-weight: 620; line-height: 1.3;
+    margin: 1.6em 0 0.6em; letter-spacing: -0.01em; }
+  .md h1 { font-size: 27px; margin-top: 0; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+  .md h2 { font-size: 21px; padding-bottom: 0.25em; border-bottom: 1px solid var(--border); }
+  .md h3 { font-size: 17px; } .md h4 { font-size: 15px; color: var(--ink-2); }
+  .md p { margin: 0.85em 0; } .md a { color: #6fb0f5; text-decoration: none; border-bottom: 1px solid rgba(111,176,245,0.3); }
+  .md a:hover { border-color: #6fb0f5; }
+  .md ul, .md ol { margin: 0.7em 0; padding-left: 1.5em; } .md li { margin: 0.3em 0; }
+  .md code { font: 12.5px var(--mono); background: var(--surface); border: 1px solid var(--border);
+    border-radius: 4px; padding: 1px 5px; color: #e8c07d; }
+  .md pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; margin: 1.1em 0; }
+  .md pre code { background: none; border: none; padding: 0; color: var(--ink-2); font-size: 12.5px; line-height: 1.65; }
+  .md blockquote { border-left: 3px solid rgba(57,135,229,0.5); margin: 1em 0; padding: 0.3em 1.1em;
+    color: var(--ink-3); background: rgba(57,135,229,0.05); border-radius: 0 8px 8px 0; }
+  .md hr { border: none; border-top: 1px solid var(--border); margin: 1.8em 0; }
+  .md table { border-collapse: collapse; margin: 1.1em 0; font-size: 13.5px; width: 100%; }
+  .md th, .md td { border: 1px solid var(--border); padding: 7px 12px; text-align: left; }
+  .md th { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+  .md strong { color: var(--ink); } .md em { color: var(--ink-2); }
+
+  /* source view — line numbers + syntax highlighting */
+  .src { font: 13px/1.66 var(--mono); color: var(--ink-2); counter-reset: ln;
+    max-width: 1080px; margin: 0 auto; }
+  .src .row { display: flex; }
+  .src .row:hover { background: rgba(255,255,255,0.03); }
+  .src .row::before { counter-increment: ln; content: counter(ln); flex: none; width: 44px;
+    margin-right: 20px; text-align: right; color: #4f4e4a; user-select: none; }
+  .src .code { white-space: pre-wrap; word-break: break-word; flex: 1; padding-right: 12px; }
+  .tk-kw { color: #9085e9; } .tk-str { color: #7fbf7f; } .tk-com { color: #6a6a64; font-style: italic; }
+  .tk-num { color: #e0a458; } .tk-fn { color: #4fa3e0; } .tk-dec { color: #c98500; } .tk-cls { color: #56b6c2; }
+  .tk-bi { color: #d18f6a; }
+
+  /* annotation highlights */
+  mark.note-hl { background: var(--nh-bg, rgba(201,133,0,0.24));
+    box-shadow: inset 0 -2px 0 var(--nh-line, #c98500); border-radius: 2px; padding: 1px 0;
+    cursor: pointer; transition: background 130ms; }
+  mark.note-hl:hover, mark.note-hl.active { background: var(--nh-hover, rgba(201,133,0,0.4)); }
+  .nh-amber  { --nh-bg: rgba(201,133,0,0.22);  --nh-hover: rgba(201,133,0,0.4);  --nh-line: #c98500; }
+  .nh-blue   { --nh-bg: rgba(57,135,229,0.22); --nh-hover: rgba(57,135,229,0.4); --nh-line: #3987e5; }
+  .nh-green  { --nh-bg: rgba(25,158,112,0.22); --nh-hover: rgba(25,158,112,0.4); --nh-line: #199e70; }
+  .nh-purple { --nh-bg: rgba(144,133,233,0.24);--nh-hover: rgba(144,133,233,0.42);--nh-line: #9085e9; }
+  .nh-rose   { --nh-bg: rgba(213,81,129,0.24); --nh-hover: rgba(213,81,129,0.42);--nh-line: #d55181; }
+
+  /* notes rail */
+  #vwRail { flex: none; width: 320px; border-left: 1px solid var(--border); background: var(--surface-2);
+    display: flex; flex-direction: column; min-height: 0; }
+  .rail-head { padding: 14px 16px 10px; font: 10.5px var(--font); text-transform: uppercase;
+    letter-spacing: 0.13em; color: var(--ink-3); border-bottom: 1px solid var(--border); flex: none; }
+  .rail-head span { color: var(--ink-2); }
+  #vwNoteList { overflow-y: auto; padding: 10px; flex: 1; }
+  .rail-empty { padding: 20px 16px; color: var(--ink-3); font-size: 12px; line-height: 1.6; }
+  .note-card { border: 1px solid var(--border); border-left: 3px solid var(--nc, #c98500);
+    border-radius: 8px; padding: 9px 11px; margin-bottom: 8px; background: var(--bg); cursor: pointer;
+    transition: border-color 130ms, transform 130ms; }
+  .note-card:hover { border-color: var(--border-strong); transform: translateX(-2px); }
+  .note-card.nc-amber { --nc: #c98500; } .note-card.nc-blue { --nc: #3987e5; }
+  .note-card.nc-green { --nc: #199e70; } .note-card.nc-purple { --nc: #9085e9; } .note-card.nc-rose { --nc: #d55181; }
+  .note-card .nq { font: 11px var(--mono); color: var(--ink-3); border-left: 2px solid var(--border-strong);
+    padding-left: 7px; margin-bottom: 6px; max-height: 44px; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+  .note-card .nt { color: var(--ink); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
+  .note-card .nfoot { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+  .note-card .ndate { color: var(--ink-3); font: 10px var(--mono); }
+  .note-card .ndel { margin-left: auto; color: var(--ink-3); font-size: 14px; cursor: pointer;
+    opacity: 0; transition: opacity 120ms; line-height: 1; }
+  .note-card:hover .ndel { opacity: 1; } .note-card .ndel:hover { color: #e66767; }
+  .note-detached { opacity: 0.6; } .note-detached .nq::after { content: " (not found in current file)"; color: #d55181; }
+
+  /* floating selection toolbar */
+  #vwSelbar { position: fixed; z-index: 62; display: none; gap: 2px; padding: 3px;
+    background: #232320; border: 1px solid var(--border-strong); border-radius: 9px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6); animation: sbIn 120ms ease; }
+  #vwSelbar.show { display: flex; }
+  @keyframes sbIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+  #vwSelbar button { display: flex; align-items: center; gap: 6px; background: none; border: none;
+    color: var(--ink); font: 12px var(--font); padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+  #vwSelbar button:hover { background: rgba(255,255,255,0.08); }
+  .sb-ic { width: 12px; height: 12px; flex: none; }
+  .sb-copy { border: 1.5px solid currentColor; border-radius: 3px; position: relative; }
+  .sb-copy::after { content: ""; position: absolute; width: 8px; height: 8px; border: 1.5px solid currentColor;
+    border-radius: 2px; left: -4px; top: -4px; background: #232320; }
+  .sb-note { border: 1.5px solid currentColor; border-radius: 3px 3px 3px 0; }
+
+  /* note composer popover */
+  #vwComposer { position: fixed; z-index: 63; display: none; width: 320px; padding: 14px;
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.65); animation: sbIn 140ms ease; }
+  #vwComposer.show { display: block; }
+  .cmp-quote { font: 11px var(--mono); color: var(--ink-3); background: var(--bg);
+    border-left: 2px solid var(--accent); border-radius: 0 6px 6px 0; padding: 6px 9px; margin-bottom: 10px;
+    max-height: 60px; overflow: hidden; }
+  .cmp-colors { display: flex; gap: 8px; margin-bottom: 10px; }
+  .cmp-colors .sw { width: 20px; height: 20px; border-radius: 50%; cursor: pointer;
+    border: 2px solid transparent; transition: transform 120ms; }
+  .cmp-colors .sw:hover { transform: scale(1.15); } .cmp-colors .sw.sel { border-color: var(--ink); }
+  #cmpText { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--ink); font: 13px var(--font); padding: 9px 11px; resize: vertical; outline: none; }
+  #cmpText:focus { border-color: var(--border-strong); }
+  .cmp-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+  .cmp-actions button { background: var(--surface-2); border: 1px solid var(--border); color: var(--ink-2);
+    font: 12px var(--font); padding: 7px 15px; border-radius: 7px; cursor: pointer; transition: all 130ms; }
+  .cmp-actions button:hover { border-color: var(--border-strong); color: var(--ink); }
+  .cmp-actions .primary { background: rgba(57,135,229,0.18); border-color: rgba(57,135,229,0.5); color: #bcd8fb; }
+  .cmp-actions .primary:hover { border-color: var(--accent); }
+
+  #vwToast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%) translateY(20px);
+    z-index: 70; background: #232320; border: 1px solid var(--border-strong); color: var(--ink);
+    font: 12.5px var(--font); padding: 9px 18px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity 200ms, transform 200ms; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+  #vwToast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
   /* ── AI review overlay ─────────────────────────────────── */
   #reviewOverlay {
     position: absolute; inset: 0; z-index: 25; display: none;
@@ -420,11 +609,18 @@
 <body>
 <div id="app">
   <header>
-    <div class="brand">
-      <span class="mark">CMS</span>
-      <span class="project">memory of <b id="projectName">…</b></span>
+    <div class="brand" title="Atlas — ground truth for AI agents">
+      <svg class="logo" viewBox="0 0 28 28" aria-hidden="true">
+        <path class="lg-peak" d="M14 4 L25 23 L3 23 Z"/>
+        <path class="lg-inner" d="M14 11.5 L19.5 21 L8.5 21 Z"/>
+        <circle class="lg-star" cx="14" cy="8" r="1.15"/>
+      </svg>
+      <span class="mark">ATLAS</span>
+      <span class="project"><span class="sep">·</span> mapping <b id="projectName">…</b></span>
     </div>
     <div id="mcpBadge"><span class="pulse-dot"></span><span id="mcpBadgeText">MCP</span></div>
+    <a id="setupLink" href="/setup" title="Scope &amp; share — choose what's processed, export a bundle">Setup</a>
+    <a id="sentinelLink" href="/sentinel" title="Hermes Sentinel — bug finding &amp; completion audit">Sentinel</a>
     <div class="search">
       <span class="icon"></span>
       <input id="searchInput" type="text" placeholder="Ask the codebase… e.g. where is the ignore filtering?" autocomplete="off" spellcheck="false">
@@ -465,6 +661,47 @@
       <div class="big">No memory layer found</div>
       <code>cms run-all</code>
     </div>
+
+    <div id="viewer">
+      <div id="viewerCard">
+        <header id="vwHead">
+          <div class="vw-title">
+            <span class="vw-lang" id="vwLang"></span>
+            <span class="vw-path" id="vwPath"></span>
+          </div>
+          <div class="vw-modes" id="vwModes">
+            <button data-mode="reader" id="vwReader">Reader</button>
+            <button data-mode="source" id="vwSource">Source</button>
+          </div>
+          <button class="vw-icon" id="vwCopyAll" title="Copy whole file">Copy all</button>
+          <button class="vw-icon vw-close" id="vwClose" title="Close (Esc)">×</button>
+        </header>
+        <div id="vwMain">
+          <div id="vwContent" tabindex="0"></div>
+          <aside id="vwRail">
+            <div class="rail-head">Notes <span id="vwNoteCount"></span></div>
+            <div id="vwNoteList"></div>
+            <div class="rail-empty" id="vwRailEmpty">
+              Select any text in the file, then choose <b>Note</b> to pin a highlight here.
+            </div>
+          </aside>
+        </div>
+      </div>
+      <div id="vwSelbar">
+        <button id="vwSelCopy"><span class="sb-ic sb-copy"></span>Copy</button>
+        <button id="vwSelNote"><span class="sb-ic sb-note"></span>Note</button>
+      </div>
+      <div id="vwComposer">
+        <div class="cmp-quote" id="cmpQuote"></div>
+        <div class="cmp-colors" id="cmpColors"></div>
+        <textarea id="cmpText" placeholder="Write a note about this highlight…" rows="3"></textarea>
+        <div class="cmp-actions">
+          <button id="cmpCancel">Cancel</button>
+          <button id="cmpSave" class="primary">Save note</button>
+        </div>
+      </div>
+    </div>
+    <div id="vwToast"></div>
   </main>
 
   <aside id="inspector">
@@ -523,7 +760,14 @@ async function boot() {
     fetch("/api/tree").then(r => r.ok ? r.json() : null),
   ]);
   S.meta = meta; $("projectName").textContent = meta.project;
-  document.title = `CMS — ${meta.project}`;
+  document.title = `Atlas · ${meta.project}`;
+  if (meta.stale) {
+    const b = document.createElement("div");
+    b.innerHTML = "⟳ Atlas was updated since this server started — <b>relaunch CMS.bat</b> to apply.";
+    b.style.cssText = "position:fixed;top:0;left:0;right:0;z-index:9999;background:#c98500;color:#161616;" +
+      "font:12.5px var(--font);text-align:center;padding:5px 8px;letter-spacing:.01em;";
+    document.body.appendChild(b);
+  }
   if (!graph) { $("empty").style.display = "flex"; return; }
   S.graph = graph; S.tree = tree;
   index(graph);
@@ -1228,7 +1472,7 @@ function featureDetailHtml(f) {
         `${c.out ? "→" : "←"} ${esc(c.name)}<span class="fd-kind">${c.derived ? "inferred" : "declared"}</span></a>`
       ).join("") : "") +
     `<div class="fd-meta">${(f.flows || []).length} flow(s)` +
-    ((f.verified_by || []).length ? ` · ${f.verified_by.length} test(s)` : "") + `</div>`;
+    (((f.exercised_by || f.verified_by || []).length) ? ` · ${(f.exercised_by || f.verified_by).length} test(s)` : "") + `</div>`;
 }
 
 function renderFeatureList() {
@@ -1483,10 +1727,15 @@ function renderInspector(fileId) {
   const comps = S.comps.get(a.path) || [];
   const kb = (a.size_bytes / 1024).toFixed(1);
 
+  const noteCount = (S.noteCounts && S.noteCounts[a.path]) || 0;
   let html = `
     <div class="i-kind">${esc(a.language || "file")}</div>
     <div class="i-name">${esc(a.name)}</div>
     <div class="i-path">${esc(a.path)}</div>
+    <button class="i-view" data-viewpath="${esc(a.path)}" data-viewlang="${esc(a.language || "")}">
+      <span class="vi-eye"></span> View file
+      ${noteCount ? `<span class="vi-notes">${noteCount} note${noteCount > 1 ? "s" : ""}</span>` : ""}
+    </button>
     <div class="i-stats">
       <div class="stat"><div class="v">${a.line_count ?? "—"}</div><div class="k">lines</div></div>
       <div class="stat"><div class="v">${kb}</div><div class="k">KB</div></div>
@@ -1541,6 +1790,8 @@ function renderInspector(fileId) {
     html += `<div class="i-section"><h3>Connections</h3><div class="conn-list"></div></div>`;
   }
   $("inspector").innerHTML = html;
+  const vb = document.querySelector("#inspector .i-view");
+  if (vb) vb.onclick = () => openViewer(vb.dataset.viewpath, vb.dataset.viewlang);
   wireInspector(fileId, imports, importedBy);
 }
 
@@ -1928,7 +2179,347 @@ function zoomBy(f) {
   S.view.x = cx - wx * k2; S.view.y = cy - wy * k2; S.view.k = k2;
 }
 
-boot();
+/* ══ File viewer: reader + source + annotations ═══════════════ */
+/* float the toolbar/composer/toast at <body> level: inside #viewer their
+   position:fixed is trapped by its backdrop-filter containing block */
+["vwSelbar", "vwComposer", "vwToast"].forEach(id => document.body.appendChild($(id)));
+S.noteCounts = {};
+const VW = { path: null, lang: "", mode: "source", source: "", notes: [], sel: null, color: "amber" };
+const NOTE_COLORS = ["amber", "blue", "green", "purple", "rose"];
+const COLOR_HEX = { amber: "#c98500", blue: "#3987e5", green: "#199e70", purple: "#9085e9", rose: "#d55181" };
+
+async function loadNoteCounts() {
+  try {
+    const r = await fetch("/api/notes");
+    if (r.ok) { S.noteCounts = (await r.json()).counts || {}; }
+  } catch (e) { /* offline */ }
+}
+
+/* ── minimal, safe markdown → HTML ─────────────────────────── */
+function renderMarkdown(src) {
+  const lines = src.replace(/\r\n/g, "\n").split("\n");
+  let html = "", i = 0;
+  const inline = t => esc(t)
+    .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, txt, href) =>
+      `<a href="${esc(href)}" target="_blank" rel="noopener">${txt}</a>`);
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^```/.test(line)) {                                   // fenced code
+      const lang = line.slice(3).trim(); const buf = [];
+      i++;
+      while (i < lines.length && !/^```/.test(lines[i])) buf.push(lines[i++]);
+      i++;
+      html += `<pre><code>${highlightInline(buf.join("\n"), lang)}</code></pre>`;
+      continue;
+    }
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) { html += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; i++; continue; }
+    if (/^\s*([-*_])\1?\1?\s*$/.test(line) && line.trim().length >= 3) { html += "<hr>"; i++; continue; }
+    if (/^>\s?/.test(line)) {
+      const buf = [];
+      while (i < lines.length && /^>\s?/.test(lines[i])) buf.push(lines[i++].replace(/^>\s?/, ""));
+      html += `<blockquote>${buf.map(inline).join("<br>")}</blockquote>`;
+      continue;
+    }
+    if (/^\s*\|.*\|\s*$/.test(line) && /^\s*\|[-:\s|]+\|\s*$/.test(lines[i + 1] || "")) {
+      const rows = [];
+      while (i < lines.length && /^\s*\|.*\|\s*$/.test(lines[i])) rows.push(lines[i++]);
+      const cells = r => r.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(c => c.trim());
+      const head = cells(rows[0]);
+      let t = "<table><thead><tr>" + head.map(c => `<th>${inline(c)}</th>`).join("") + "</tr></thead><tbody>";
+      for (let r = 2; r < rows.length; r++) t += "<tr>" + cells(rows[r]).map(c => `<td>${inline(c)}</td>`).join("") + "</tr>";
+      html += t + "</tbody></table>";
+      continue;
+    }
+    if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
+      const ordered = /^\s*\d+\./.test(line); const buf = [];
+      while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i]))
+        buf.push(lines[i++].replace(/^\s*([-*+]|\d+\.)\s+/, ""));
+      html += `<${ordered ? "ol" : "ul"}>` + buf.map(b => `<li>${inline(b)}</li>`).join("") + `</${ordered ? "ol" : "ul"}>`;
+      continue;
+    }
+    if (line.trim() === "") { i++; continue; }
+    const buf = [];
+    while (i < lines.length && lines[i].trim() !== "" && !/^(#{1,6}\s|```|>\s?|\s*([-*+]|\d+\.)\s)/.test(lines[i]))
+      buf.push(lines[i++]);
+    html += `<p>${buf.map(inline).join(" ")}</p>`;
+  }
+  return `<div class="md">${html}</div>`;
+}
+
+/* ── lightweight syntax highlighter (python-first, generic) ── */
+const KW = new Set(("def class return if elif else for while in and or not is None True False import from as with " +
+  "try except finally raise lambda yield global nonlocal pass break continue assert del async await " +
+  "const let var function of new typeof instanceof this null undefined export default extends").split(" "));
+const BUILTIN = new Set("print len range dict list set tuple str int float bool open super self type isinstance getattr setattr enumerate zip map filter sorted any all min max sum abs".split(" "));
+
+function highlightInline(code, lang) {
+  // token-level highlight producing safe HTML for one blob (no line splitting)
+  const py = !/^(js|javascript|ts|typescript|json|html|css|bash|sh)$/i.test(lang || "");
+  let out = "", n = code.length, i = 0;
+  const push = (cls, s) => out += cls ? `<span class="${cls}">${esc(s)}</span>` : esc(s);
+  while (i < n) {
+    const c = code[i];
+    if (c === "#" && py || (c === "/" && code[i + 1] === "/")) {
+      let j = i; while (j < n && code[j] !== "\n") j++; push("tk-com", code.slice(i, j)); i = j; continue;
+    }
+    if (c === '"' || c === "'" || c === "`") {
+      const q = c; let j = i + 1;
+      while (j < n && code[j] !== q) { if (code[j] === "\\") j++; j++; }
+      push("tk-str", code.slice(i, Math.min(j + 1, n))); i = j + 1; continue;
+    }
+    if (c === "@" && py) { let j = i + 1; while (j < n && /[\w.]/.test(code[j])) j++; push("tk-dec", code.slice(i, j)); i = j; continue; }
+    if (/[0-9]/.test(c) && !/[\w]/.test(code[i - 1] || "")) {
+      let j = i; while (j < n && /[0-9.xXa-fA-F_]/.test(code[j])) j++; push("tk-num", code.slice(i, j)); i = j; continue;
+    }
+    if (/[A-Za-z_]/.test(c)) {
+      let j = i; while (j < n && /[\w]/.test(code[j])) j++; const w = code.slice(i, j);
+      const prev = code.slice(0, i).trimEnd();
+      if (KW.has(w)) push("tk-kw", w);
+      else if (BUILTIN.has(w)) push("tk-bi", w);
+      else if (/\bdef$|\bclass$/.test(prev)) push(prev.endsWith("class") ? "tk-cls" : "tk-fn", w);
+      else if (code[j] === "(") push("tk-fn", w);
+      else if (/^[A-Z]/.test(w)) push("tk-cls", w);
+      else push("", w);
+      i = j; continue;
+    }
+    push("", c); i++;
+  }
+  return out;
+}
+
+function renderSource(src, lang) {
+  const lines = src.replace(/\r\n/g, "\n").split("\n");
+  let html = `<div class="src">`;
+  for (const ln of lines) {
+    // trailing "\n" kept inside .code so textContent matches raw source (offset-accurate)
+    html += `<div class="row"><span class="code">${highlightInline(ln, lang)}\n</span></div>`;
+  }
+  return html + `</div>`;
+}
+
+/* ── open / render ─────────────────────────────────────────── */
+async function openViewer(path, lang) {
+  VW.path = path; VW.lang = lang || "";
+  $("vwPath").textContent = path;
+  $("vwLang").textContent = (lang || "file").replace(/-.*/, "");
+  const isMd = /markdown/.test(lang) || /\.md$/i.test(path);
+  $("vwModes").classList.toggle("hidden", !isMd);
+  VW.mode = isMd ? "reader" : "source";
+  $("vwContent").innerHTML = `<div style="color:var(--ink-3);padding:40px;text-align:center">loading…</div>`;
+  $("viewer").classList.add("open");
+  try {
+    const [srcR, notesR] = await Promise.all([
+      fetch(`/api/source?path=${encodeURIComponent(path)}`),
+      fetch(`/api/notes?path=${encodeURIComponent(path)}`),
+    ]);
+    VW.source = srcR.ok ? (await srcR.json()).text : "";
+    VW.notes = notesR.ok ? (await notesR.json()).notes || [] : [];
+  } catch (e) { VW.source = ""; VW.notes = []; }
+  renderViewer();
+}
+
+function renderViewer() {
+  const c = $("vwContent");
+  c.innerHTML = VW.mode === "reader" ? renderMarkdown(VW.source) : renderSource(VW.source, VW.lang);
+  $("vwReader").classList.toggle("active", VW.mode === "reader");
+  $("vwSource").classList.toggle("active", VW.mode === "source");
+  applyHighlights();
+  renderNoteRail();
+}
+
+/* wrap a [start,end) char range of container.textContent in a <mark>, across spans */
+function wrapRange(container, start, end, cls, id) {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let pos = 0, node, sN, sO, eN, eO;
+  while ((node = walker.nextNode())) {
+    const len = node.nodeValue.length;
+    if (sN == null && pos + len > start) { sN = node; sO = start - pos; }
+    if (pos + len >= end) { eN = node; eO = end - pos; break; }
+    pos += len;
+  }
+  if (sN == null || eN == null) return false;
+  const range = document.createRange();
+  range.setStart(sN, sO); range.setEnd(eN, eO);
+  const mark = document.createElement("mark");
+  mark.className = cls; mark.dataset.noteId = id;
+  try { range.surroundContents(mark); }
+  catch (e) { mark.appendChild(range.extractContents()); range.insertNode(mark); }
+  return true;
+}
+
+function applyHighlights() {
+  const c = $("vwContent");
+  const full = c.textContent;
+  const located = [];
+  for (const nt of VW.notes) {
+    let idx = -1;
+    if (nt.before) { const b = full.indexOf(nt.before + nt.quote); if (b >= 0) idx = b + nt.before.length; }
+    if (idx < 0) idx = full.indexOf(nt.quote);
+    nt._found = idx >= 0;
+    if (idx >= 0) located.push({ nt, start: idx, end: idx + nt.quote.length });
+  }
+  // apply from last to first so earlier offsets stay valid after DOM surgery
+  located.sort((a, b) => b.start - a.start);
+  for (const L of located)
+    wrapRange(c, L.start, L.end, `note-hl nh-${L.nt.color}`, L.nt.id);
+  c.querySelectorAll("mark.note-hl").forEach(m => {
+    m.onclick = () => flashNote(m.dataset.noteId);
+  });
+}
+
+function renderNoteRail() {
+  const list = $("vwNoteList");
+  $("vwNoteCount").textContent = VW.notes.length ? `· ${VW.notes.length}` : "";
+  $("vwRailEmpty").style.display = VW.notes.length ? "none" : "block";
+  list.innerHTML = VW.notes.map(nt => `
+    <div class="note-card nc-${esc(nt.color)} ${nt._found ? "" : "note-detached"}" data-note="${esc(nt.id)}">
+      <div class="nq">${esc(nt.quote.slice(0, 160))}</div>
+      ${nt.note ? `<div class="nt">${esc(nt.note)}</div>` : ""}
+      <div class="nfoot"><span class="ndate">${esc((nt.created_at || "").slice(0, 10))}</span>
+        <span class="ndel" title="Delete note">×</span></div>
+    </div>`).join("");
+  list.querySelectorAll(".note-card").forEach(card => {
+    card.onclick = e => { if (!e.target.classList.contains("ndel")) flashNote(card.dataset.note); };
+    card.querySelector(".ndel").onclick = e => { e.stopPropagation(); deleteNote(card.dataset.note); };
+  });
+}
+
+function flashNote(id) {
+  const mark = $("vwContent").querySelector(`mark[data-note-id="${CSS.escape(id)}"]`);
+  if (mark) {
+    mark.scrollIntoView({ block: "center", behavior: "smooth" });
+    mark.classList.add("active"); setTimeout(() => mark.classList.remove("active"), 1200);
+  }
+  const card = $("vwNoteList").querySelector(`.note-card[data-note="${CSS.escape(id)}"]`);
+  if (card) { card.style.borderColor = "var(--border-strong)"; setTimeout(() => card.style.borderColor = "", 1000); }
+}
+
+/* ── selection toolbar ─────────────────────────────────────── */
+function charOffset(container, node, off) {
+  const r = document.createRange();
+  r.setStart(container, 0); r.setEnd(node, off);
+  return r.toString().length;
+}
+
+// window-level so a drag that RELEASES outside #vwContent (past the last line,
+// into the rail/padding — a common way to select whole lines) still registers.
+window.addEventListener("mouseup", () => {
+  if (!$("viewer").classList.contains("open")) return;
+  setTimeout(() => {
+    const sel = window.getSelection();
+    const bar = $("vwSelbar");
+    if (!sel || sel.isCollapsed || !sel.rangeCount) { bar.classList.remove("show"); return; }
+    const range = sel.getRangeAt(0);
+    if (!$("vwContent").contains(range.commonAncestorContainer)) { bar.classList.remove("show"); return; }
+    const text = sel.toString();
+    if (!text.trim()) { bar.classList.remove("show"); return; }
+    const c = $("vwContent");
+    const start = charOffset(c, range.startContainer, range.startOffset);
+    VW.sel = { text, before: c.textContent.slice(Math.max(0, start - 48), start) };
+    const rect = range.getBoundingClientRect();
+    bar.classList.add("show");                 // show first so offsetWidth is real
+    bar.style.left = Math.max(10, Math.min(window.innerWidth - bar.offsetWidth - 10,
+      rect.left + rect.width / 2 - bar.offsetWidth / 2)) + "px";
+    bar.style.top = Math.max(8, rect.top - 46) + "px";
+  }, 10);
+});
+
+$("vwSelCopy").onclick = async () => {
+  if (VW.sel) { await copyText(VW.sel.text); toast("Copied"); }
+  $("vwSelbar").classList.remove("show"); window.getSelection().removeAllRanges();
+};
+$("vwSelNote").onclick = () => { $("vwSelbar").classList.remove("show"); openComposer(); };
+
+async function copyText(t) {
+  try { await navigator.clipboard.writeText(t); }
+  catch (e) {
+    const ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta);
+    ta.select(); try { document.execCommand("copy"); } catch (_) {} ta.remove();
+  }
+}
+
+/* ── composer ──────────────────────────────────────────────── */
+function openComposer() {
+  if (!VW.sel) return;
+  const cmp = $("vwComposer");
+  $("cmpQuote").textContent = VW.sel.text.slice(0, 260);
+  $("cmpText").value = ""; VW.color = "amber";
+  $("cmpColors").innerHTML = NOTE_COLORS.map(col =>
+    `<span class="sw ${col === "amber" ? "sel" : ""}" data-col="${col}" style="background:${COLOR_HEX[col]}"></span>`).join("");
+  $("cmpColors").querySelectorAll(".sw").forEach(sw => sw.onclick = () => {
+    VW.color = sw.dataset.col;
+    $("cmpColors").querySelectorAll(".sw").forEach(s => s.classList.remove("sel"));
+    sw.classList.add("sel");
+  });
+  const r = $("vwContent").getBoundingClientRect();
+  cmp.style.left = Math.min(window.innerWidth - 340, r.left + r.width / 2 - 160) + "px";
+  cmp.style.top = Math.max(70, window.innerHeight / 2 - 130) + "px";
+  cmp.classList.add("show"); $("cmpText").focus();
+}
+$("cmpCancel").onclick = () => { $("vwComposer").classList.remove("show"); window.getSelection().removeAllRanges(); };
+$("cmpSave").onclick = async () => {
+  if (!VW.sel) return;
+  const body = { path: VW.path, quote: VW.sel.text, before: VW.sel.before,
+    note: $("cmpText").value, color: VW.color, mode: VW.mode };
+  const r = await fetch("/api/notes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.ok) {
+    VW.notes.push((await r.json()).note);
+    $("vwComposer").classList.remove("show"); window.getSelection().removeAllRanges();
+    renderViewer(); toast("Note saved"); loadNoteCounts();
+  } else { toast("Could not save note"); }
+};
+
+async function deleteNote(id) {
+  const r = await fetch("/api/notes/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+  if (r.ok || r.status === 404) {
+    VW.notes = VW.notes.filter(n => n.id !== id);
+    renderViewer(); toast("Note deleted"); loadNoteCounts();
+  }
+}
+
+/* ── chrome: modes, copy-all, close, toast ─────────────────── */
+$("vwModes").querySelectorAll("button").forEach(b => b.onclick = () => { VW.mode = b.dataset.mode; renderViewer(); });
+$("vwCopyAll").onclick = async () => { await copyText(VW.source); toast("Whole file copied"); };
+function closeViewer() {
+  $("viewer").classList.remove("open");
+  $("vwSelbar").classList.remove("show"); $("vwComposer").classList.remove("show");
+  if (VW.path && S.byId.get("file:" + VW.path)) renderInspector("file:" + VW.path);
+}
+$("vwClose").onclick = closeViewer;
+$("viewer").addEventListener("click", e => { if (e.target === $("viewer")) closeViewer(); });
+window.addEventListener("keydown", e => {
+  if (e.key === "Escape" && $("viewer").classList.contains("open")) {
+    if ($("vwComposer").classList.contains("show")) { $("vwComposer").classList.remove("show"); return; }
+    closeViewer();
+  }
+});
+document.addEventListener("scroll", () => $("vwSelbar").classList.remove("show"), true);
+
+let toastTimer = null;
+function toast(msg) {
+  const t = $("vwToast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 1600);
+}
+
+/* deep-link: /?view=<path>&viewmode=reader|source opens the viewer directly */
+function viewerDeepLink() {
+  const p = new URLSearchParams(location.search);
+  const path = p.get("view");
+  if (!path) return;
+  const node = S.byId.get("file:" + path);
+  const lang = node ? node.language : (/\.md$/i.test(path) ? "markdown" : "");
+  openViewer(path, lang).then(() => {
+    const m = p.get("viewmode");
+    if (m && !$("vwModes").classList.contains("hidden")) { VW.mode = m; renderViewer(); }
+  });
+}
+
+loadNoteCounts();
+boot().then(viewerDeepLink);
 </script>
 </body>
 </html>

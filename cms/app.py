@@ -49,12 +49,27 @@ def _save_workspace_root(root: Path) -> None:
 
 
 def _first_run_setup(echo) -> Path | None:
-    """Installer-style first run: ask which codebase this copy works on."""
+    """Installer-style first run: ask which codebase this copy works on.
+
+    Tries a native folder-picker first (works from a double-click even with no
+    console), then falls back to a console prompt.
+    """
+    from .picker import pick_folder
     from .scanner import scan
+
+    echo("Opening a folder picker — choose your codebase…")
+    chosen = pick_folder("Choose the codebase folder for Atlas")
+    if chosen:
+        root = Path(chosen).expanduser().resolve()
+        if root.is_dir() and scan(root):
+            echo(f"  Linking Atlas to: {root}")
+            _save_workspace_root(root)
+            return root
+        echo(f"  No recognisable source under {root} — try manual entry.")
 
     if not sys.stdin or not sys.stdin.isatty():
         echo("No project root configured and no interactive console to ask.")
-        echo("Run:  CMS.exe app --root <path-to-your-codebase>")
+        echo("Run:  CMS.bat app --root <path-to-your-codebase>")
         return None
     echo("")
     echo("=" * 62)
@@ -86,18 +101,19 @@ def _first_run_setup(echo) -> Path | None:
 
 
 def resolve_root(explicit: Path | None, echo=print) -> Path | None:
-    """Explicit --root wins; else cwd if it looks like a project; else the
-    saved workspace; else interactive first-run setup."""
+    """Explicit --root wins; else the saved workspace (the last codebase you
+    chose / switched to — this must beat cwd, since CMS.bat runs from the repo
+    dir); else cwd if it looks like a project; else interactive first-run setup."""
     from .scanner import scan
 
     if explicit is not None:
         return explicit.resolve()
-    cwd = Path.cwd().resolve()
-    if (cwd / config.MEMORY_DIR_NAME / "graph.json").is_file() or scan(cwd):
-        return cwd
     saved = _load_workspace_root()
     if saved is not None:
         return saved
+    cwd = Path.cwd().resolve()
+    if (cwd / config.MEMORY_DIR_NAME / "graph.json").is_file() or scan(cwd):
+        return cwd
     return _first_run_setup(echo)
 
 
@@ -128,8 +144,14 @@ def run_app(
             return
 
     provider = get_provider(provider_name)
-    echo(f"CMS app — {root.name}  (provider: {provider.name})")
-    if not (memory_dir / "graph.json").is_file():
+    echo(f"Atlas — {root.name}  (provider: {provider.name})")
+    first_run = not (memory_dir / "graph.json").is_file()
+    landing = "/"
+    if first_run and open_browser:
+        # Let the user choose scope in the browser BEFORE paying to process.
+        echo("first run: opening setup — choose which folders/files to process…")
+        landing = "/setup"
+    elif first_run:
         echo("first run: building the memory layer…")
         incremental_update(root, provider, echo=echo)
     else:
@@ -146,7 +168,7 @@ def run_app(
     )
     watcher.start()
     try:
-        serve(root, port=port, open_browser=open_browser)  # blocks until Ctrl+C
+        serve(root, port=port, open_browser=open_browser, open_path=landing)  # blocks until Ctrl+C
     except OSError as exc:
         echo(f"Could not start the UI server on port {port}: {exc}")
         echo("Is another CMS already running? Try:  CMS.exe app --port 7718")

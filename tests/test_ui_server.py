@@ -147,3 +147,66 @@ def test_cache_reloads_when_graph_changes(server) -> None:
     os.utime(graph_path, (time.time() + 3, time.time() + 3))  # force mtime change
     _, body = client.get("/api/query?q=greet&k=1")
     assert "UPDATED-SUMMARY-SENTINEL" in json.loads(body)["results"][0]["summary"]
+
+
+def test_switch_root_rebinds_live(tmp_path, monkeypatch) -> None:
+    """POST /api/switch-root points the running server at another codebase."""
+    import http.client
+    import json as _json
+    from http.server import ThreadingHTTPServer
+
+    from cms.ui import _MemoryCache, make_handler
+
+    monkeypatch.setattr("cms.app._save_workspace_root", lambda root: None)  # no cwd pollution
+    monkeypatch.setenv("CMS_PROVIDER", "mock")  # build-on-switch offline + deterministic
+
+    proj_a = tmp_path / "a"
+    proj_a.mkdir()
+    (proj_a / "a.py").write_text("def a(): pass\n", encoding="utf-8")
+    (proj_a / ".memory").mkdir()
+    (proj_a / ".memory" / "graph.json").write_text('{"nodes": []}', encoding="utf-8")
+    proj_b = tmp_path / "b" / "src"
+    proj_b.mkdir(parents=True)
+    (proj_b / "b.py").write_text("def b(): pass\n", encoding="utf-8")
+
+    cache = _MemoryCache(proj_a / ".memory" / "graph.json")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(proj_a, cache))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    port = httpd.server_address[1]
+
+    def call(method, path, body=None):
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
+        c.request(method, path, body=_json.dumps(body) if body is not None else None,
+                  headers={"Content-Type": "application/json"} if body is not None else {})
+        r = c.getresponse()
+        status, data = r.status, r.read()
+        c.close()
+        return status, data
+
+    try:
+        _, body = call("GET", "/api/meta")
+        assert _json.loads(body)["project"] == "a"
+
+        status, body = call("POST", "/api/switch-root", {"path": str(tmp_path / "b")})
+        res = _json.loads(body)
+        assert status == 200 and res["switched"] and res["project"] == "b"
+        assert res["building"] is True                       # processing kicked off, no restart
+
+        _, body = call("GET", "/api/meta")
+        assert _json.loads(body)["project"] == "b"          # live rebind took effect
+
+        # the background build actually processes the new codebase
+        for _ in range(60):
+            st = _json.loads(call("GET", "/api/build-status")[1])
+            if not st["running"]:
+                break
+            time.sleep(0.5)
+        assert not st["running"] and not st["error"], st
+        built = json.loads((tmp_path / "b" / ".memory" / "graph.json").read_text(encoding="utf-8"))
+        assert any(n.get("id") == "func:src/b.py::b" for n in built["nodes"])
+
+        status, _ = call("POST", "/api/switch-root", {"path": str(tmp_path / "nope")})
+        assert status == 400                                 # non-existent folder rejected
+    finally:
+        httpd.shutdown()
+        httpd.server_close()

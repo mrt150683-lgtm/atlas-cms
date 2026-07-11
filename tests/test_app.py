@@ -1,8 +1,17 @@
 import json
 from pathlib import Path
 
+import pytest
+
 import cms.app as app_mod
 from cms.app import resolve_root
+
+
+@pytest.fixture(autouse=True)
+def _no_native_dialog(monkeypatch):
+    """First-run setup tries a native folder dialog; never let a real window
+    open during tests (it would block on a headed machine)."""
+    monkeypatch.setattr("cms.picker.pick_folder", lambda *a, **k: None)
 
 
 def test_explicit_root_wins(tmp_path: Path, monkeypatch) -> None:
@@ -58,3 +67,17 @@ def test_non_interactive_without_workspace_returns_none(tmp_path: Path, monkeypa
     monkeypatch.chdir(empty)
     monkeypatch.setattr(app_mod.sys.stdin, "isatty", lambda: False, raising=False)
     assert resolve_root(None, echo=lambda *a: None) is None
+
+
+def test_saved_workspace_beats_cwd_with_source(tmp_path, monkeypatch) -> None:
+    """A saved workspace (last switched codebase) wins over the current dir —
+    so relaunching CMS.bat (which runs from the repo) stays on the chosen root."""
+    here = tmp_path / "here"
+    here.mkdir()
+    (here / "here.py").write_text("pass\n", encoding="utf-8")   # cwd is itself a project
+    there = tmp_path / "there"
+    there.mkdir()
+    (there / "there.py").write_text("pass\n", encoding="utf-8")
+    monkeypatch.chdir(here)
+    (here / "cms.workspace.json").write_text(json.dumps({"root": str(there)}), encoding="utf-8")
+    assert resolve_root(None, echo=lambda *a: None) == there.resolve()

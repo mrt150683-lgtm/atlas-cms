@@ -13,6 +13,7 @@ from pathlib import Path
 import pathspec
 
 from .config import CMSIGNORE_FILENAME, DEFAULT_IGNORES, LANGUAGE_BY_EXTENSION
+from .scope import dir_in_scope, file_in_scope, load_scope
 
 
 @dataclass
@@ -29,8 +30,14 @@ class FileRecord:
 
 
 def load_ignore_spec(root: Path) -> pathspec.PathSpec:
-    """Built-in defaults plus any .cmsignore lines in the root."""
+    """Ignore rules, in increasing precedence: built-in defaults, then the
+    project's own ``.gitignore`` (what IT declares as non-source — no guessing
+    by us), then ``.cmsignore`` (user overrides, which can re-include with
+    ``!pattern``)."""
     lines = list(DEFAULT_IGNORES)
+    gitignore = root / ".gitignore"
+    if gitignore.is_file():
+        lines += gitignore.read_text(encoding="utf-8", errors="ignore").splitlines()
     cmsignore = root / CMSIGNORE_FILENAME
     if cmsignore.is_file():
         lines += cmsignore.read_text(encoding="utf-8", errors="ignore").splitlines()
@@ -56,18 +63,23 @@ def _count_lines(path: Path) -> int:
 def scan(root: Path | str) -> list[FileRecord]:
     root = Path(root).resolve()
     spec = load_ignore_spec(root)
+    scope = load_scope(root)  # None => whole codebase; else only selected dirs/files
     records: list[FileRecord] = []
 
     for dirpath, dirnames, filenames in os.walk(root):
         dir_rel = Path(dirpath).relative_to(root).as_posix()
         prefix = "" if dir_rel == "." else dir_rel + "/"
-        # prune ignored directories in place so os.walk never descends into them
+        # prune ignored / out-of-scope directories in place so os.walk skips them
         dirnames[:] = sorted(
-            d for d in dirnames if not spec.match_file(f"{prefix}{d}/")
+            d for d in dirnames
+            if not spec.match_file(f"{prefix}{d}/")
+            and dir_in_scope(f"{prefix}{d}/", scope)
         )
         for name in sorted(filenames):
             rel = f"{prefix}{name}"
             if spec.match_file(rel):
+                continue
+            if not file_in_scope(rel, scope):
                 continue
             ext = Path(name).suffix.lower()
             language = LANGUAGE_BY_EXTENSION.get(ext)

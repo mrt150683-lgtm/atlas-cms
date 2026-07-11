@@ -48,9 +48,26 @@ class _MemoryCache:
 
 
 # @memory:feature:MemoryViewer
-# @memory:summary:HTTP request handler for the viewer — serves the single-page UI and the JSON API (graph, tree, query, source with traversal guard, activity feed, prompt export).
+# @memory:summary:HTTP request handler for the viewer — serves the single-page UI and the JSON API (graph, tree, query, source with traversal guard, activity feed, prompt export, sentinel scans and findings).
 def make_handler(root: Path, cache: _MemoryCache):
     memory_dir = root / config.MEMORY_DIR_NAME
+    # one Sentinel scan at a time, shared across requests
+    sentinel_state = {"running": False, "error": "", "finished_at": 0.0}
+    sentinel_lock = threading.Lock()
+    build_state = {"running": False, "error": "", "message": "", "finished_at": 0.0}
+    build_lock = threading.Lock()
+    # staleness: if cms/*.py changes on disk after boot, this server is running
+    # old code (HTML is disk-served and updates live, Python routes don't) — the
+    # UI surfaces this so a relaunch is obvious instead of a cryptic 404.
+    _pkg_dir = Path(__file__).resolve().parent
+
+    def _newest_code_mtime() -> float:
+        try:
+            return max((p.stat().st_mtime for p in _pkg_dir.rglob("*.py")), default=0.0)
+        except OSError:
+            return 0.0
+
+    _boot_code_mtime = _newest_code_mtime()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "CMS-UI/0.1"
@@ -80,12 +97,34 @@ def make_handler(root: Path, cache: _MemoryCache):
                 if url.path in ("/", "/index.html"):
                     page = (_ASSETS_DIR / "index.html").read_bytes()
                     self._send(200, page, "text/html; charset=utf-8")
+                elif url.path in ("/sentinel", "/sentinel.html"):
+                    page = (_ASSETS_DIR / "sentinel.html").read_bytes()
+                    self._send(200, page, "text/html; charset=utf-8")
+                elif url.path in ("/setup", "/setup.html"):
+                    page = (_ASSETS_DIR / "setup.html").read_bytes()
+                    self._send(200, page, "text/html; charset=utf-8")
+                elif url.path == "/api/dirtree":
+                    self._dirtree()
+                elif url.path == "/api/scope":
+                    self._scope_get()
+                elif url.path == "/api/sources":
+                    from .sources import analyze_sources
+                    self._json(analyze_sources(root))
+                elif url.path == "/api/build-status":
+                    self._json(dict(build_state))
+                elif url.path == "/api/sentinel/latest":
+                    self._sentinel_latest()
+                elif url.path == "/api/sentinel/scan-status":
+                    self._json(dict(sentinel_state))
+                elif url.path == "/api/sentinel/export":
+                    self._sentinel_export(query)
                 elif url.path == "/api/graph":
                     self._serve_memory_file("graph.json")
                 elif url.path == "/api/tree":
                     self._serve_memory_file("clean_tree.json")
                 elif url.path == "/api/meta":
-                    self._json({"project": root.name, "root": str(root)})
+                    self._json({"project": root.name, "root": str(root),
+                                "stale": _newest_code_mtime() > _boot_code_mtime + 1.0})
                 elif url.path == "/api/query":
                     self._query(query)
                 elif url.path == "/api/activity":
@@ -94,12 +133,290 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._prompt(query)
                 elif url.path == "/api/source":
                     self._source(query)
+                elif url.path == "/api/notes":
+                    self._notes_list(query)
                 else:
                     self._error(404, "not found")
             except BrokenPipeError:
                 pass
             except Exception as exc:  # surface server bugs to the client, not a hang
                 self._error(500, f"{type(exc).__name__}: {exc}")
+
+        def do_POST(self) -> None:  # noqa: N802 (http.server API)
+            url = urlparse(self.path)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(length) or b"{}") if length else {}
+                if url.path == "/api/sentinel/scan":
+                    self._sentinel_scan()
+                elif url.path == "/api/sentinel/finding":
+                    self._sentinel_finding(body)
+                elif url.path == "/api/notes":
+                    self._notes_add(body)
+                elif url.path == "/api/notes/update":
+                    self._notes_update(body)
+                elif url.path == "/api/notes/delete":
+                    self._notes_delete(body)
+                elif url.path == "/api/scope":
+                    self._scope_set(body)
+                elif url.path == "/api/build":
+                    self._build()
+                elif url.path == "/api/bundle/export":
+                    self._bundle_export(body)
+                elif url.path == "/api/pick-folder":
+                    self._pick_folder()
+                elif url.path == "/api/switch-root":
+                    self._switch_root(body)
+                elif url.path == "/api/ignore-add":
+                    from .sources import add_ignore_pattern
+                    ok = add_ignore_pattern(root, str(body.get("pattern") or ""))
+                    self._json({"added": ok, "pattern": str(body.get("pattern") or "")})
+                else:
+                    self._error(404, "not found")
+            except BrokenPipeError:
+                pass
+            except json.JSONDecodeError:
+                self._error(400, "invalid JSON body")
+            except Exception as exc:
+                self._error(500, f"{type(exc).__name__}: {exc}")
+
+        # ── Hermes Sentinel API ──────────────────────────────────────
+
+        def _sentinel_store(self):
+            from .sentinel.store import SentinelStore
+
+            return SentinelStore(memory_dir)
+
+        def _sentinel_latest(self) -> None:
+            store = self._sentinel_store()
+            self._json({
+                "scan": store.latest_scan(),
+                "findings": store.load_findings(),
+                "history": store.scan_history(),
+                "state": dict(sentinel_state),
+            })
+
+        def _sentinel_scan(self) -> None:
+            with sentinel_lock:
+                if sentinel_state["running"]:
+                    self._json({"started": False, "reason": "a scan is already running"}, 409)
+                    return
+                sentinel_state.update(running=True, error="")
+
+            def worker() -> None:
+                import time as _time
+
+                try:
+                    from .sentinel.runner import run_scan
+
+                    run_scan(root)
+                except Exception as exc:
+                    sentinel_state["error"] = f"{type(exc).__name__}: {exc}"
+                finally:
+                    sentinel_state.update(running=False, finished_at=_time.time())
+
+            threading.Thread(target=worker, daemon=True, name="cms-sentinel-scan").start()
+            self._json({"started": True})
+
+        def _sentinel_finding(self, body: dict) -> None:
+            finding_id = str(body.get("id") or "")
+            status = str(body.get("status") or "")
+            reason = str(body.get("reason") or "")
+            try:
+                updated = self._sentinel_store().set_status(finding_id, status, reason)
+            except ValueError as exc:
+                self._error(400, str(exc))
+                return
+            if updated is None:
+                self._error(404, f"no finding {finding_id!r}")
+                return
+            self._json({"finding": updated})
+
+        def _sentinel_export(self, query: dict) -> None:
+            from .sentinel.reports import export_json, export_markdown
+
+            store = self._sentinel_store()
+            fmt = (query.get("format") or ["md"])[0]
+            scan, findings = store.latest_scan(), store.load_findings()
+            if fmt == "json":
+                self._send(200, export_json(scan, findings).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            else:
+                self._send(200, export_markdown(scan, findings).encode("utf-8"),
+                           "text/markdown; charset=utf-8")
+
+        # ── file annotations (notes) ────────────────────────────────
+
+        # ── codebase scope + portable bundle ────────────────────────
+
+        def _dirtree(self) -> None:
+            from .scope import build_dir_tree, load_scope
+
+            self._json({
+                "project": root.name,
+                "root": str(root),
+                "tree": build_dir_tree(root),
+                "scope": sorted(load_scope(root) or []),
+                "has_memory": (memory_dir / "graph.json").is_file(),
+            })
+
+        def _scope_get(self) -> None:
+            from .scope import load_scope
+
+            self._json({"include": sorted(load_scope(root) or [])})
+
+        def _scope_set(self, body: dict) -> None:
+            from .scope import clear_scope, save_scope
+
+            include = [str(x) for x in (body.get("include") or [])]
+            if include:
+                save_scope(root, include)
+            else:
+                clear_scope(root)
+            self._json({"saved": True, "count": len(include)})
+
+        def _kick_build(self, full: bool) -> bool:
+            """Start a background pipeline build for the CURRENT root. Returns
+            False if one is already running."""
+            with build_lock:
+                if build_state["running"]:
+                    return False
+                build_state.update(running=True, error="", message="starting…")
+            target_root = root  # snapshot (root may be rebound by a later switch)
+
+            def worker() -> None:
+                import time as _time
+
+                try:
+                    from .providers import get_provider
+                    from .update import incremental_update
+
+                    def echo(msg: str) -> None:
+                        build_state["message"] = str(msg)[:200]
+
+                    incremental_update(target_root, get_provider(None), echo=echo, full=full)
+                except Exception as exc:
+                    build_state["error"] = f"{type(exc).__name__}: {exc}"
+                finally:
+                    build_state.update(running=False, finished_at=_time.time(), message="done")
+
+            threading.Thread(target=worker, daemon=True, name="cms-build").start()
+            return True
+
+        def _build(self) -> None:
+            if self._kick_build(full=True):
+                self._json({"started": True})
+            else:
+                self._json({"started": False, "reason": "a build is already running"}, 409)
+
+        def _bundle_export(self, body: dict) -> None:
+            import tempfile
+
+            from .bundle import default_bundle_name, export_bundle
+
+            if not (memory_dir / "graph.json").is_file():
+                self._error(409, "no memory yet — build it first")
+                return
+            include_source = bool(body.get("include_source"))
+            tmp = Path(tempfile.gettempdir()) / default_bundle_name(root)
+            try:
+                out = export_bundle(root, out_path=tmp, include_source=include_source)
+            except Exception as exc:
+                self._error(500, f"{type(exc).__name__}: {exc}")
+                return
+            data = out.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/zip")
+            self.send_header("Content-Disposition", f'attachment; filename="{out.name}"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except BrokenPipeError:
+                pass
+
+        def _pick_folder(self) -> None:
+            from .picker import pick_folder
+
+            chosen = pick_folder()
+            self._json({"path": chosen or ""})
+
+        def _switch_root(self, body: dict) -> None:
+            """Point this running server at a different codebase (live rebind)."""
+            nonlocal root, memory_dir, cache
+            from .scanner import scan
+
+            path = str(body.get("path") or "").strip().strip('"').strip("'")
+            if not path:
+                self._json({"switched": False, "reason": "no folder given"})
+                return
+            new_root = Path(path).expanduser()
+            if not new_root.is_dir():
+                self._error(400, f"not a folder: {new_root}")
+                return
+            new_root = new_root.resolve()
+            if not scan(new_root):
+                self._error(400, "no recognisable source files in that folder")
+                return
+            root = new_root
+            memory_dir = root / config.MEMORY_DIR_NAME
+            cache = _MemoryCache(memory_dir / "graph.json")
+            try:
+                from .app import _save_workspace_root
+                _save_workspace_root(root)  # persist so relaunch stays on this codebase
+            except Exception:
+                pass
+            # process the new codebase now — no restart needed. Incremental: cheap
+            # if already current, full build if it has no (or stale) memory.
+            building = self._kick_build(full=False)
+            self._json({
+                "switched": True, "project": root.name, "root": str(root),
+                "has_memory": (memory_dir / "graph.json").is_file(),
+                "building": building,
+            })
+
+        def _notes_store(self):
+            from .notes import NotesStore
+
+            return NotesStore(memory_dir)
+
+        def _notes_list(self, query: dict) -> None:
+            path = (query.get("path") or [""])[0]
+            store = self._notes_store()
+            if path:
+                self._json({"notes": store.for_path(path)})
+            else:
+                self._json({"notes": store.all(), "counts": store.counts()})
+
+        def _notes_add(self, body: dict) -> None:
+            try:
+                note = self._notes_store().add(
+                    path=str(body.get("path") or ""),
+                    quote=str(body.get("quote") or ""),
+                    note=str(body.get("note") or ""),
+                    before=str(body.get("before") or ""),
+                    color=str(body.get("color") or "amber"),
+                    mode=str(body.get("mode") or "source"),
+                )
+            except ValueError as exc:
+                self._error(400, str(exc))
+                return
+            self._json({"note": note})
+
+        def _notes_update(self, body: dict) -> None:
+            updated = self._notes_store().update(
+                str(body.get("id") or ""),
+                note=body.get("note"),
+                color=body.get("color"),
+            )
+            if updated is None:
+                self._error(404, "no such note")
+                return
+            self._json({"note": updated})
+
+        def _notes_delete(self, body: dict) -> None:
+            ok = self._notes_store().delete(str(body.get("id") or ""))
+            self._json({"deleted": ok}, 200 if ok else 404)
 
         def _serve_memory_file(self, name: str) -> None:
             path = memory_dir / name
@@ -159,14 +476,14 @@ def make_handler(root: Path, cache: _MemoryCache):
 # @memory:feature:MemoryViewer
 # @memory:connects:QueryEngine, GitHistoryLayer, ActivityPulse, FeatureTracing
 # @memory:summary:Local web UI — explorer, force-directed knowledge graph with heat overlay and MCP pulses, inspector with summaries/anchors/flows, intent search.
-def serve(root: Path, port: int = 7717, open_browser: bool = True) -> None:
+def serve(root: Path, port: int = 7717, open_browser: bool = True, open_path: str = "/") -> None:
     root = root.resolve()
     cache = _MemoryCache(root / config.MEMORY_DIR_NAME / "graph.json")
     server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(root, cache))
     url = f"http://127.0.0.1:{port}"
     print(f"CMS UI serving {root.name} at {url}  (Ctrl+C to stop)")
     if open_browser:
-        threading.Timer(0.4, webbrowser.open, args=(url,)).start()
+        threading.Timer(0.4, webbrowser.open, args=(url + open_path,)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas — Setup</title>
+<style>
+  :root {
+    --bg:#0d0d0f; --surface:#151517; --surface-2:#1b1b1f; --border:#2a2a30;
+    --ink:#ececef; --ink-2:#b9b9c0; --ink-3:#7a7a84; --accent:#3987e5; --mono:ui-monospace,"Cascadia Code",Consolas,monospace;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    --ok:#199e70; --warn:#c98500;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink-2); font:14.5px/1.6 var(--font); }
+  a { color:var(--accent); text-decoration:none; }
+  header { display:flex; align-items:center; gap:9px; padding:14px 22px; border-bottom:1px solid var(--border); }
+  .logo { width:22px; height:22px; }
+  .logo .lg-peak { fill:none; stroke:var(--accent); stroke-width:1.8; stroke-linejoin:round; }
+  .logo .lg-inner { fill:rgba(57,135,229,0.16); stroke:rgba(57,135,229,0.55); stroke-width:1; stroke-linejoin:round; }
+  .logo .lg-star { fill:#eaf3ff; }
+  .mark { color:var(--ink); font-weight:660; letter-spacing:.22em; font-size:14px; }
+  .sub { color:var(--ink-3); font-size:12.5px; }
+  header .spacer { flex:1; }
+  .wrap { max-width:920px; margin:0 auto; padding:26px 22px 80px; }
+  h2 { color:var(--ink); font-size:15px; font-weight:620; margin:0 0 4px; letter-spacing:-.01em; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 20px; margin-bottom:18px; }
+  .muted { color:var(--ink-3); font-size:12.5px; }
+  .path { font:12.5px var(--mono); color:var(--ink-2); background:var(--surface-2); border:1px solid var(--border);
+    border-radius:6px; padding:5px 9px; display:inline-block; margin-top:6px; word-break:break-all; }
+  .row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  button { font:13px var(--font); color:var(--ink); background:var(--surface-2); border:1px solid var(--border);
+    border-radius:8px; padding:8px 14px; cursor:pointer; transition:border-color .12s,background .12s; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:560; }
+  button.primary:hover { filter:brightness(1.08); }
+  button:disabled { opacity:.5; cursor:default; }
+  .toolbar { display:flex; gap:8px; align-items:center; margin:2px 0 12px; }
+  .count { margin-left:auto; font:12px var(--mono); color:var(--accent); }
+  /* tree */
+  #tree { max-height:52vh; overflow:auto; border:1px solid var(--border); border-radius:8px; padding:8px 6px; background:var(--surface-2); }
+  .tnode { padding-left:16px; }
+  .trow { display:flex; align-items:center; gap:7px; padding:2px 4px; border-radius:5px; }
+  .trow:hover { background:rgba(255,255,255,.03); }
+  .caret { width:14px; text-align:center; color:var(--ink-3); cursor:pointer; user-select:none; font-size:10px; flex:none; }
+  .caret.leaf { visibility:hidden; }
+  input[type=checkbox] { width:15px; height:15px; accent-color:var(--accent); flex:none; cursor:pointer; }
+  .tname { color:var(--ink-2); font-size:13px; }
+  .tname.dir { color:var(--ink); font-weight:520; }
+  .tcount { color:var(--ink-3); font:11px var(--mono); margin-left:4px; }
+  .children.collapsed { display:none; }
+  .switch { display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none; font-size:13px; }
+  input[type=text] { font:12.5px var(--mono); color:var(--ink); background:var(--surface-2);
+    border:1px solid var(--border); border-radius:6px; padding:7px 10px; min-width:320px; flex:1; }
+  input[type=text]:focus { outline:none; border-color:var(--accent); }
+  #buildMsg { font:12px var(--mono); color:var(--ink-3); margin-top:10px; min-height:16px; }
+  .pill { display:inline-block; font:11px var(--mono); padding:2px 8px; border-radius:999px; border:1px solid var(--border); color:var(--ink-3); }
+  .pill.ok { color:var(--ok); border-color:rgba(25,158,112,.4); }
+  .banner { display:none; background:rgba(25,158,112,.1); border:1px solid rgba(25,158,112,.4); color:#8fe0bf;
+    padding:10px 14px; border-radius:8px; margin-bottom:16px; font-size:13px; }
+  .gitig { font:12px var(--mono); color:var(--ink-2); background:var(--surface-2); border:1px solid var(--border);
+    border-radius:8px; padding:10px 12px; max-height:160px; overflow:auto; white-space:pre; margin:0; }
+  .rec { display:flex; align-items:center; gap:12px; padding:10px 12px; border:1px solid var(--border);
+    border-radius:8px; background:var(--surface-2); margin-bottom:8px; }
+  .rec-main { flex:1; min-width:0; }
+  .rec-main code { color:#e8c07d; font:12.5px var(--mono); }
+</style>
+</head>
+<body>
+<header>
+  <svg class="logo" viewBox="0 0 28 28" aria-hidden="true">
+    <path class="lg-peak" d="M14 4 L25 23 L3 23 Z"/><path class="lg-inner" d="M14 11.5 L19.5 21 L8.5 21 Z"/><circle class="lg-star" cx="14" cy="8" r="1.15"/>
+  </svg>
+  <span class="mark">ATLAS</span><span class="sub">· setup</span>
+  <span class="spacer"></span>
+  <a href="/">open map →</a>
+</header>
+
+<div class="wrap">
+  <div class="banner" id="staleBanner" style="background:rgba(201,133,0,0.12); border-color:rgba(201,133,0,0.5); color:#e8c07d;">⟳ Atlas code was updated since this server started — <b>relaunch CMS.bat</b> for new features (like switching codebase) to work.</div>
+  <div class="banner" id="doneBanner">Memory built. <a href="/">Open the map →</a></div>
+
+  <div class="card">
+    <h2>Codebase</h2>
+    <div class="muted">Atlas is mapping this folder.</div>
+    <div class="path" id="rootPath">…</div>
+    <div class="row" style="margin-top:12px">
+      <button id="changeBtn">Change codebase…</button>
+    </div>
+    <div class="row" id="changeRow" style="margin-top:10px; display:none">
+      <input id="newRoot" type="text" placeholder="C:\path\to\another\codebase" spellcheck="false">
+      <button id="browseBtn">Browse…</button>
+      <button class="primary" id="switchBtn">Switch</button>
+      <span class="muted" id="switchMsg"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Sources &amp; exclusions</h2>
+    <div class="muted">What Atlas analyses, what it skips, and why — so nothing generated slips in (and nothing real gets wrongly dropped).</div>
+    <div class="row" style="margin-top:10px; gap:14px">
+      <span class="pill ok" id="srcIncluded">…</span>
+      <span class="pill" id="srcExcluded">…</span>
+    </div>
+    <div id="gitignoreBox" style="margin-top:14px; display:none">
+      <div class="muted" style="margin-bottom:6px">Your project's <b>.gitignore</b> — Atlas honours these (your own declaration of what's generated):</div>
+      <pre class="gitig" id="gitignoreText"></pre>
+    </div>
+    <div id="recsBox" style="margin-top:14px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Scope — what gets processed</h2>
+    <div class="muted">Tick only the parts you want the AI to summarise. Un-ticked files are skipped, saving API cost and time. Everything ticked = the whole codebase.</div>
+    <div class="toolbar">
+      <button id="selAll">Select all</button>
+      <button id="selNone">Select none</button>
+      <span class="count"><span id="selCount">0</span> / <span id="totCount">0</span> files</span>
+    </div>
+    <div id="tree">loading…</div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="buildBtn">Build memory for selection</button>
+      <span class="muted">Runs scan → graph → AI summaries → features over the selection.</span>
+    </div>
+    <div id="buildMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>Share — hand someone the results</h2>
+    <div class="muted">Export the AI-generated memory as a single <b>.cmsbundle</b>. The recipient opens it with <span class="path">cms bundle open</span> and views everything — no API key, no re-processing, no cost.</div>
+    <div class="row" style="margin-top:12px">
+      <label class="switch"><input type="checkbox" id="inclSource"> include a source snapshot (fully self-contained)</label>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="exportBtn">Export bundle</button>
+      <span class="muted" id="exportMsg"></span>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let TREE = null;
+const selected = new Set();     // selected leaf file paths
+const allLeaves = [];          // every file path
+
+function gatherLeaves(n){ n.files.forEach(f=>allLeaves.push(f.path)); n.dirs.forEach(gatherLeaves); }
+function matchesScope(path, scope){
+  if(!scope.length) return true;               // empty scope => whole codebase
+  if(scope.includes(path)) return true;
+  return scope.some(p => p.endsWith('/') && path.startsWith(p));
+}
+
+async function boot(){
+  try { const m = await (await fetch('/api/meta')).json(); if(m.stale) $('staleBanner').style.display = 'block'; } catch(e){}
+  const d = await (await fetch('/api/dirtree')).json();
+  TREE = d.tree; $('rootPath').textContent = d.root;
+  gatherLeaves(TREE);
+  $('totCount').textContent = allLeaves.length;
+  const scope = d.scope || [];
+  allLeaves.forEach(p => { if(matchesScope(p, scope)) selected.add(p); });
+  $('tree').innerHTML = '';
+  $('tree').appendChild(renderNode(TREE, true));
+  refresh();
+  loadSources();
+}
+
+async function loadSources(){
+  let s;
+  try { s = await (await fetch('/api/sources')).json(); } catch(e){ return; }
+  $('srcIncluded').textContent = s.included_count + ' files analysed';
+  const exc = (s.defaults.excluded_count||0) + (s.gitignore.excluded_count||0) + (s.cmsignore.excluded_count||0);
+  $('srcExcluded').textContent = exc + ' skipped (junk / build / .gitignore)';
+  if(s.gitignore.present && (s.gitignore.raw||'').trim()){
+    $('gitignoreBox').style.display = 'block';
+    $('gitignoreText').textContent = s.gitignore.raw.trim();
+  }
+  const box = $('recsBox');
+  if(!s.recommendations.length){
+    box.innerHTML = '<div class="muted">✓ No generated/build files detected in the analysed set — looks clean.</div>';
+    return;
+  }
+  box.innerHTML = '<div class="muted" style="margin-bottom:8px">Recommended to exclude — review each (Atlas won\'t remove anything on its own):</div>';
+  s.recommendations.forEach(r => {
+    const el = document.createElement('div'); el.className = 'rec';
+    const main = document.createElement('div'); main.className = 'rec-main';
+    main.innerHTML = `<code>${r.pattern}</code> <span class="tcount">${r.count} file(s)</span><div class="muted">${r.reason}</div>`;
+    const btn = document.createElement('button'); btn.textContent = 'Exclude'; btn.className = 'primary';
+    btn.onclick = async () => {
+      btn.disabled = true; btn.textContent = 'excluding…';
+      try {
+        await fetch('/api/ignore-add', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pattern:r.pattern})});
+        el.style.opacity = '.55'; btn.textContent = 'added to .cmsignore';
+        $('buildMsg').textContent = 'excluded ' + r.pattern + ' — click "Build memory for selection" to apply.';
+      } catch(e){ btn.disabled = false; btn.textContent = 'Exclude'; }
+    };
+    el.append(main, btn); box.appendChild(el);
+  });
+}
+
+function renderNode(node, isRoot){
+  const wrap = document.createElement('div');
+  if(!isRoot) wrap.className = 'tnode';
+  // directory row (root has no row of its own)
+  const kids = document.createElement('div');
+  kids.className = 'children';
+  if(!isRoot){
+    const row = document.createElement('div'); row.className = 'trow';
+    const caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▸';
+    caret.onclick = () => { kids.classList.toggle('collapsed'); caret.textContent = kids.classList.contains('collapsed') ? '▸' : '▾'; };
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.dir = node.path;
+    cb.onchange = () => { setSubtree(node, cb.checked); refresh(); };
+    const nm = document.createElement('span'); nm.className = 'tname dir'; nm.textContent = node.name;
+    const ct = document.createElement('span'); ct.className = 'tcount'; ct.textContent = node.count;
+    row.append(caret, cb, nm, ct); wrap.appendChild(row);
+    kids.classList.add('collapsed');
+    node._cb = cb;
+  }
+  node.dirs.forEach(dir => kids.appendChild(renderNode(dir, false)));
+  node.files.forEach(f => {
+    const row = document.createElement('div'); row.className = 'trow tnode';
+    const caret = document.createElement('span'); caret.className = 'caret leaf'; caret.textContent = '·';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.dataset.file = f.path;
+    cb.onchange = () => { cb.checked ? selected.add(f.path) : selected.delete(f.path); refresh(); };
+    const nm = document.createElement('span'); nm.className = 'tname'; nm.textContent = f.name;
+    row.append(caret, cb, nm); kids.appendChild(row);
+    f._cb = cb;
+  });
+  wrap.appendChild(kids);
+  return wrap;
+}
+
+function setSubtree(node, on){
+  node.files.forEach(f => on ? selected.add(f.path) : selected.delete(f.path));
+  node.dirs.forEach(d => setSubtree(d, on));
+}
+function subtreeSel(node){
+  let sel = node.files.filter(f=>selected.has(f.path)).length;
+  node.dirs.forEach(d => sel += subtreeSel(d));
+  return sel;
+}
+function refreshNode(node){
+  node.dirs.forEach(refreshNode);
+  node.files.forEach(f => { if(f._cb) f._cb.checked = selected.has(f.path); });
+  if(node._cb){
+    const s = subtreeSel(node);
+    node._cb.checked = s === node.count && node.count > 0;
+    node._cb.indeterminate = s > 0 && s < node.count;
+  }
+}
+function refresh(){
+  refreshNode(TREE);
+  $('selCount').textContent = subtreeSel(TREE);
+}
+
+// minimal include list: whole-selected dirs collapse to "dir/", else list files
+function collect(node){
+  const filesSel = node.files.filter(f=>selected.has(f.path));
+  let sel = filesSel.length, includes = [];
+  const childR = node.dirs.map(collect);
+  childR.forEach(r => sel += r.sel);
+  if(node.count > 0 && sel === node.count){
+    if(node.path === '') return { full:true, sel, includes:[] };   // whole codebase
+    return { full:true, sel, includes:[node.path] };
+  }
+  filesSel.forEach(f => includes.push(f.path));
+  childR.forEach(r => includes = includes.concat(r.includes));
+  return { full:false, sel, includes };
+}
+
+$('selAll').onclick = () => { allLeaves.forEach(p=>selected.add(p)); refresh(); };
+$('selNone').onclick = () => { selected.clear(); refresh(); };
+
+$('buildBtn').onclick = async () => {
+  const r = collect(TREE);
+  const include = r.full ? [] : r.includes;
+  if(subtreeSel(TREE) === 0){ $('buildMsg').textContent = 'Select at least one file.'; return; }
+  $('buildBtn').disabled = true; $('doneBanner').style.display = 'none';
+  $('buildMsg').textContent = 'saving scope…';
+  await fetch('/api/scope', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({include})});
+  const s = await (await fetch('/api/build', {method:'POST'})).json();
+  if(!s.started){ $('buildMsg').textContent = 'Build already running…'; }
+  poll();
+};
+async function poll(){
+  const st = await (await fetch('/api/build-status')).json();
+  $('buildMsg').textContent = st.error ? ('error: ' + st.error) : (st.running ? ('building… ' + (st.message||'')) : 'done');
+  if(st.running){ setTimeout(poll, 900); return; }
+  $('buildBtn').disabled = false;
+  if(!st.error){ $('doneBanner').style.display = 'block'; }
+}
+
+// ── change codebase ─────────────────────────────────────────────
+$('changeBtn').onclick = () => {
+  const r = $('changeRow');
+  r.style.display = r.style.display === 'none' ? 'flex' : 'none';
+  if(r.style.display === 'flex') $('newRoot').focus();
+};
+$('browseBtn').onclick = async () => {
+  $('switchMsg').textContent = 'opening folder picker…';
+  try {
+    const d = await (await fetch('/api/pick-folder', {method:'POST'})).json();
+    if(d.path){ $('newRoot').value = d.path; $('switchMsg').textContent = ''; }
+    else { $('switchMsg').textContent = 'no folder picked — type a path instead'; }
+  } catch(e){ $('switchMsg').textContent = 'picker unavailable — type a path'; }
+};
+$('switchBtn').onclick = async () => {
+  const path = $('newRoot').value.trim();
+  if(!path){ $('switchMsg').textContent = 'enter a folder path'; return; }
+  $('switchBtn').disabled = true; $('switchMsg').textContent = 'switching…';
+  try {
+    const res = await fetch('/api/switch-root', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({path})});
+    const st = await res.json().catch(() => ({}));
+    if(!res.ok || !st.switched){
+      let msg = st.error || st.reason || 'could not switch';
+      if(res.status === 404) msg = 'this Atlas server is out of date — relaunch CMS.bat, then try again';
+      $('switchMsg').textContent = msg;
+      $('switchBtn').disabled = false; return;
+    }
+    // switched — Atlas is now processing the new codebase in the background
+    $('switchMsg').textContent = 'switched to ' + st.project + ' — processing…';
+    switchPoll(st.project);
+  } catch(e){ $('switchMsg').textContent = 'error: ' + e.message; $('switchBtn').disabled = false; }
+};
+
+async function switchPoll(project){
+  try {
+    const s = await (await fetch('/api/build-status')).json();
+    if(s.error){ $('switchMsg').textContent = 'processing error: ' + s.error; $('switchBtn').disabled = false; return; }
+    if(s.running){ $('switchMsg').textContent = 'processing ' + project + '… ' + (s.message || ''); setTimeout(() => switchPoll(project), 1000); return; }
+    window.location.href = '/';   // built — open the freshly-analysed map
+  } catch(e){ $('switchMsg').textContent = 'error: ' + e.message; $('switchBtn').disabled = false; }
+}
+
+$('exportBtn').onclick = async () => {
+  $('exportBtn').disabled = true; $('exportMsg').textContent = 'packaging…';
+  try{
+    const res = await fetch('/api/bundle/export', {method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({include_source: $('inclSource').checked})});
+    if(!res.ok){ $('exportMsg').textContent = 'export failed (build memory first)'; $('exportBtn').disabled=false; return; }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const name = (cd.match(/filename="([^"]+)"/) || [,'atlas.cmsbundle'])[1];
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    URL.revokeObjectURL(a.href);
+    $('exportMsg').textContent = 'downloaded ' + name;
+  }catch(e){ $('exportMsg').textContent = 'error: ' + e.message; }
+  $('exportBtn').disabled = false;
+};
+
+boot();
+</script>
+</body>
+</html>

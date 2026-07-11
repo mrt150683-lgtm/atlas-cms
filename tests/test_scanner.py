@@ -43,3 +43,34 @@ def test_cmsignore_extends_defaults(tmp_path: Path) -> None:
     paths = {r.rel_path for r in scan(tmp_path)}
     assert "keep.py" in paths
     assert "secret/hidden.py" not in paths
+
+
+def test_ignores_build_output_and_lockfiles(tmp_path: Path) -> None:
+    _touch(tmp_path, "src/app.ts", "export const x = 1;\n")
+    _touch(tmp_path, "dist-lib/index.d.ts", "export declare const x: number;\n")  # dist-*/
+    _touch(tmp_path, "dist-electron/main.js", "console.log(1)\n")                 # dist-*/
+    _touch(tmp_path, "package-lock.json", "{}\n")                                  # lockfile
+    _touch(tmp_path, "yarn.lock", "# lock\n")                                      # lockfile
+    rels = {r.rel_path for r in scan(tmp_path)}
+    assert "src/app.ts" in rels
+    assert not any(r.startswith("dist-lib/") or r.startswith("dist-electron/") for r in rels)
+    assert "package-lock.json" not in rels and "yarn.lock" not in rels
+
+
+def test_honors_project_gitignore(tmp_path: Path) -> None:
+    _touch(tmp_path, "src/keep.ts", "export const k = 1;\n")
+    _touch(tmp_path, "generated/out.ts", "export const g = 2;\n")
+    _touch(tmp_path, "secret.ts", "export const s = 3;\n")
+    (tmp_path / ".gitignore").write_text("generated/\nsecret.ts\n", encoding="utf-8")
+    rels = {r.rel_path for r in scan(tmp_path)}
+    assert "src/keep.ts" in rels
+    assert "generated/out.ts" not in rels   # .gitignore dir honored
+    assert "secret.ts" not in rels          # .gitignore file honored
+
+
+def test_cmsignore_can_reinclude_over_gitignore(tmp_path: Path) -> None:
+    _touch(tmp_path, "generated/keep.ts", "export const g = 1;\n")
+    (tmp_path / ".gitignore").write_text("generated/\n", encoding="utf-8")
+    (tmp_path / ".cmsignore").write_text("!generated/\n", encoding="utf-8")  # user override wins
+    rels = {r.rel_path for r in scan(tmp_path)}
+    assert "generated/keep.ts" in rels

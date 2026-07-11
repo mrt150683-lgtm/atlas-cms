@@ -88,11 +88,30 @@ DEFAULT_IGNORES: list[str] = [
     "logs/",
     "tmp/",
     "temp/",
-    # The memory system's own output, workspace link, and agent config
+    # Generated build output committed to the repo (dist/ is above; these cover
+    # the common `dist-<target>` convention — dist-lib, dist-electron, dist-ssr…)
+    "dist-*/",
+    ".output/",
+    ".svelte-kit/",
+    ".astro/",
+    "storybook-static/",
+    # Dependency lockfiles — generated, often committed, never useful to analyse
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "bun.lockb",
+    "poetry.lock",
+    "Pipfile.lock",
+    "Cargo.lock",
+    "composer.lock",
+    "Gemfile.lock",
+    # The memory system's own output, workspace link, scope + agent config
     ".memory/",
     ".cms/",
     ".claude/",
     "cms.workspace.json",
+    ".cmsscope.json",
 ]
 
 # extension -> language name; also acts as the inclusion whitelist
