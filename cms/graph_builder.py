@@ -47,7 +47,11 @@ class _FileInfo:
     from_imports: dict[str, tuple[str, str]] = field(default_factory=dict)  # local -> (module, orig)
     calls: list[tuple[str, tuple]] = field(default_factory=list)  # (caller qualname, callee descriptor)
     anchor_groups: list[AnchorGroup] = field(default_factory=list)
+    js_imports: list[str] = field(default_factory=list)  # raw JS/TS import specifiers
     parse_error: str | None = None
+
+
+JS_LANGS = {"javascript", "typescript", "javascript-react", "typescript-react"}
 
 
 def _module_name(rel_path: str) -> str:
@@ -145,23 +149,62 @@ class _Collector(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def _parse_file(rec: FileRecord) -> _FileInfo:
-    info = _FileInfo(record=rec)
-    try:
-        source = Path(rec.abs_path).read_text(encoding="utf-8", errors="replace")
-        tree = ast.parse(source)
-    except (SyntaxError, OSError) as exc:
-        info.parse_error = str(exc)
+def _parse_file(rec: FileRecord) -> _FileInfo | None:
+    """Parse a source file into structure. Python via AST, JS/TS via the light
+    regex parser; returns None for languages we don't structurally parse (they
+    still get a bare file node + an AI summary)."""
+    if rec.language == "python":
+        info = _FileInfo(record=rec)
+        try:
+            source = Path(rec.abs_path).read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source)
+        except (SyntaxError, OSError) as exc:
+            info.parse_error = str(exc)
+            return info
+        collector = _Collector(rec.rel_path)
+        collector.visit(tree)
+        info.anchor_groups = parse_anchors(source)
+        info.components = collector.components
+        info.imported_modules = collector.imported_modules
+        info.alias_to_module = collector.alias_to_module
+        info.from_imports = collector.from_imports
+        info.calls = collector.calls
         return info
-    collector = _Collector(rec.rel_path)
-    collector.visit(tree)
-    info.anchor_groups = parse_anchors(source)
-    info.components = collector.components
-    info.imported_modules = collector.imported_modules
-    info.alias_to_module = collector.alias_to_module
-    info.from_imports = collector.from_imports
-    info.calls = collector.calls
-    return info
+    if rec.language in JS_LANGS:
+        from .js_parser import parse_js
+
+        info = _FileInfo(record=rec)
+        try:
+            source = Path(rec.abs_path).read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            info.parse_error = str(exc)
+            return info
+        info.components, info.js_imports = parse_js(rec.rel_path, source)
+        return info
+    return None
+
+
+def _resolve_js_import(from_rel: str, spec: str, file_set: set[str]) -> str | None:
+    """Resolve a relative JS/TS import specifier to a scanned file, trying the
+    usual extension and /index resolutions. Bare specifiers return None."""
+    from posixpath import dirname, join, normpath
+
+    if not spec.startswith("."):
+        return None
+    target = normpath(join(dirname(from_rel), spec))
+    for ext in ("", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".css", ".scss"):
+        if (cand := target + ext) in file_set:
+            return cand
+    for ext in (".ts", ".tsx", ".js", ".jsx", ".json"):
+        if (cand := normpath(join(target, "index" + ext))) in file_set:
+            return cand
+    return None
+
+
+def _bare_pkg(spec: str) -> str:
+    if spec.startswith("@"):
+        return "/".join(spec.split("/")[:2])
+    return spec.split("/")[0]
 
 
 # @memory:feature:KnowledgeGraphConstruction
@@ -185,11 +228,15 @@ def build_graph(records: list[FileRecord]) -> nx.DiGraph:
             mtime=rec.mtime,
             summary="",
         )
-        if rec.language != "python":
-            continue
-        module_index[_module_name(rec.rel_path)] = rec.rel_path
+        if rec.language == "python":
+            module_index[_module_name(rec.rel_path)] = rec.rel_path
         info = _parse_file(rec)
+        if info is None:  # unparsed language — bare file node only (still summarised)
+            continue
         infos[rec.rel_path] = info
+        # Edge provenance: exact syntax tree vs pattern-based extraction. Every
+        # edge carries where it came from so consumers can weigh confidence.
+        prov = "ast" if rec.language == "python" else "heuristic"
         for comp in info.components:
             node_id = f"{comp.kind}:{rec.rel_path}::{comp.qualname}"
             graph.add_node(
@@ -210,10 +257,10 @@ def build_graph(records: list[FileRecord]) -> nx.DiGraph:
                 for parent_kind in ("class", "func"):
                     parent_id = f"{parent_kind}:{rec.rel_path}::{comp.parent_scope}"
                     if graph.has_node(parent_id):
-                        graph.add_edge(parent_id, node_id, type="CONTAINS")
+                        graph.add_edge(parent_id, node_id, type="CONTAINS", provenance=prov)
                         break
             else:
-                graph.add_edge(f"file:{rec.rel_path}", node_id, type="CONTAINS")
+                graph.add_edge(f"file:{rec.rel_path}", node_id, type="CONTAINS", provenance=prov)
 
         # attach memory anchors: line-form groups bind to the component that
         # starts just below them; module tags and orphans bind to the file
@@ -270,20 +317,39 @@ def build_graph(records: list[FileRecord]) -> nx.DiGraph:
             return None
         return top_level.get((target_rel, orig))
 
+    file_set = {rec.rel_path for rec in records}
+
     # pass 2: IMPORTS / CALLS / INHERITS edges
     for rel, info in infos.items():
         file_id = f"file:{rel}"
 
+        # JS/TS: resolve relative specifiers to files, bare specifiers to externals
+        # (regex-extracted + convention-resolved -> provenance "heuristic")
+        for spec in info.js_imports:
+            target_rel = _resolve_js_import(rel, spec, file_set)
+            if target_rel is not None:
+                if target_rel != rel:
+                    graph.add_edge(file_id, f"file:{target_rel}", type="IMPORTS",
+                                   provenance="heuristic")
+            elif not spec.startswith("."):
+                pkg = _bare_pkg(spec)
+                ext_id = f"ext:{pkg}"
+                if not graph.has_node(ext_id):
+                    graph.add_node(ext_id, type="external", name=pkg, summary="")
+                graph.add_edge(file_id, ext_id, type="IMPORTS", provenance="heuristic")
+
+        # Python import statements are exact AST facts -> provenance "ast"
         for module in info.imported_modules:
             target_rel = resolve_module(module)
             if target_rel is not None:
                 if target_rel != rel:
-                    graph.add_edge(file_id, f"file:{target_rel}", type="IMPORTS")
+                    graph.add_edge(file_id, f"file:{target_rel}", type="IMPORTS",
+                                   provenance="ast")
             else:
                 ext_id = f"ext:{module.split('.')[0]}"
                 if not graph.has_node(ext_id):
                     graph.add_node(ext_id, type="external", name=module.split(".")[0], summary="")
-                graph.add_edge(file_id, ext_id, type="IMPORTS")
+                graph.add_edge(file_id, ext_id, type="IMPORTS", provenance="ast")
 
         for caller_qual, callee in info.calls:
             caller_id = by_qualname.get((rel, caller_qual))
@@ -303,7 +369,9 @@ def build_graph(records: list[FileRecord]) -> nx.DiGraph:
                     if target_rel is not None:
                         target_id = top_level.get((target_rel, attr))
             if target_id is not None and target_id != caller_id:
-                graph.add_edge(caller_id, target_id, type="CALLS")
+                # call SITES are AST facts, but target resolution is name-based
+                # best-effort -> the edge as a whole is "heuristic"
+                graph.add_edge(caller_id, target_id, type="CALLS", provenance="heuristic")
 
         for comp in info.components:
             if comp.kind != "class":
@@ -320,7 +388,7 @@ def build_graph(records: list[FileRecord]) -> nx.DiGraph:
                         if target_rel is not None:
                             target_id = top_level.get((target_rel, cls_part))
                 if target_id is not None and graph.nodes[target_id].get("type") == "class":
-                    graph.add_edge(class_id, target_id, type="INHERITS")
+                    graph.add_edge(class_id, target_id, type="INHERITS", provenance="heuristic")
 
     return graph
 
@@ -334,6 +402,13 @@ def graph_to_json(graph: nx.DiGraph) -> dict:
 
 def graph_from_json(data: dict) -> nx.DiGraph:
     try:
-        return nx.node_link_graph(data, directed=True, edges="links")
+        graph = nx.node_link_graph(data, directed=True, edges="links")
     except TypeError:
-        return nx.node_link_graph(data, directed=True)
+        graph = nx.node_link_graph(data, directed=True)
+    # Migrate graphs written before the rename: coverage evidence used to be
+    # stored as "verified_by"; the honest name is "exercised_by" (coverage
+    # proves execution, not correctness).
+    for _, attrs in graph.nodes(data=True):
+        if "verified_by" in attrs and "exercised_by" not in attrs:
+            attrs["exercised_by"] = attrs.pop("verified_by")
+    return graph

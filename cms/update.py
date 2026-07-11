@@ -57,8 +57,7 @@ def _carry_over(old: nx.DiGraph, new: nx.DiGraph, upgrade_mock: bool = False) ->
             upgrade_mock and (old_attrs.get("summary_meta") or {}).get("provider") == "mock"
         )
         if old_attrs.get("mtime") != attrs.get("mtime") or not old_attrs.get("summary") or stale_mock:
-            if attrs.get("language") == "python":
-                changed.add(path)
+            changed.add(path)
             continue
         # unchanged: reuse the file summary and every component summary
         attrs["summary"] = old_attrs.get("summary", "")
@@ -128,7 +127,7 @@ def incremental_update(
     if old is not None:
         changed = _carry_over(old, graph, upgrade_mock=upgrade_mock)
     else:
-        changed = {r.rel_path for r in records if r.language == "python"}
+        changed = {r.rel_path for r in records}
     stats.changed = sorted(changed)
 
     stats.summarized = generate_summaries(
@@ -152,11 +151,11 @@ def incremental_update(
     stats.features = len(feats)
 
     if old is not None:
-        # verified_by mapping and AI reviews survive updates for features whose
+        # exercised_by mapping and AI reviews survive updates for features whose
         # members didn't change (same freshness rule as narratives)
         for feat in feats:
             if old.has_node(feat.node_id) and feat.name in narrative_cache:
-                for attr in ("verified_by", "review"):
+                for attr in ("exercised_by", "review"):
                     value = old.nodes[feat.node_id].get(attr)
                     if value:
                         graph.nodes[feat.node_id][attr] = value

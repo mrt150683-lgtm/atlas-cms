@@ -150,7 +150,7 @@ def generate_summaries(
     `only_paths` restricts work to those rel paths (incremental updates)."""
     file_ids = [
         n for n, a in graph.nodes(data=True)
-        if a.get("type") == "file" and a.get("language") == "python"
+        if a.get("type") == "file"
         and (only_paths is None or a.get("path") in only_paths)
     ]
     done = 0
