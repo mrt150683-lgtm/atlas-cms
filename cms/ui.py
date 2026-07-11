@@ -287,18 +287,26 @@ def make_handler(root: Path, cache: _MemoryCache):
             def worker() -> None:
                 import time as _time
 
+                done_msg = "done"
                 try:
                     from .providers import get_provider
-                    from .update import incremental_update
+                    from .update import ensure_judgment, incremental_update
 
                     def echo(msg: str) -> None:
                         build_state["message"] = str(msg)[:200]
 
-                    incremental_update(target_root, get_provider(None), echo=echo, full=full)
+                    provider = get_provider(None)
+                    incremental_update(target_root, provider, echo=echo, full=full)
+                    # a new project's first build should trigger EVERY module —
+                    # review + ROI suggestions too, not just the map
+                    ensure_judgment(target_root, provider, echo=echo)
+                    if provider.name == "mock":
+                        done_msg = ("done — mock provider: AI feature discovery, review and "
+                                    "suggestions were skipped (set an API key, then rebuild)")
                 except Exception as exc:
                     build_state["error"] = f"{type(exc).__name__}: {exc}"
                 finally:
-                    build_state.update(running=False, finished_at=_time.time(), message="done")
+                    build_state.update(running=False, finished_at=_time.time(), message=done_msg)
 
             threading.Thread(target=worker, daemon=True, name="cms-build").start()
             return True

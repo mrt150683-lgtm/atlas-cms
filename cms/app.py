@@ -19,7 +19,7 @@ from pathlib import Path
 from . import config
 from .providers import get_provider
 from .ui import serve
-from .update import incremental_update, watch
+from .update import ensure_judgment, incremental_update, watch
 
 
 def _workspace_config_path() -> Path:
@@ -154,6 +154,7 @@ def run_app(
     elif first_run:
         echo("first run: building the memory layer…")
         incremental_update(root, provider, echo=echo)
+        ensure_judgment(root, provider, echo=echo)
     else:
         echo("syncing memory with current files…")
         stats = incremental_update(root, provider, echo=echo)
@@ -161,6 +162,11 @@ def run_app(
             echo(f"  refreshed {len(stats.changed)} changed file(s)")
         else:
             echo("  memory already current")
+        # older projects may pre-date the judgment layer — complete it once
+        ensure_judgment(root, provider, echo=echo)
+    if provider.name == "mock":
+        echo("  note: mock provider — AI feature discovery, review and suggestions "
+             "are skipped until an API key is configured (cms config set anthropic_api_key …)")
 
     watcher = threading.Thread(
         target=watch, args=(root, provider), kwargs={"interval": interval, "echo": echo},

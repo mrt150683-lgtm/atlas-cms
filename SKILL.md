@@ -124,9 +124,14 @@ the CLI. `--root PATH` targets a project; the API key is read from
 - `cms scan` / `cms build-graph` / `cms summarize` — individual stages.
 - `cms trace [Feature]` — build/refresh feature traces (or print one).
 - `cms update [--full] [-p provider]` — incremental: only changed files
-  re-summarized/re-traced. Run after edits.
+  re-summarized/re-traced. Run after edits. A mock-built project is
+  completed on the first real-provider update: mock summaries upgrade AND
+  LLM feature discovery re-runs (mock builds skip discovery entirely).
 - `cms watch` — keep `.memory/` in sync live as you edit.
 - `cms app` (or bare `cms`) — sync memory → watcher → serve UI → open browser.
+  With a real provider, a project's first build also triggers the judgment
+  modules (AI review + ROI suggestions) so a new codebase gets every layer,
+  not just the map; with mock, the skip is stated explicitly.
 
 **Query / understand**
 - `cms query "…"` — plain-language search (same engine as `query_codebase`).

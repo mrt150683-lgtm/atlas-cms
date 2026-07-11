@@ -141,12 +141,21 @@ def incremental_update(
     )
     extra = _prior_discovered(old) if old is not None else []
     new_files = old is not None and any(not old.has_node(f"file:{p}") for p in changed)
+    # A build done with the mock provider never ran LLM feature discovery
+    # (discover_features_llm returns [] for mock). When a real provider
+    # appears, upgrading the summaries alone would leave the project
+    # feature-less forever — so a mock->real upgrade also re-discovers.
+    mock_refresh = upgrade_mock and old is not None and any(
+        (old.nodes[f"file:{p}"].get("summary_meta") or {}).get("provider") == "mock"
+        for p in changed if old.has_node(f"file:{p}")
+    )
     feats = build_features(
         graph, provider,
         on_progress=lambda name, d, t: echo(f"  trace [{d}/{t}] {name}"),
         narrative_cache=narrative_cache,
         extra_features=extra,
-        discover=(old is None or new_files),  # discovery only on full builds / new files
+        # discovery on full builds, new files, and mock->real upgrades
+        discover=(old is None or new_files or mock_refresh),
     )
     stats.features = len(feats)
 
@@ -174,6 +183,50 @@ def incremental_update(
     export_features(graph, memory_dir)
     export_index(graph, memory_dir, file_count=len(records))
     return stats
+
+
+# @memory:feature:IncrementalUpdates
+# @memory:connects:FeatureExpectationReview, RankedSuggestionGeneration, AppMode
+# @memory:summary:Completes a new project's judgment layer — builds the AI review and ROI suggestions once, when absent and a real provider is available, so app-mode first builds trigger every module (not just the map).
+def ensure_judgment(root: Path, provider: SummaryProvider, echo=print) -> dict:
+    """Build the review + suggestions rollups if the graph doesn't have them.
+
+    New projects end their first build with a map but no judgment layer
+    (review/suggestions only existed behind manual CLI commands). Called
+    after a build: no-op when both rollups exist, when there is no graph,
+    or when only the mock provider is available (mock output must never
+    pose as an AI review — the caller should say so instead).
+    Returns {"review": bool, "suggestions": bool} — what was built.
+    """
+    from .memory import CodebaseMemory
+
+    ran = {"review": False, "suggestions": False}
+    graph_path = root / config.MEMORY_DIR_NAME / "graph.json"
+    if provider.name == "mock" or not graph_path.is_file():
+        return ran
+    mem = CodebaseMemory.load(graph_path)
+    memory_dir = root / config.MEMORY_DIR_NAME
+
+    if not mem.graph.has_node("review:app"):
+        from .review import build_review, export_review
+
+        echo("  review: building alignment audit (first run for this project)")
+        build_review(mem.graph, root, provider,
+                     on_progress=lambda name, d, t: echo(f"  review [{d}/{t}] {name}"))
+        export_review(mem.graph, memory_dir)
+        ran["review"] = True
+
+    if not mem.graph.has_node("suggestions:app"):
+        from .suggest import build_suggestions, export_suggestions
+
+        echo("  suggest: ranking what to build next")
+        build_suggestions(mem.graph, root, provider)
+        export_suggestions(mem.graph, memory_dir)
+        ran["suggestions"] = True
+
+    if ran["review"] or ran["suggestions"]:
+        export_graph(mem.graph, memory_dir)
+    return ran
 
 
 def _scan_signature(root: Path) -> tuple:
