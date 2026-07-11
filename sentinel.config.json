@@ -1,0 +1,5 @@
+{
+  "fail_on": ["critical"],
+  "warn_on": ["high", "medium"],
+  "ignore_paths": []
+}

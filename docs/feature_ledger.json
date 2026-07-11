@@ -1,0 +1,814 @@
+{
+ "about": "Feature completion ledger audited by Hermes Sentinel (cms sentinel). Statuses: not_started | in_progress | blocked | complete.",
+ "features": [
+  {
+   "feature": "ActivityPulse",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/activity.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "AgentMemoryAccess",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/mcp.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "AppMode",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/app.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "CLIOrchestration",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/cli.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "CleanDirectoryScanner",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/scanner.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "CodebaseDocumentationExport",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/tree_export.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "CodebaseOptimizationAdvisor",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/suggest.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "CodebaseTreeExport",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/tree_export.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "ConfigurationManagement",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/config.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "ContextualPromptEnrichment",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/prompt_export.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "DependencyGraphExport",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/exporter.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "FeatureExpectationReview",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/review.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "FeatureExpectationValidation",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/review.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "FeatureSuggestion",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/suggest.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "FeatureTracing",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/features.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "FeatureVerification",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/verify.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "FindingPersistence",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/sentinel/store.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "FindingQualityGate",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/sentinel/__init__.py",
+     "cms/sentinel/store.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "GitHistoryLayer",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/githistory.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "HermesSentinel",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/sentinel/contracts.py",
+     "cms/sentinel/domain_rules.py",
+     "cms/sentinel/inventory.py",
+     "cms/sentinel/ledger.py",
+     "cms/sentinel/providers_check.py",
+     "cms/sentinel/reports.py",
+     "cms/sentinel/runner.py",
+     "cms/sentinel/static_risk.py",
+     "cms/sentinel/workflows.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "ImpactAnalysis",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/impact.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "IncrementalUpdates",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/update.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "InteractivePromptGeneration",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/prompt_export.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "KnowledgeGraphConstruction",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/graph_builder.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "LLMProviderAbstraction",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/providers.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "LLMProviderPluggability",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/providers.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "MemoryAnchors",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/anchors.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "MemoryLayerPersistence",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/exporter.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "MemoryLayerStoreExport",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/exporter.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "MemoryViewer",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/ui.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "NestedTreeStructureExport",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/tree_export.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "PromptPackGeneration",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/prompt_export.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "PublicAPIExportOrchestration",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/__init__.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "QueryEngine",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/memory.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "RankedSuggestionGeneration",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/suggest.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "SemanticMemoryExport",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/exporter.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "SemanticMemoryPersistence",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/exporter.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "SentinelBugFinding",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/sentinel/__init__.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "SummaryGenerator",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/summarizer.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  },
+  {
+   "feature": "TaskPromptGeneration",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/prompt_export.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no verifying tests mapped yet"
+   ],
+   "last_verified": "2026-07-05"
+  }
+ ]
+}

@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas — Hermes Sentinel</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #141413;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.14);
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-3: #898781;
+    --accent: #3987e5;
+    --radius: 8px;
+    --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "Consolas", monospace;
+    --sev-critical: #ff6369;
+    --sev-high: #ffa14f;
+    --sev-medium: #e2c341;
+    --sev-low: #6ca6f0;
+    --sev-info: #898781;
+    --ok: #4fc26b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--ink-2);
+    font: 13px/1.5 var(--font); -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  ::selection { background: rgba(57,135,229,0.35); }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: #2c2c2a; border-radius: 5px; border: 2px solid var(--bg); }
+
+  #app { display: grid; height: 100vh; grid-template-rows: 52px 1fr; grid-template-columns: 218px 1fr; }
+  header {
+    grid-column: 1 / -1; display: flex; align-items: center; gap: 14px;
+    padding: 0 18px; border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; user-select: none; }
+  .brand .logo { width: 22px; height: 22px; flex: none; display: block; }
+  .brand .logo .lg-peak { fill: none; stroke: var(--accent); stroke-width: 1.8; stroke-linejoin: round; }
+  .brand .logo .lg-inner { fill: rgba(57,135,229,0.16); stroke: rgba(57,135,229,0.55); stroke-width: 1; stroke-linejoin: round; }
+  .brand .logo .lg-star { fill: #eaf3ff; }
+  .brand .mark { color: var(--ink); font-weight: 660; font-size: 14px; letter-spacing: 0.22em; }
+  .brand .sub { color: #c98500; font-weight: 600; font-size: 12px; letter-spacing: 0.1em; }
+  .brand a { color: var(--ink-3); font-size: 12px; text-decoration: none; }
+  .brand a:hover { color: var(--accent); }
+
+  #gateBadge {
+    display: none; align-items: center; gap: 7px; padding: 4px 12px; border-radius: 999px;
+    font: 11px var(--mono); letter-spacing: 0.05em;
+  }
+  #gateBadge.pass { display: flex; border: 1px solid rgba(79,194,107,0.4); color: var(--ok); background: rgba(79,194,107,0.07); }
+  #gateBadge.fail { display: flex; border: 1px solid rgba(255,99,105,0.45); color: var(--sev-critical); background: rgba(255,99,105,0.08); }
+
+  header .actions { margin-left: auto; display: flex; gap: 8px; }
+  button, .btn {
+    background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 6px 13px; font: 12.5px var(--font);
+    cursor: pointer; transition: border-color 130ms ease, color 130ms ease; text-decoration: none;
+  }
+  button:hover, .btn:hover { border-color: var(--border-strong); color: var(--ink); }
+  button.primary { border-color: rgba(57,135,229,0.5); color: #86b6ef; }
+  button.primary:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  nav { border-right: 1px solid var(--border); padding: 14px 8px; overflow-y: auto; }
+  .tab {
+    display: flex; align-items: center; gap: 8px; padding: 7px 11px; border-radius: 6px;
+    cursor: pointer; color: var(--ink-2); user-select: none; font-size: 12.5px;
+  }
+  .tab:hover { background: rgba(255,255,255,0.04); }
+  .tab.active { background: rgba(57,135,229,0.13); color: var(--ink); }
+  .tab .n { margin-left: auto; font: 10.5px var(--mono); color: var(--ink-3); }
+  .tab .n.hot { color: var(--sev-critical); }
+
+  main { overflow-y: auto; padding: 20px 24px 60px; }
+  h2 { color: var(--ink); font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+  .sub2 { color: var(--ink-3); font-size: 12px; margin-bottom: 16px; }
+  h3 { color: var(--ink); font-size: 12.5px; font-weight: 600; margin: 18px 0 8px; }
+
+  /* stat tiles — status colors always carry a text label (never color alone) */
+  .tiles { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+  .tile {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 16px; min-width: 118px;
+  }
+  .tile .v { color: var(--ink); font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile .l { color: var(--ink-3); font-size: 11px; display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+  .sev { font: 10px var(--mono); text-transform: uppercase; letter-spacing: 0.07em;
+         padding: 1px 7px; border-radius: 4px; border: 1px solid; flex: none; }
+  .sev.critical { color: var(--sev-critical); border-color: rgba(255,99,105,0.5); }
+  .sev.high { color: var(--sev-high); border-color: rgba(255,161,79,0.5); }
+  .sev.medium { color: var(--sev-medium); border-color: rgba(226,195,65,0.45); }
+  .sev.low { color: var(--sev-low); border-color: rgba(108,166,240,0.45); }
+  .sev.info { color: var(--sev-info); border-color: rgba(137,135,129,0.5); }
+
+  .frow {
+    border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 7px;
+    background: var(--surface-2); overflow: hidden;
+  }
+  .frow .head { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; }
+  .frow .head:hover { background: rgba(255,255,255,0.03); }
+  .frow .summary { color: var(--ink); font-size: 12.5px; min-width: 0; }
+  .frow .loc { color: var(--ink-3); font: 10.5px var(--mono); margin-left: auto; flex: none; }
+  .frow .bug { color: var(--ink-3); font: 10.5px var(--mono); flex: none; }
+  .frow .status-pill { font: 10px var(--mono); color: var(--ink-3); border: 1px dashed var(--border-strong);
+                       border-radius: 4px; padding: 1px 6px; flex: none; }
+  .frow .status-pill.open { color: var(--sev-high); border-color: rgba(255,161,79,0.4); }
+  .frow .status-pill.resolved, .frow .status-pill.false_positive { color: var(--ink-3); }
+  .frow .body { display: none; padding: 4px 14px 12px; border-top: 1px solid var(--border); }
+  .frow.open .body { display: block; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 3px 12px; font-size: 12px; margin-top: 8px; }
+  .kv .k { color: var(--ink-3); }
+  .kv .v2 { color: var(--ink-2); word-break: break-word; }
+  .kv .v2 code { font: 11px var(--mono); color: var(--ink-2); }
+
+  .statusbar { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  select, input[type=text] {
+    background: var(--surface); color: var(--ink-2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font: 12px var(--font); outline: none;
+  }
+  input[type=text] { flex: 1; }
+  .note { color: var(--ink-3); font-size: 11px; margin-top: 6px; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th { text-align: left; color: var(--ink-3); font-weight: 500; font-size: 10.5px;
+       text-transform: uppercase; letter-spacing: 0.08em; padding: 5px 10px; border-bottom: 1px solid var(--border-strong); }
+  td { padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--ink-2); }
+  td.mono, .mono { font: 11px var(--mono); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num { text-align: right; }
+
+  .wf { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; border: 1px solid var(--border);
+        border-radius: var(--radius); margin-bottom: 6px; background: var(--surface-2); }
+  .wf .wmark { font: 10.5px var(--mono); flex: none; width: 60px; }
+  .wf.pass .wmark { color: var(--ok); }
+  .wf.fail .wmark { color: var(--sev-critical); }
+  .wf.missing .wmark { color: var(--sev-medium); }
+  .wf .wname { color: var(--ink); font-size: 12.5px; flex: none; }
+  .wf .wactual { color: var(--ink-3); font-size: 11.5px; min-width: 0; }
+  .wf .wmode { margin-left: auto; font: 10px var(--mono); color: var(--ink-3); border: 1px dashed var(--border);
+               padding: 1px 6px; border-radius: 4px; flex: none; }
+
+  pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+        padding: 12px; font: 11.5px var(--mono); overflow-x: auto; color: var(--ink-2); }
+  .empty { color: var(--ink-3); padding: 24px 0; text-align: center; font-size: 12.5px; }
+  .chip { display: inline-block; font: 10.5px var(--mono); border: 1px solid var(--border-strong);
+          border-radius: 4px; padding: 1px 7px; margin: 2px 3px 2px 0; color: var(--ink-2); }
+  #scanSpin { display: none; color: var(--sev-low); font: 11px var(--mono); }
+  #scanSpin.on { display: inline; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 28 28" aria-hidden="true">
+        <path class="lg-peak" d="M14 4 L25 23 L3 23 Z"/>
+        <path class="lg-inner" d="M14 11.5 L19.5 21 L8.5 21 Z"/>
+        <circle class="lg-star" cx="14" cy="8" r="1.15"/>
+      </svg>
+      <span class="mark">ATLAS</span>
+      <span class="sub">HERMES SENTINEL</span>
+      <a href="/">&larr; map</a>
+    </div>
+    <div id="gateBadge"></div>
+    <span id="scanSpin">scanning…</span>
+    <div class="actions">
+      <a class="btn" href="/api/sentinel/export?format=md" target="_blank">Export MD</a>
+      <a class="btn" href="/api/sentinel/export?format=json" target="_blank">Export JSON</a>
+      <button class="primary" id="runBtn">Run scan</button>
+    </div>
+  </header>
+  <nav id="tabs"></nav>
+  <main id="main"></main>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const SEVS = ["critical", "high", "medium", "low", "info"];
+const ACTIVE = ["open", "acknowledged", "fixed_pending_verification"];
+const STATUSES = ["open", "acknowledged", "fixed_pending_verification", "resolved", "false_positive"];
+const SEV_VAR = { critical: "var(--sev-critical)", high: "var(--sev-high)", medium: "var(--sev-medium)",
+                  low: "var(--sev-low)", info: "var(--sev-info)" };
+
+const TABS = [
+  ["overview", "Overview", null],
+  ["scan", "Project Scan", "inventory"],
+  ["ledger", "Feature Ledger", "ledger"],
+  ["risks", "Static Risks", "static_risk"],
+  ["contracts", "Contracts", "contracts"],
+  ["workflows", "Workflows", "workflows"],
+  ["rules", "Domain Rules", "domain_rules"],
+  ["providers", "Providers", "providers"],
+  ["bugs", "Bug Reports", null],
+  ["settings", "Settings", null],
+];
+
+let DATA = { scan: null, findings: {}, history: [], state: {} };
+let activeTab = "overview";
+let expanded = new Set();
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+async function load() {
+  try {
+    const res = await fetch("/api/sentinel/latest");
+    DATA = await res.json();
+  } catch (e) { /* server gone; keep last */ }
+  render();
+}
+
+function findingsList(module, includeSettled = false) {
+  return Object.values(DATA.findings || {})
+    .filter((f) => (!module || f.module === module) && (includeSettled || ACTIVE.includes(f.status)))
+    .sort((a, b) => SEVS.indexOf(a.severity) - SEVS.indexOf(b.severity)
+                    || (a.bug_id || "").localeCompare(b.bug_id || ""));
+}
+
+function render() {
+  renderTabs();
+  renderGate();
+  const scan = DATA.scan;
+  const el = $("main");
+  if (!scan && activeTab !== "settings") {
+    el.innerHTML = `<div class="empty">No Sentinel scan yet.<br><br>
+      Press <b>Run scan</b> above, or run <code class="mono">cms sentinel</code> in a terminal.</div>`;
+    return;
+  }
+  const views = { overview, scan: projectScan, ledger, risks: () => moduleView("static_risk",
+      "Static Risks", "Risky patterns in source, classified by context — production code ranks above tests and docs."),
+    contracts: () => moduleView("contracts", "Contracts",
+      "UI fetches vs HTTP routes, MCP tool schemas vs server methods, README docs vs live CLI."),
+    workflows, rules: () => moduleView("domain_rules", "Domain Rules",
+      "CMS invariants: provenance & mock labelling, traceability, verdict sanity, freshness, loopback-only security."),
+    providers: () => moduleView("providers", "Providers (driver validation)",
+      "The LLM provider layer is CMS's driver architecture: interface conformance + live mock checks."),
+    bugs, settings };
+  el.innerHTML = (views[activeTab] || overview)();
+  el.querySelectorAll(".frow .head").forEach((head) => head.addEventListener("click", () => {
+    const fp = head.parentElement.dataset.fp;
+    expanded.has(fp) ? expanded.delete(fp) : expanded.add(fp);
+    render();
+  }));
+  el.querySelectorAll(".statusbar button").forEach((btn) => btn.addEventListener("click", applyStatus));
+}
+
+function renderTabs() {
+  $("tabs").innerHTML = TABS.map(([id, label, module]) => {
+    let count = "";
+    if (module === "inventory") count = "";
+    else if (module) {
+      const list = findingsList(module);
+      const hot = list.some((f) => f.severity === "critical" || f.severity === "high");
+      count = `<span class="n ${hot ? "hot" : ""}">${list.length || ""}</span>`;
+    } else if (id === "bugs") {
+      count = `<span class="n">${findingsList(null, true).length || ""}</span>`;
+    }
+    return `<div class="tab ${id === activeTab ? "active" : ""}" data-tab="${id}">${label}${count}</div>`;
+  }).join("");
+  document.querySelectorAll(".tab").forEach((tab) => tab.addEventListener("click", () => {
+    activeTab = tab.dataset.tab; render();
+  }));
+}
+
+function renderGate() {
+  const badge = $("gateBadge");
+  const gate = DATA.scan && DATA.scan.gate;
+  if (!gate || gate.failed === undefined) { badge.className = ""; badge.style.display = "none"; return; }
+  badge.style.display = "flex";
+  badge.className = gate.failed ? "fail" : "pass";
+  badge.textContent = gate.failed ? "QUALITY GATE FAILED" : "quality gate passing";
+}
+
+function sevTiles() {
+  const counts = (DATA.scan && DATA.scan.active_counts) || {};
+  return SEVS.map((s) => `
+    <div class="tile"><div class="v">${counts[s] || 0}</div>
+      <div class="l"><span class="dot" style="background:${SEV_VAR[s]}"></span>${s}</div></div>`).join("");
+}
+
+function overview() {
+  const scan = DATA.scan;
+  const errs = Object.entries(scan.module_errors || {});
+  return `
+    <h2>Overview</h2>
+    <div class="sub2">Scan <span class="mono">${esc(scan.scan_id)}</span> · ${esc(scan.created_at)}
+      · mode: <b>${esc(scan.execution_mode)}</b> · ${scan.duration_s}s
+      · modules: ${(scan.modules_run || []).length}</div>
+    <div class="tiles">${sevTiles()}</div>
+    ${errs.length ? `<h3>Module errors</h3>` + errs.map(([m, e]) =>
+      `<div class="wf fail"><span class="wmark">ERROR</span><span class="wname">${esc(m)}</span>
+       <span class="wactual">${esc(e)}</span></div>`).join("") : ""}
+    <h3>Workflow checks</h3>
+    ${wfList(scan)}
+    <h3>Recent scans</h3>
+    <table><tr><th>scan</th><th>when</th><th>mode</th><th class="num">new findings</th><th>gate</th></tr>
+    ${(DATA.history || []).slice().reverse().map((h) => `<tr>
+      <td class="mono">${esc(h.scan_id)}</td><td class="mono">${esc(h.created_at)}</td>
+      <td>${esc(h.execution_mode)}</td><td class="num">${h.new_findings}</td>
+      <td>${h.gate && h.gate.failed ? "FAILED" : "pass"}</td></tr>`).join("")}
+    </table>`;
+}
+
+function wfList(scan) {
+  const checks = scan.workflow_checks || [];
+  if (!checks.length) return `<div class="empty">no workflow checks in this scan</div>`;
+  return checks.map((c) => {
+    const cls = c.passed === true ? "pass" : c.passed === false ? "fail" : "missing";
+    const mark = c.passed === true ? "PASS" : c.passed === false ? "FAIL" : "MISSING";
+    return `<div class="wf ${cls}"><span class="wmark">${mark}</span>
+      <span class="wname">${esc(c.name)}</span>
+      <span class="wactual">${esc(c.actual)}</span>
+      <span class="wmode">${esc(c.mode || "mock")}</span></div>`;
+  }).join("");
+}
+
+function projectScan() {
+  const inv = DATA.scan.inventory || {};
+  const stack = inv.detected_stack || DATA.scan.detected_stack || {};
+  const files = inv.files || {};
+  const feats = inv.features || [];
+  return `
+    <h2>Project Scan</h2>
+    <div class="sub2">Real inventory — every entry derived from files or live imports of the actual code.</div>
+    <h3>Detected stack</h3>
+    <table>${Object.entries(stack).map(([k, v]) =>
+      `<tr><td style="width:140px" class="mono">${esc(k)}</td><td>${esc(Array.isArray(v) ? v.join(" · ") : v)}</td></tr>`).join("")}
+    </table>
+    <div class="tiles" style="margin-top:16px">
+      <div class="tile"><div class="v">${inv.file_count ?? "?"}</div><div class="l">scanned files</div></div>
+      <div class="tile"><div class="v">${(files.tests || []).length}</div><div class="l">test files</div></div>
+      <div class="tile"><div class="v">${(inv.cli_commands || []).length}</div><div class="l">CLI commands</div></div>
+      <div class="tile"><div class="v">${(inv.http_routes || []).length}</div><div class="l">HTTP routes</div></div>
+      <div class="tile"><div class="v">${(inv.mcp_tools || []).length}</div><div class="l">MCP tools</div></div>
+      <div class="tile"><div class="v">${feats.length}</div><div class="l">graph features</div></div>
+    </div>
+    <h3>CLI commands</h3><div>${(inv.cli_commands || []).map((c) => `<span class="chip">${esc(c)}</span>`).join("")}</div>
+    <h3>HTTP routes (cms/ui.py)</h3><div>${(inv.http_routes || []).map((r) => `<span class="chip">${esc(r)}</span>`).join("")}</div>
+    <h3>MCP tools</h3><div>${(inv.mcp_tools || []).map((t) => `<span class="chip">${esc(t)}</span>`).join("")}</div>
+    <h3>UI pages &rarr; API calls</h3>
+    <table><tr><th>page</th><th>fetches</th></tr>
+      ${Object.entries(inv.ui_api_calls || {}).map(([p, calls]) =>
+        `<tr><td class="mono">${esc(p)}</td><td class="mono">${calls.map(esc).join(", ")}</td></tr>`).join("")}
+    </table>
+    <h3>Memory artifacts</h3><div>${(inv.memory_artifacts || []).map((a) => `<span class="chip">${esc(a)}</span>`).join("")}</div>`;
+}
+
+function ledger() {
+  const inv = DATA.scan.inventory || {};
+  const feats = inv.features || [];
+  return `
+    <h2>Feature Ledger</h2>
+    <div class="sub2">Claimed completion (docs/feature_ledger.json) audited against graph evidence.
+      Ledger file: <span class="mono">${esc(inv.feature_ledger || "none — run `cms sentinel ledger-init`")}</span></div>
+    <h3>Graph features (live evidence)</h3>
+    <table><tr><th>feature</th><th>source</th><th class="num">members</th><th class="num">verifying tests</th><th>reviewed</th></tr>
+    ${feats.map((f) => `<tr><td>${esc(f.name)}</td><td>${esc(f.source)}</td>
+      <td class="num">${f.members}</td><td class="num">${f.tests}</td>
+      <td>${f.reviewed ? "yes" : "—"}</td></tr>`).join("")}
+    </table>
+    <h3>Ledger findings</h3>
+    ${frows(findingsList("ledger"))}`;
+}
+
+function workflows() {
+  return `
+    <h2>Workflows</h2>
+    <div class="sub2">End-to-end checks executed against the real pipeline in throwaway fixture projects
+      (mock provider — deterministic, labelled). Failures become findings; unsupported workflows are
+      reported as missing, never faked.</div>
+    ${wfList(DATA.scan)}
+    <h3>Workflow findings</h3>
+    ${frows(findingsList("workflows"))}`;
+}
+
+function moduleView(module, title, blurb) {
+  return `<h2>${esc(title)}</h2><div class="sub2">${esc(blurb)}</div>${frows(findingsList(module))}`;
+}
+
+function bugs() {
+  const list = findingsList(null, true);
+  return `
+    <h2>Bug Reports</h2>
+    <div class="sub2">Every persistent finding, active and settled. Statuses and false-positive reasons
+      survive scans and restarts (.memory/sentinel/findings.json).</div>
+    ${frows(list, true)}`;
+}
+
+function settings() {
+  const cfg = (DATA.scan && DATA.scan.config) || { fail_on: ["critical"], warn_on: ["high", "medium"], ignore_paths: [] };
+  return `
+    <h2>Settings</h2>
+    <div class="sub2">Gate thresholds come from <span class="mono">sentinel.config.json</span> at the repo
+      root (optional). Edit the file and rerun the scan — there is deliberately no UI write path for the gate.</div>
+    <pre>${esc(JSON.stringify(cfg, null, 2))}</pre>
+    <h3>Finding statuses</h3>
+    <table>
+      <tr><td class="mono">open</td><td>detected and unhandled — counts against the gate</td></tr>
+      <tr><td class="mono">acknowledged</td><td>seen, accepted for now — still counts against the gate</td></tr>
+      <tr><td class="mono">fixed_pending_verification</td><td>fix landed; the next clean scan auto-resolves it</td></tr>
+      <tr><td class="mono">resolved</td><td>gone; if re-detected it reopens automatically (regression)</td></tr>
+      <tr><td class="mono">false_positive</td><td>not a real problem — requires a reason, excluded from the gate</td></tr>
+    </table>
+    <h3>Execution modes</h3>
+    <div class="note">Scans record <b>mock</b> or <b>live</b> depending on the configured LLM provider.
+      Workflow checks always run with the mock provider and are labelled per check — mock results are never
+      presented as live output.</div>
+    <h3>CLI</h3>
+    <pre>cms sentinel              # full scan + quality gate (exit 1 on active criticals)
+cms sentinel findings     # list findings        cms sentinel show BUG-000001
+cms sentinel status BUG-000001 false_positive --reason "..."
+cms sentinel export -f json
+cms sentinel ledger-init  # generate docs/feature_ledger.json from graph evidence</pre>`;
+}
+
+function frows(list, includeSettled = false) {
+  if (!list.length) return `<div class="empty">no ${includeSettled ? "" : "active "}findings</div>`;
+  return list.map((f) => {
+    const fp = f.fingerprint;
+    const open = expanded.has(fp);
+    const loc = f.file ? `${f.file}${f.line ? ":" + f.line : ""}` : f.module;
+    return `
+    <div class="frow ${open ? "open" : ""}" data-fp="${esc(fp)}">
+      <div class="head">
+        <span class="sev ${esc(f.severity)}">${esc(f.severity)}</span>
+        <span class="bug">${esc(f.bug_id || f.id)}</span>
+        <span class="summary">${esc(f.summary)}</span>
+        <span class="status-pill ${esc(f.status)}">${esc(f.status)}</span>
+        <span class="loc">${esc(loc)}</span>
+      </div>
+      <div class="body">
+        <div class="kv">
+          <span class="k">module / area</span><span class="v2">${esc(f.module)} · ${esc(f.area)}</span>
+          ${f.feature ? `<span class="k">feature</span><span class="v2">${esc(f.feature)}</span>` : ""}
+          ${f.pattern ? `<span class="k">pattern</span><span class="v2"><code>${esc(f.pattern)}</code></span>` : ""}
+          ${(f.evidence || []).length ? `<span class="k">evidence</span>
+            <span class="v2">${f.evidence.map((e) => `<code>${esc(e)}</code>`).join("<br>")}</span>` : ""}
+          ${f.risk ? `<span class="k">risk</span><span class="v2">${esc(f.risk)}</span>` : ""}
+          ${f.recommendation ? `<span class="k">recommended fix</span><span class="v2">${esc(f.recommendation)}</span>` : ""}
+          <span class="k">mode</span><span class="v2">${esc(f.execution_mode || "development")}</span>
+          <span class="k">first / last seen</span><span class="v2">${esc(f.first_seen)} &rarr; ${esc(f.last_seen)}</span>
+          ${f.status_reason ? `<span class="k">status reason</span><span class="v2">${esc(f.status_reason)}</span>` : ""}
+        </div>
+        <div class="statusbar" data-id="${esc(f.bug_id || f.id)}">
+          <select>${STATUSES.map((s) =>
+            `<option ${s === f.status ? "selected" : ""}>${s}</option>`).join("")}</select>
+          <input type="text" placeholder="reason (required for false_positive)" value="">
+          <button>Apply</button>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function applyStatus(ev) {
+  ev.stopPropagation();
+  const bar = ev.target.closest(".statusbar");
+  const status = bar.querySelector("select").value;
+  const reason = bar.querySelector("input").value.trim();
+  if (status === "false_positive" && !reason) {
+    bar.querySelector("input").placeholder = "REASON REQUIRED for false_positive";
+    bar.querySelector("input").focus();
+    return;
+  }
+  const res = await fetch("/api/sentinel/finding", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: bar.dataset.id, status, reason }),
+  });
+  if (res.ok) load();
+  else {
+    const err = await res.json().catch(() => ({}));
+    bar.querySelector("input").placeholder = err.error || "update failed";
+  }
+}
+
+$("runBtn").addEventListener("click", async () => {
+  $("runBtn").disabled = true;
+  $("scanSpin").classList.add("on");
+  await fetch("/api/sentinel/scan", { method: "POST" }).catch(() => {});
+  const poll = setInterval(async () => {
+    try {
+      const state = await (await fetch("/api/sentinel/scan-status")).json();
+      if (!state.running) {
+        clearInterval(poll);
+        $("runBtn").disabled = false;
+        $("scanSpin").classList.remove("on");
+        if (state.error) alert("Sentinel scan failed: " + state.error);
+        load();
+      }
+    } catch (e) { /* keep polling */ }
+  }, 1200);
+});
+
+load();
+</script>
+</body>
+</html>
