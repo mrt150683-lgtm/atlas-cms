@@ -3,7 +3,7 @@ from pathlib import Path
 
 from cms.features import build_features
 from cms.graph_builder import build_graph
-from cms.mcp import MCPServer
+from cms.mcp import MCPServer, discover_root
 from cms.memory import CodebaseMemory
 from cms.providers import MockProvider
 from cms.scanner import scan
@@ -99,6 +99,86 @@ def test_bad_arguments_surface_as_tool_error(tmp_path: Path) -> None:
     resp = _call(server, "tools/call", {"name": "query_codebase", "arguments": {"nonsense": True}})
     assert resp["result"]["isError"] is True
     assert "error:" in resp["result"]["content"][0]["text"]
+
+
+def test_discover_root_walks_up_to_memory_layer(tmp_path: Path) -> None:
+    _server(tmp_path)  # builds .memory/graph.json at tmp_path
+    nested = tmp_path / "src" / "deep"
+    nested.mkdir(parents=True)
+    assert discover_root(nested) == tmp_path
+    assert discover_root(tmp_path) == tmp_path
+    # nothing to find -> the start dir comes back unchanged
+    bare = tmp_path / "src"
+    (tmp_path / ".memory" / "graph.json").rename(tmp_path / ".memory" / "graph.bak")
+    try:
+        assert discover_root(bare) == bare
+    finally:
+        (tmp_path / ".memory" / "graph.bak").rename(tmp_path / ".memory" / "graph.json")
+
+
+def test_no_memory_layer_serves_gracefully(tmp_path: Path) -> None:
+    """A repo with no .memory/: handshake + tools/list still work, tool calls
+    return a helpful error, and nothing is written into the repo."""
+    server = MCPServer(tmp_path)
+    init = _call(server, "initialize", {"clientInfo": {"name": "TestClient"}})
+    assert init["result"]["serverInfo"]["name"] == "cms"
+    tools = _call(server, "tools/list")["result"]["tools"]
+    assert len(tools) >= 14
+    resp = _call(server, "tools/call", {"name": "query_codebase", "arguments": {"query": "anything"}})
+    assert resp["result"]["isError"] is True
+    assert "no memory layer" in resp["result"]["content"][0]["text"]
+    assert "run-all" in resp["result"]["content"][0]["text"]
+    # the cosmetic activity feed must not scribble on an un-mapped repo
+    assert not (tmp_path / ".memory").exists()
+
+
+def _make_memory(root: Path, source_name: str, source: str) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / source_name).write_text(source, encoding="utf-8")
+    graph = build_graph(scan(root))
+    build_features(graph, MockProvider())
+    (root / ".memory").mkdir(exist_ok=True)
+    CodebaseMemory(graph).save(root / ".memory" / "graph.json")
+
+
+def test_switch_project_flips_root_mid_session(tmp_path: Path) -> None:
+    a = tmp_path / "proj_a"
+    a.mkdir()
+    server = _server(a)
+    b = tmp_path / "proj_b"
+    _make_memory(b, "other.py", "# @memory:feature:Widgets\ndef widget():\n    return 1\n")
+
+    out = _tool(server, "switch_project", {"path": str(b)})
+    assert out["memory"] == "loaded" and out["root"] == str(b)
+    assert out["files"] == 1 and out["nodes"] > 1
+    hits = _tool(server, "query_codebase", {"query": "widget"})
+    assert any("other.py" in h["node_id"] for h in hits)
+    # the source guard is now anchored to the NEW root
+    src = _tool(server, "get_source", {"path": "../proj_a/app.py"})
+    assert "error" in src
+    src = _tool(server, "get_source", {"path": "other.py"})
+    assert "def widget" in src["source"]
+
+
+def test_switch_project_guardrails_and_lazy_build_pickup(tmp_path: Path) -> None:
+    a = tmp_path / "proj_a"
+    a.mkdir()
+    server = _server(a)
+    # a plain directory is not a project: refused, root unchanged
+    plain = tmp_path / "not_a_project"
+    plain.mkdir()
+    out = _tool(server, "switch_project", {"path": str(plain)})
+    assert "error" in out
+    assert server.root == a
+    # a git repo without memory: switches, reports how to build
+    repo = tmp_path / "fresh_repo"
+    (repo / ".git").mkdir(parents=True)
+    out = _tool(server, "switch_project", {"path": str(repo)})
+    assert out["memory"] == "missing" and "run-all" in out["next_step"]
+    # once the memory is built (e.g. via the shell), tools work without a restart
+    _make_memory(repo, "thing.py", "def thing():\n    return 2\n")
+    hits = _tool(server, "query_codebase", {"query": "thing"})
+    assert any("thing.py" in h["node_id"] for h in hits)
 
 
 def test_serve_stdio_loop(tmp_path: Path, monkeypatch, capsys) -> None:

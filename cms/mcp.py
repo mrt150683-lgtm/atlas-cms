@@ -113,6 +113,16 @@ TOOLS = [
         },
     },
     {
+        "name": "get_sentinel_report",
+        "description": "Hermes Sentinel results: latest bug-finding/completion-audit scan with quality-gate verdict, workflow check outcomes, and active findings (severity, file:line, risk, recommended fix). Run `cms sentinel` to refresh.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "severity": {"type": "string", "description": "Optional filter: critical | high | medium | low | info"},
+            },
+        },
+    },
+    {
         "name": "get_source",
         "description": "Read an exact source snippet by path and line range (surgical read — prefer this over whole files).",
         "inputSchema": {
@@ -125,7 +135,49 @@ TOOLS = [
             "required": ["path"],
         },
     },
+    {
+        "name": "declare_intent",
+        "description": "Record what the current change is meant to do BEFORE you start. Returns a memory-grounded brief (relevant code, features, blast radius, how to verify). Call this first, then check_alignment when done.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "goal": {"type": "string", "description": "What you plan to do, in plain words. If omitted, inferred from the git branch or last commit."},
+            },
+        },
+    },
+    {
+        "name": "switch_project",
+        "description": "Point this memory server at a different project root mid-session ('let's work on X now'). Accepts a directory; walks up to the nearest mapped root (.memory/graph.json). If the project has no memory layer yet, tells you the exact command to build it — run that in a shell, then query again (the new graph is picked up automatically).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Directory of (or inside) the project to switch to, e.g. C:/repos/other-app"},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "check_alignment",
+        "description": "Did the change do what was declared? Judges the git diff against the active intent — returns a verdict (aligned/partial/drift/unverified), concrete gaps, Sentinel findings on changed files, and the exact tests to run. Call after making changes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "base": {"type": "string", "description": "Git base to diff against (default HEAD; use e.g. main for a branch)."},
+                "scan": {"type": "boolean", "description": "Refresh Sentinel before judging (default false)."},
+            },
+        },
+    },
 ]
+
+
+# @memory:feature:AgentMemoryAccess
+# @memory:summary:Root discovery for a globally-configured MCP server — walk up from the launch dir to the nearest project holding a memory layer, so one config entry serves every repo.
+def discover_root(start: Path) -> Path:
+    """Nearest ancestor (incl. start) holding .memory/graph.json; else start."""
+    for candidate in (start, *start.parents):
+        if (candidate / config.MEMORY_DIR_NAME / "graph.json").is_file():
+            return candidate
+    return start
 
 
 # @memory:feature:AgentMemoryAccess
@@ -139,11 +191,21 @@ class MCPServer:
         self._mtime = 0.0
 
     def memory(self) -> CodebaseMemory:
+        if not self.graph_path.is_file():
+            raise RuntimeError(
+                f"no memory layer at {self.root} — run `cms run-all` (or `cms app`) there first"
+            )
         mtime = self.graph_path.stat().st_mtime
         if self._memory is None or mtime != self._mtime:
             self._memory = CodebaseMemory.load(self.graph_path)
             self._mtime = mtime
         return self._memory
+
+    def _log(self, tool: str, nodes: list[str], label: str = "") -> None:
+        # Never create .memory/ in a project that has no memory layer yet —
+        # the feed is cosmetic and must not scribble on un-mapped repos.
+        if self.graph_path.is_file():
+            log_activity(self.root / config.MEMORY_DIR_NAME, tool, nodes, label=label)
 
     # ── tool implementations ────────────────────────────────────────────
 
@@ -185,7 +247,7 @@ class MCPServer:
                 "description": f.get("description", ""),
                 "members": len(f.get("members", [])),
                 "connects": f.get("connects", []),
-                "verified_by": len(f.get("verified_by", [])),
+                "exercised_by": len(f.get("exercised_by", [])),
             }
             for f in get_features(self.memory().graph)
         ]
@@ -203,7 +265,9 @@ class MCPServer:
                     "flows": f.get("flows", []),
                     "connects": f.get("connects", []),
                     "narrative": f.get("summary", ""),
-                    "verified_by": f.get("verified_by", []),
+                    "exercised_by": f.get("exercised_by", []),
+                    # deprecated alias, kept one release for older agent docs
+                    "verified_by": f.get("exercised_by", []),
                 }
         return {"error": f"unknown feature {name!r}"}
 
@@ -248,6 +312,102 @@ class MCPServer:
         content, out = export_prompt(self.root, task, as_json=as_json)
         return {"path": str(out), "content": content}
 
+    # @memory:feature:ChangeAlignment
+    # @memory:connects:AgentMemoryAccess, ImpactAnalysis, HermesSentinel, PromptExport
+    # @memory:summary:Agent intent-input channel — records the goal of the current change and returns a memory-grounded brief to work against.
+    def declare_intent(self, goal: str | None = None) -> dict:
+        from .intent import capture_intent
+
+        pack = capture_intent(self.root, goal=goal)
+        return {
+            "intent": pack.get("task"),
+            "source": pack.get("intent_source"),
+            "relevant_code": [
+                {"kind": t["kind"], "name": t["name"], "path": t.get("path"), "lines": t.get("lines")}
+                for t in pack.get("relevant_code", [])
+            ],
+            "features": [f["name"] for f in pack.get("features", [])],
+            "impact": pack.get("impact"),
+            "verification": pack.get("verification", []),
+        }
+
+    # @memory:feature:ChangeAlignment
+    # @memory:summary:Honest-finish check — verdicts the working diff against the declared intent (aligned/partial/drift/unverified) with gaps, findings and tests to run.
+    def check_alignment(self, base: str = "HEAD", scan: bool = False) -> dict:
+        from .align import AlignStore, build_alignment
+
+        store = AlignStore(self.root / config.MEMORY_DIR_NAME)
+        pack = store.load_intent()
+        if pack is None:
+            return {"error": "no intent declared — call declare_intent first"}
+        record = build_alignment(self.memory(), self.root, pack, base=base, scan=scan)
+        store.save_alignment(record)
+        return record
+
+    def get_sentinel_report(self, severity: str | None = None) -> dict:
+        from .sentinel import ACTIVE_STATUSES
+        from .sentinel.store import SentinelStore
+
+        store = SentinelStore(self.root / config.MEMORY_DIR_NAME)
+        scan = store.latest_scan()
+        if scan is None:
+            return {"error": "no Sentinel scan yet — run `cms sentinel`"}
+        findings = [
+            f for f in store.load_findings().values()
+            if f.get("status") in ACTIVE_STATUSES
+            and (not severity or f.get("severity") == severity)
+        ]
+        return {
+            "scan_id": scan.get("scan_id"),
+            "created_at": scan.get("created_at"),
+            "execution_mode": scan.get("execution_mode"),
+            "gate": scan.get("gate"),
+            "workflow_checks": [
+                {k: c.get(k) for k in ("name", "passed", "actual", "mode")}
+                for c in scan.get("workflow_checks", [])
+            ],
+            "active_findings": sorted(
+                findings, key=lambda f: ("critical high medium low info".split().index(f["severity"])
+                                          if f["severity"] in ("critical", "high", "medium", "low", "info") else 9),
+            )[:40],
+        }
+
+    # @memory:feature:AgentMemoryAccess
+    # @memory:summary:Mid-session project flipping — rebinds the server to another project root so one agent session can move between codebases without a restart.
+    def switch_project(self, path: str) -> dict:
+        target = Path(path).expanduser()
+        if not target.is_absolute():
+            target = self.root / target
+        try:
+            target = target.resolve()
+        except OSError as exc:
+            return {"error": f"cannot resolve {path!r}: {exc}"}
+        if not target.is_dir():
+            return {"error": f"not a directory: {path!r}"}
+        root = discover_root(target)
+        mapped = (root / config.MEMORY_DIR_NAME / "graph.json").is_file()
+        # Only rebind onto things that are actually projects — never a home dir
+        # or drive root just because it exists (source access follows the root).
+        if not mapped and not (root / ".git").is_dir():
+            return {"error": f"{root} doesn't look like a project (no .memory/ and no .git); "
+                             "point me at a repo root"}
+        self.root = root
+        self.graph_path = root / config.MEMORY_DIR_NAME / "graph.json"
+        self._memory = None
+        self._mtime = 0.0
+        if not mapped:
+            return {
+                "root": str(root), "memory": "missing",
+                "next_step": f"run `cms run-all --root {root}` in a shell (mock provider: add `-p mock`), "
+                             "then query again — the new graph is picked up automatically",
+            }
+        graph = self.memory().graph
+        return {
+            "root": str(root), "memory": "loaded",
+            "files": sum(1 for _, a in graph.nodes(data=True) if a.get("type") == "file"),
+            "nodes": graph.number_of_nodes(), "edges": graph.number_of_edges(),
+        }
+
     def get_source(self, path: str, start_line: int = 1, end_line: int | None = None) -> dict:
         target = (self.root / path).resolve()
         if self.root not in target.parents and target != self.root:
@@ -270,9 +430,7 @@ class MCPServer:
             label = client.get("name") or "AI model"
             if client.get("version"):
                 label += f" {client['version']}"
-            log_activity(
-                self.root / config.MEMORY_DIR_NAME, "connected", [], label=label
-            )
+            self._log("connected", [], label=label)
             return self._result(msg_id, {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
@@ -298,9 +456,8 @@ class MCPServer:
                     "content": [{"type": "text", "text": f"error: {type(exc).__name__}: {exc}"}],
                     "isError": True,
                 })
-            log_activity(
-                self.root / config.MEMORY_DIR_NAME, name,
-                self._touched_nodes(name, args, payload),
+            self._log(
+                name, self._touched_nodes(name, args, payload),
                 label=str(args.get("query") or args.get("name") or args.get("target")
                           or args.get("path") or args.get("function") or ""),
             )

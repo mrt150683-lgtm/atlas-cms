@@ -335,7 +335,7 @@ def verify(
         if not matches:
             typer.echo(f"Unknown feature {feature!r}.", err=True)
             raise typer.Exit(1)
-        tests = matches[0].get("verified_by") or []
+        tests = matches[0].get("exercised_by") or []
         if not tests:
             typer.echo("No tests mapped yet — run `cms verify` (no args) first.")
             raise typer.Exit(1)
@@ -462,12 +462,16 @@ def prompt(
 @app.command()
 def mcp(root: Path = RootOption) -> None:
     """Run the MCP server (stdio) so AI agents can query this memory natively."""
-    from .mcp import MCPServer
+    from .mcp import MCPServer, discover_root
 
-    root = root.resolve()
+    # Walk up to the nearest mapped project (a global MCP config launches us
+    # with cwd = whatever workspace the agent has open, possibly a subdir).
+    root = discover_root(root.resolve())
     if not (_memory_dir(root) / "graph.json").is_file():
-        typer.echo("No memory layer. Run `cms run-all` first.", err=True)
-        raise typer.Exit(1)
+        # Keep serving: a dead server breaks the agent session everywhere,
+        # while a live one can explain how to build the memory layer.
+        typer.echo(f"cms mcp: no memory layer under {root} — serving anyway; "
+                   "tools will report how to build it (cms run-all).", err=True)
     MCPServer(root).serve()
 
 
@@ -485,6 +489,166 @@ def ui(
     from .ui import serve
 
     serve(root, port=port, open_browser=not no_browser)
+
+
+sentinel_app = typer.Typer(
+    help="Hermes Sentinel — bug finding, feature auditing and the completion quality gate.",
+    no_args_is_help=False,
+    invoke_without_command=True,
+)
+app.add_typer(sentinel_app, name="sentinel")
+
+
+@sentinel_app.callback()
+def _sentinel_default(ctx: typer.Context) -> None:
+    """`cms sentinel` with no subcommand runs a full scan (quality-gate mode)."""
+    if ctx.invoked_subcommand is None:
+        sentinel_run(root=Path("."), as_json=False)
+
+
+@sentinel_app.command("run")
+def sentinel_run(
+    root: Path = RootOption,
+    as_json: bool = typer.Option(False, "--json", help="Print the scan result as JSON."),
+) -> None:
+    """Run every Sentinel module; exit non-zero if the quality gate fails."""
+    from .sentinel.runner import run_scan
+
+    root = root.resolve()
+    scan_result, findings = run_scan(root, echo=typer.echo)
+    if as_json:
+        import json as _json
+
+        typer.echo(_json.dumps({k: v for k, v in scan_result.items() if k != "inventory"}, indent=1))
+    else:
+        gate = scan_result["gate"]
+        counts = gate["active_counts"]
+        typer.echo(
+            f"\nSentinel scan {scan_result['scan_id']}  ({scan_result['duration_s']}s, "
+            f"mode: {scan_result['execution_mode']})"
+        )
+        for check in scan_result.get("workflow_checks", []):
+            mark = {True: "pass", False: "FAIL", None: "missing"}[check["passed"]]
+            typer.echo(f"  workflow {check['name']:<38} {mark}")
+        typer.echo(
+            "  active findings: "
+            + ", ".join(f"{counts.get(s, 0)} {s}" for s in ("critical", "high", "medium", "low", "info"))
+        )
+        for err_module, err in (scan_result.get("module_errors") or {}).items():
+            typer.echo(f"  module error: {err_module}: {err}")
+        if gate["failed"]:
+            typer.echo("\nQUALITY GATE FAILED on: " + "; ".join(gate["reasons"][:5]))
+        elif gate["warnings"]:
+            typer.echo(f"\nGate passed with {len(gate['warnings'])} warning-level finding(s).")
+        else:
+            typer.echo("\nGate passed.")
+        typer.echo("Details:  cms sentinel findings   ·   UI: /sentinel   ·   export: cms sentinel export")
+    raise typer.Exit(1 if scan_result["gate"]["failed"] else 0)
+
+
+@sentinel_app.command("findings")
+def sentinel_findings(
+    root: Path = RootOption,
+    severity: str = typer.Option(None, "--severity", "-s", help="Filter: critical|high|medium|low|info"),
+    status: str = typer.Option(None, "--status", help="Filter: open|acknowledged|fixed_pending_verification|resolved|false_positive"),
+) -> None:
+    """List persistent Sentinel findings."""
+    from . import config as _config
+    from .sentinel import SEVERITIES
+    from .sentinel.store import SentinelStore
+
+    store = SentinelStore(root.resolve() / _config.MEMORY_DIR_NAME)
+    findings = store.load_findings()
+    if not findings:
+        typer.echo("No findings recorded. Run `cms sentinel` first.")
+        return
+    rank = {s: i for i, s in enumerate(SEVERITIES)}
+    shown = 0
+    for f in sorted(findings.values(), key=lambda f: (rank.get(f["severity"], 9), f.get("bug_id", ""))):
+        if severity and f["severity"] != severity:
+            continue
+        if status and f["status"] != status:
+            continue
+        shown += 1
+        loc = f"{f['file']}:{f['line']}" if f.get("line") else f.get("file") or f.get("module")
+        typer.echo(f"{f.get('bug_id', f['id']):<12} {f['severity']:<8} {f['status']:<26} {loc}")
+        typer.echo(f"             {f['summary']}")
+    typer.echo(f"\n{shown} finding(s). Detail: cms sentinel show <bug-id>")
+
+
+@sentinel_app.command("show")
+def sentinel_show(finding_id: str = typer.Argument(..., help="Bug id, SEN- id, or fingerprint."),
+                  root: Path = RootOption) -> None:
+    """Full detail of one finding as a bug report."""
+    import json as _json
+
+    from . import config as _config
+    from .sentinel.reports import as_bug_report
+    from .sentinel.store import SentinelStore
+
+    store = SentinelStore(root.resolve() / _config.MEMORY_DIR_NAME)
+    for fp, f in store.load_findings().items():
+        if finding_id in (fp, f.get("id"), f.get("bug_id")):
+            typer.echo(_json.dumps(as_bug_report(f), indent=2))
+            return
+    typer.echo(f"No finding {finding_id!r}.", err=True)
+    raise typer.Exit(1)
+
+
+@sentinel_app.command("status")
+def sentinel_status(
+    finding_id: str = typer.Argument(..., help="Bug id, SEN- id, or fingerprint."),
+    new_status: str = typer.Argument(..., help="open | acknowledged | fixed_pending_verification | resolved | false_positive"),
+    reason: str = typer.Option("", "--reason", help="Required when marking false_positive."),
+    root: Path = RootOption,
+) -> None:
+    """Change a finding's status (false positives require --reason)."""
+    from . import config as _config
+    from .sentinel.store import SentinelStore
+
+    store = SentinelStore(root.resolve() / _config.MEMORY_DIR_NAME)
+    try:
+        updated = store.set_status(finding_id, new_status, reason)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    if updated is None:
+        typer.echo(f"No finding {finding_id!r}.", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"{updated.get('bug_id', updated['id'])} -> {new_status}"
+               + (f" ({reason})" if reason else ""))
+
+
+@sentinel_app.command("export")
+def sentinel_export(
+    root: Path = RootOption,
+    fmt: str = typer.Option("md", "--format", "-f", help="md | json"),
+) -> None:
+    """Export the Sentinel report to .memory/sentinel/reports/."""
+    from . import config as _config
+    from .sentinel.reports import write_export
+    from .sentinel.store import SentinelStore
+
+    root = root.resolve()
+    store = SentinelStore(root / _config.MEMORY_DIR_NAME)
+    out = write_export(root / _config.MEMORY_DIR_NAME, store.latest_scan(), store.load_findings(), fmt=fmt)
+    typer.echo(f"Written {out}")
+
+
+@sentinel_app.command("ledger-init")
+def sentinel_ledger_init(
+    root: Path = RootOption,
+    overwrite: bool = typer.Option(False, "--overwrite", help="Regenerate over an existing ledger."),
+) -> None:
+    """Generate docs/feature_ledger.json from real graph evidence (conservative statuses)."""
+    from .sentinel.ledger import init_ledger
+
+    try:
+        out = init_ledger(root.resolve(), overwrite=overwrite)
+    except FileExistsError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Ledger written to {out}")
 
 
 @app.command("run-all")
@@ -508,6 +672,208 @@ def run_all(
     )
     typer.echo(f"\nMemory layer ready at {memory_dir}")
     typer.echo('Try:  cms query "where is the directory scanning logic?"')
+
+
+align_app = typer.Typer(
+    help="Change alignment — did this change do what it was meant to? (intent vs the diff)",
+    no_args_is_help=False,
+    invoke_without_command=True,
+)
+app.add_typer(align_app, name="align")
+
+
+@align_app.callback(invoke_without_command=True)
+def _align_default(
+    ctx: typer.Context,
+    goal: str = typer.Argument(None, help="What this change is meant to do (else inferred from branch/commit)."),
+    root: Path = RootOption,
+    base: str = typer.Option("HEAD", "--base", help="Git base to diff against (e.g. main for a branch/PR)."),
+    scan: bool = typer.Option(False, "--scan", help="Refresh Sentinel before judging."),
+    as_json: bool = typer.Option(False, "--json", help="Print the alignment record as JSON."),
+) -> None:
+    """`cms align "<goal>"` — capture intent, verdict the diff, gate on drift."""
+    if ctx.invoked_subcommand is not None:
+        return
+    root = root.resolve()
+    if not (_memory_dir(root) / "graph.json").is_file():
+        typer.echo("No graph.json — run `cms run-all` first.", err=True)
+        raise typer.Exit(1)
+
+    from .align import AlignStore, build_alignment
+    from .intent import capture_intent
+    from .memory import CodebaseMemory
+
+    pack = capture_intent(root, goal=goal, base=base)
+    mem = CodebaseMemory.load(_memory_dir(root) / "graph.json")
+    record = build_alignment(mem, root, pack, base=base, scan=scan)
+    AlignStore(_memory_dir(root)).save_alignment(record)
+
+    if as_json:
+        import json as _json
+
+        typer.echo(_json.dumps(record, indent=1))
+    else:
+        typer.echo(f"\nIntent: {record['intent']}  (source: {record['intent_source']}, base: {record['base']})")
+        typer.echo(f"Verdict: {record['verdict'].upper()} — {record['headline']}")
+        typer.echo(f"\nChanged files ({len(record['changed'])}):")
+        for p in record["changed"][:20]:
+            typer.echo(f"  - {p}")
+        if record["touched_features"]:
+            typer.echo(f"\nTouched features: {', '.join(record['touched_features'])}")
+        if record["gaps"]:
+            typer.echo("\nGaps:")
+            for g in record["gaps"][:12]:
+                typer.echo(f"  ! {g}")
+        if record["findings"]:
+            typer.echo("\nSentinel findings on changed files:")
+            for f in record["findings"][:8]:
+                typer.echo(f"  [{f['severity']}] {f['id']} {f['file']} — {f['summary']}")
+        if record["tests_to_run"]:
+            typer.echo("\nProve it landed:\n  pytest " + " ".join(record["tests_to_run"][:8]))
+        else:
+            typer.echo("\nProve it landed:  (no mapped tests — add coverage for the change)")
+    raise typer.Exit(1 if record["verdict"] == "drift" else 0)
+
+
+@align_app.command("status")
+def align_status(root: Path = RootOption) -> None:
+    """Show the active captured intent and the latest alignment verdict."""
+    from .align import AlignStore
+
+    store = AlignStore(_memory_dir(root.resolve()))
+    intent = store.load_intent()
+    latest = store.latest()
+    if intent:
+        typer.echo(f"Active intent: {intent.get('task')}  (source: {intent.get('intent_source', '?')})")
+    else:
+        typer.echo("No intent captured yet — run `cms align \"<goal>\"`.")
+    if latest:
+        typer.echo(f"Latest verdict: {latest['verdict'].upper()} — {latest['headline']}")
+        typer.echo(f"  at {latest['generated_at']}, {len(latest.get('changed', []))} file(s), {len(latest.get('gaps', []))} gap(s)")
+
+
+@align_app.command("history")
+def align_history(
+    root: Path = RootOption,
+    limit: int = typer.Option(15, "--limit", "-n", help="How many past sessions to show."),
+) -> None:
+    """Trajectory: past alignment verdicts, newest last."""
+    from .align import AlignStore
+
+    history = AlignStore(_memory_dir(root.resolve())).history()
+    if not history:
+        typer.echo("No alignment history yet.")
+        return
+    for h in history[-limit:]:
+        typer.echo(
+            f"{h.get('generated_at', '?')}  {h.get('verdict', '?').upper():<10} "
+            f"{h.get('changed', 0)} file(s)  {h.get('gaps', 0)} gap(s)  — {h.get('intent', '')[:60]}"
+        )
+
+
+scope_app = typer.Typer(help="Scope — limit which subdirs/files the memory processes (saves API cost).",
+                        no_args_is_help=True)
+app.add_typer(scope_app, name="scope")
+
+
+@scope_app.command("show")
+def scope_show(root: Path = RootOption) -> None:
+    """Print the active scope (which dirs/files are processed)."""
+    from .scope import load_scope
+
+    inc = load_scope(root.resolve())
+    if not inc:
+        typer.echo("Scope: whole codebase (no .cmsscope.json).")
+    else:
+        typer.echo(f"Scope: {len(inc)} selection(s) — only these are processed:")
+        for x in sorted(inc):
+            typer.echo(f"  - {x}")
+
+
+@scope_app.command("set")
+def scope_set(
+    paths: list[str] = typer.Argument(..., help="Dirs (end with /) or files to include, relative to root."),
+    root: Path = RootOption,
+) -> None:
+    """Restrict processing to these paths. Re-run `cms update` to apply."""
+    from .scope import save_scope
+
+    out = save_scope(root.resolve(), paths)
+    typer.echo(f"Scope saved to {out.name} ({len(paths)} selection(s)). Run `cms update` to apply.")
+
+
+@scope_app.command("clear")
+def scope_clear(root: Path = RootOption) -> None:
+    """Remove the scope — process the whole codebase again."""
+    from .scope import clear_scope
+
+    typer.echo("Scope cleared." if clear_scope(root.resolve()) else "No scope was set.")
+
+
+bundle_app = typer.Typer(help="Bundle — share the AI-generated memory so others view it without re-processing.",
+                         no_args_is_help=True)
+app.add_typer(bundle_app, name="bundle")
+
+
+@bundle_app.command("export")
+def bundle_export(
+    root: Path = RootOption,
+    source: bool = typer.Option(False, "--source", help="Include a snapshot of the scoped source (fully self-contained)."),
+    out: Path = typer.Option(None, "--out", "-o", help="Output .cmsbundle path."),
+) -> None:
+    """Package .memory/ (+ optional source) into a shareable .cmsbundle."""
+    from .bundle import export_bundle
+
+    root = root.resolve()
+    if not (_memory_dir(root) / "graph.json").is_file():
+        typer.echo("No graph.json — run `cms run-all` first.", err=True)
+        raise typer.Exit(1)
+    path = export_bundle(root, out_path=out, include_source=source, echo=typer.echo)
+    typer.echo(f"\nShare {path.name} — the recipient runs `cms bundle open {path.name}` (no API key needed).")
+
+
+@bundle_app.command("info")
+def bundle_info(bundle: Path = typer.Argument(..., help="Path to a .cmsbundle.")) -> None:
+    """Show a bundle's manifest without unpacking it."""
+    from .bundle import read_manifest
+
+    m = read_manifest(bundle)
+    if not m:
+        typer.echo("Not an Atlas bundle (no manifest).", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Project     : {m.get('name')}")
+    typer.echo(f"Generated   : {m.get('generated_at')}  (Atlas {m.get('cms_version')})")
+    typer.echo(f"Memory files: {m.get('memory_file_count')}")
+    typer.echo(f"Source      : {'included (' + str(m.get('source_file_count')) + ' files)' if m.get('has_source') else 'not included'}")
+    if m.get("scope"):
+        typer.echo(f"Scope       : {', '.join(m['scope'])}")
+
+
+@bundle_app.command("open")
+def bundle_open(
+    bundle: Path = typer.Argument(..., help="Path to a .cmsbundle."),
+    dest: Path = typer.Option(None, "--dest", help="Where to unpack (default: alongside the bundle)."),
+    port: int = typer.Option(7717, "--port", help="Port to serve the viewer on."),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Don't open the browser."),
+    serve_ui: bool = typer.Option(True, "--serve/--no-serve", help="Serve the viewer after opening."),
+) -> None:
+    """Unpack a received bundle and view it — no API key, no re-processing."""
+    from .bundle import open_bundle, read_manifest
+
+    manifest = read_manifest(bundle)
+    if not manifest:
+        typer.echo("Not an Atlas bundle (no manifest).", err=True)
+        raise typer.Exit(1)
+    if dest is None:
+        dest = bundle.resolve().parent / f"{manifest.get('name', 'atlas')}-bundle"
+    out = open_bundle(bundle, dest, echo=typer.echo)
+    if not manifest.get("has_source"):
+        typer.echo("Note: no source in this bundle — summaries/graph/features work; raw-code view is unavailable.")
+    if serve_ui:
+        from .ui import serve
+        serve(out, port=port, open_browser=not no_browser)
+    else:
+        typer.echo(f"Opened at {out}. View with:  cms ui --root {out}")
 
 
 if __name__ == "__main__":
