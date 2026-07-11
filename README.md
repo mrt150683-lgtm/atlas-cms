@@ -1,11 +1,22 @@
-# CMS — Codebase Memory System
+<h1>▲ Atlas</h1>
 
-A self-bootstrapping structural + semantic memory layer for codebases, built for AI
-agents. CMS scans a project (ignoring junk like `node_modules/`, `__pycache__/`,
+**Every codebase, mapped. Ground truth for AI agents.**
+
+*(Atlas is the product; `cms` is the command line and Python package — `pip install`, `cms run-all`, `cms mcp`.)*
+
+---
+
+Atlas is a self-bootstrapping structural + semantic memory layer for codebases, built for AI
+agents. It scans a project (ignoring junk like `node_modules/`, `__pycache__/`,
 build output), parses the source into a knowledge graph of files, classes, and
 functions, generates low-resolution AI summaries for each, and exposes a query
 interface so an agent can ask *"where is the auth logic?"* and get precise answers —
 file paths, line ranges, call connections, and intent summaries — instead of grepping.
+
+Beyond finding things, Atlas **keeps the codebase honest**: it traces features, audits
+built-vs-intended alignment, runs a completion quality gate (Hermes Sentinel), and — with
+the Change-Alignment loop — answers *"did this change do what it was meant to?"* So agents
+consult memory before grep, ground every edit, and prove they finished.
 
 Full design rationale: [`codebase_memory_system_design_spec.md`](codebase_memory_system_design_spec.md).
 
@@ -28,6 +39,11 @@ cms impact cms/scanner.py::scan   # blast radius of a change
 cms verify                  # map tests to features via coverage
 cms verify CleanDirectoryScanner  # run exactly the tests proving a feature
 cms mcp                     # MCP server for AI agents (see below)
+cms sentinel                # Hermes Sentinel: bug finding + completion quality gate
+cms scan                    # just the clean tree (subset of run-all)
+cms build-graph             # scan + knowledge graph only
+cms summarize               # (re)generate AI summaries only
+cms prompt "add rate limiting"    # export a memory-grounded task brief
 ```
 
 ## App mode (`cms app` / CMS.exe)
@@ -42,6 +58,13 @@ cms            # no arguments does the same thing
 On launch it heals any stale memory (only changed / mock-summarized files are
 reprocessed), then watches for edits and keeps `.memory/` current while the UI
 runs. Ctrl+C stops everything.
+
+### Running from source (`CMS.bat`)
+
+On machines where an unsigned exe is unwelcome (AV quarantine), `CMS.bat` is
+the equivalent launcher: it runs `python -m cms.cli` from the repo's `.venv`
+(falling back to the `python` on PATH), passes arguments through, and returns
+the real exit code. Double-click for the app, or `CMS.bat query "..."` etc.
 
 ### Packaging as CMS.exe
 
@@ -79,13 +102,28 @@ Note: `CMS.exe verify` shells out to your installed Python for pytest/coverage.
 Expose the memory to AI agents as native tools — memory consulted before grep:
 
 ```bash
-claude mcp add cms -- cms mcp --root /path/to/project
+claude mcp add cms -- cms mcp        # Claude Code
+codex mcp add cms -- cms mcp         # Codex
 ```
 
-Tools: `query_codebase`, `get_file_summary`, `list_features`, `get_feature_trace`,
-`who_calls`, `who_imports`, `get_impact`, `get_source`. Every call is logged to
-`.memory/activity.jsonl`, and the UI renders live glow pulses on the touched
-nodes plus an `MCP · tool` badge — you can watch your agent think.
+No `--root` needed: the server walks up from its launch directory to the
+nearest project holding `.memory/graph.json`, so one global entry serves every
+repo. In an un-mapped repo it stays alive and tools answer "no memory layer —
+run `cms run-all`".
+
+15 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
+
+- **Grounding / read** — `query_codebase`, `get_file_summary`, `get_source`,
+  `get_feature_trace`, `list_features`, `who_calls`, `who_imports`, `get_impact`.
+- **Judgment / plan** — `get_review`, `get_suggestions`, `get_sentinel_report`,
+  `export_task_prompt`.
+- **Alignment loop** — `declare_intent`, `check_alignment`.
+- **Session control** — `switch_project` (flip the server to another project
+  root mid-session; unmapped targets get the exact build command back).
+
+Every call is logged to `.memory/activity.jsonl`, and the UI renders live glow
+pulses on the touched nodes plus an `MCP · tool` badge — you can watch your
+agent think.
 
 ## Git history layer
 
@@ -98,9 +136,10 @@ dashed amber links, and the inspector gains a History section.
 ## Verification loop
 
 `cms verify` runs your tests under coverage with per-test contexts and maps each
-feature to the tests that actually execute its code (`verified_by`). Then
-`cms verify <Feature>` runs exactly those tests — the feature trace's checklist
-becomes executable proof that the implementation matches intent.
+feature to the tests that actually execute its code (`exercised_by` — named
+deliberately: coverage proves execution, not behavioural correctness). Then
+`cms verify <Feature>` runs exactly those tests, turning the feature trace's
+checklist into runnable evidence.
 
 ## Feature tracing (`cms trace`)
 
@@ -250,10 +289,45 @@ Selected via `--provider` or the `CMS_PROVIDER` env var (`anthropic` | `openai` 
 
 ## Ignore rules
 
-Built-in defaults (see `cms/config.py`) cover VCS, virtualenvs, `node_modules/`,
-build output, IDE and OS junk. Add project-specific patterns to a `.cmsignore`
-file in the project root (gitignore syntax). Only whitelisted source extensions
-are included (`.py`, `.md`, `.json`, `.ts`, ... — see `LANGUAGE_BY_EXTENSION`).
+Three layers, in increasing precedence: **built-in defaults** (see `cms/config.py`
+— VCS, virtualenvs, `node_modules/`, build output incl. `dist/` and the `dist-*/`
+convention, dependency lockfiles, IDE/OS junk), then the project's own
+**`.gitignore`** (Atlas honours what *you* already declared as generated — no
+guessing), then **`.cmsignore`** (project-specific overrides; gitignore syntax,
+and `!pattern` can re-include something the defaults or `.gitignore` excluded).
+Only whitelisted source extensions are included (`.py`, `.md`, `.json`, `.ts`,
+`.tsx`, ... — see `LANGUAGE_BY_EXTENSION`). Prefer the Setup screen's scope
+picker for a per-build selection without editing files.
+
+## File viewer & notes
+
+In the memory viewer (`cms ui` / `cms app`), selecting a file shows a **View file**
+button in the inspector. It opens a full-screen reader: markdown renders formatted,
+code is syntax-highlighted with line numbers. Select any text to **copy** it or pin a
+colour-tagged **note** — highlights and notes persist in `.memory/notes.json` and
+reappear when you reopen the file. Deep-link straight to a file with
+`/?view=<path>&viewmode=reader|source`.
+
+## Hermes Sentinel (`cms sentinel`)
+
+Built-in bug finding, feature auditing and a completion quality gate. Sentinel
+inventories the repo, scans for risky patterns (classified by context, not
+blanket-flagged), audits `docs/feature_ledger.json` completion claims against
+graph evidence, checks UI↔HTTP↔MCP↔docs contracts, executes end-to-end
+workflow checks against the real pipeline (including the carry-over
+regression trap), validates CMS domain invariants and the provider layer, and
+persists everything as bug reports under `.memory/sentinel/`.
+
+```bash
+cms sentinel                # full scan; exits non-zero on active critical findings
+cms sentinel findings       # list persistent findings (BUG-… ids)
+cms sentinel status BUG-000007 false_positive --reason "pattern registry"
+cms sentinel export -f json # report to .memory/sentinel/reports/
+```
+
+The viewer serves a full Sentinel screen at `/sentinel` (run scan, inspect
+findings, change statuses, export). Gate thresholds live in
+`sentinel.config.json`. Full guide: `docs/HERMES_SENTINEL.md`.
 
 ## Development
 
@@ -261,8 +335,13 @@ are included (`.py`, `.md`, `.json`, `.ts`, ... — see `LANGUAGE_BY_EXTENSION`)
 pip install -e ".[dev]"
 pytest tests/
 cms run-all   # self-hosting check: CMS analysing its own code
+cms sentinel  # quality gate: fails on active critical findings
 ```
 
-Current scope (spec Phases 1–4): Python-only AST parsing, keyword+structure query
-ranking. Next up (Phase 5+): mtime-based incremental updates, tree-sitter for more
-languages, embedding-based semantic search.
+Current scope: **Python** (full AST — classes/functions/imports/calls/inheritance)
+and **TypeScript/JavaScript** (`.ts/.tsx/.js/.jsx` via a lightweight parser —
+top-level declarations as components + import/require/export-from resolved to
+connections); other whitelisted files get AI summaries but no structural parse.
+Query ranking is keyword+structure. Next up: tree-sitter for full-fidelity
+multi-language ASTs (calls/inheritance across languages), embedding-based
+semantic search.

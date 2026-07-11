@@ -131,6 +131,6 @@ def enrich_graph_with_git(graph: nx.DiGraph, root: Path) -> dict | None:
         )
         if linked:
             continue
-        graph.add_edge(na, nb, type="CO_CHANGES", weight=count)
+        graph.add_edge(na, nb, type="CO_CHANGES", weight=count, provenance="git")
         added_edges += 1
     return {"files": matched, "cochange_edges": added_edges}

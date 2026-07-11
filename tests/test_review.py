@@ -56,7 +56,7 @@ def test_mock_review_is_unverified_and_exports(tmp_path: Path) -> None:
     build_review(graph, tmp_path, MockProvider())
     review = graph.nodes["feature:Greeting"]["review"]
     assert review["verdict"] == "unverified"
-    assert "No tests currently verify" in review["gaps"][0]
+    assert "No tests currently exercise" in review["gaps"][0]
     out = export_review(graph, tmp_path)
     text = out.read_text(encoding="utf-8")
     assert "# App Review" in text and "Greeting" in text

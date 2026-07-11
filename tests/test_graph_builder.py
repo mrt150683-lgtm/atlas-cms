@@ -94,3 +94,47 @@ def test_external_import_node(tmp_path: Path) -> None:
     graph = build_graph(scan(tmp_path))
     assert graph.has_node("ext:os")
     assert graph.edges["file:solo.py", "ext:os"]["type"] == "IMPORTS"
+
+
+def test_every_edge_carries_provenance(tmp_path: Path) -> None:
+    """Provenance is first-class: each edge states how it was derived so
+    consumers can weigh confidence (exact AST fact vs name-matching heuristic
+    vs regex extraction vs human declaration)."""
+    from cms.features import build_features
+    from cms.providers import MockProvider
+
+    _project(tmp_path)
+    (tmp_path / "pkg" / "web.ts").write_text(
+        'import { util } from "./util";\nexport function page() {}\n', encoding="utf-8")
+    (tmp_path / "pkg" / "util.ts").write_text("export const util = 1;\n", encoding="utf-8")
+    graph = build_graph(scan(tmp_path))
+    build_features(graph, MockProvider())
+
+    allowed = {"ast", "heuristic", "declared", "inferred", "llm", "git"}
+    for u, v, d in graph.edges(data=True):
+        assert d.get("provenance") in allowed, (u, v, d)
+
+    # Python import statements are exact AST facts
+    assert graph.edges["file:pkg/main.py", "file:pkg/helper.py"]["provenance"] == "ast"
+    # JS/TS extraction is pattern-based
+    assert graph.edges["file:pkg/web.ts", "file:pkg/util.ts"]["provenance"] == "heuristic"
+    # call/inheritance target resolution is best-effort name matching
+    assert (
+        graph.edges["func:pkg/main.py::run", "func:pkg/helper.py::format_name"]["provenance"]
+        == "heuristic"
+    )
+    assert (
+        graph.edges["class:pkg/helper.py::Greeter", "class:pkg/helper.py::Base"]["provenance"]
+        == "heuristic"
+    )
+
+
+def test_loading_migrates_verified_by_to_exercised_by(tmp_path: Path) -> None:
+    from cms.graph_builder import graph_from_json, graph_to_json
+
+    graph = build_graph(scan(_project(tmp_path)))
+    graph.add_node("feature:Old", type="feature", name="Old",
+                   verified_by=["tests/test_x.py::t"])
+    reloaded = graph_from_json(graph_to_json(graph))
+    assert reloaded.nodes["feature:Old"]["exercised_by"] == ["tests/test_x.py::t"]
+    assert "verified_by" not in reloaded.nodes["feature:Old"]

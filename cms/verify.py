@@ -3,8 +3,10 @@
 ``map_tests_to_features`` runs the test suite under coverage with dynamic
 contexts (one context per test function), then intersects each feature's
 member line ranges with the lines each test executed. The resulting test ids
-land on feature nodes as ``verified_by``. ``verify_feature`` then runs exactly
-those tests and reports pass/fail — proving the feature behaves as intended.
+land on feature nodes as ``exercised_by`` — the tests that *execute* the
+feature's code. (Deliberately not called "verified": coverage proves
+execution, not behavioural correctness.) ``verify_feature`` then runs exactly
+those tests and reports pass/fail.
 
 Requires ``coverage`` and ``pytest`` (``pip install cms[dev]``).
 """
@@ -91,7 +93,7 @@ def run_coverage(root: Path, pytest_args: list[str] | None = None) -> dict | Non
 
 # @memory:feature:FeatureVerification
 # @memory:connects:FeatureTracing, ImpactAnalysis
-# @memory:summary:Executable proof — per-test coverage contexts intersected with feature member line ranges give verified_by test lists; cms verify <Feature> runs exactly those tests.
+# @memory:summary:Executable evidence — per-test coverage contexts intersected with feature member line ranges give exercised_by test lists; cms verify <Feature> runs exactly those tests.
 def map_tests_to_features(graph: nx.DiGraph, root: Path, coverage_data: dict) -> dict[str, list[str]]:
     """Intersect per-test executed lines with feature member line ranges."""
     known_files = [
@@ -127,7 +129,7 @@ def map_tests_to_features(graph: nx.DiGraph, root: Path, coverage_data: dict) ->
                     if start <= line <= end:
                         tests |= line_tests
         mapping[feat["name"]] = sorted(tests)
-        graph.nodes[feat["id"]]["verified_by"] = sorted(tests)
+        graph.nodes[feat["id"]]["exercised_by"] = sorted(tests)
     return mapping
 
 

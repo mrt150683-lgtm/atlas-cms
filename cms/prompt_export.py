@@ -60,7 +60,7 @@ def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8) 
                 "name": f["name"], "description": f.get("description", ""),
                 "connects": f.get("connects", []),
                 "flows": f.get("flows", [])[:3],
-                "verified_by": f.get("verified_by", [])[:8],
+                "exercised_by": f.get("exercised_by", [])[:8],
                 "review": (f.get("review") or {}),
             })
 
@@ -145,8 +145,8 @@ def render_prompt(pack: dict) -> str:
             review = f.get("review") or {}
             if review.get("gaps"):
                 lines.append("- Known gaps to respect: " + "; ".join(review["gaps"]))
-            if f.get("verified_by"):
-                lines.append(f"- Verified by: {', '.join(f['verified_by'])}")
+            if f.get("exercised_by"):
+                lines.append(f"- Exercised by: {', '.join(f['exercised_by'])}")
             lines.append("")
 
     if pack.get("impact"):

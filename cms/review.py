@@ -122,15 +122,15 @@ def _sanitize(review: dict) -> dict:
 
 def _structural_review(feat: dict) -> dict:
     """No-LLM fallback: assemble evidence, refuse to judge."""
-    tests = len(feat.get("verified_by") or [])
+    tests = len(feat.get("exercised_by") or [])
     flows = len(feat.get("flows") or [])
     return {
         "verdict": "unverified",
         "headline": feat.get("description") or f"{feat['name']} — no AI review yet (run `cms review` with an API key).",
         "expected": feat.get("description") or "(no declared intent)",
         "built": f"{len(feat.get('members') or [])} member(s), {flows} traced flow(s), "
-                 f"{tests} verifying test(s). Structural evidence only — no AI judgement.",
-        "gaps": [] if tests else ["No tests currently verify this feature."],
+                 f"{tests} exercising test(s). Structural evidence only — no AI judgement.",
+        "gaps": [] if tests else ["No tests currently exercise this feature."],
         "education": "Run `cms review` with a configured provider for a full plain-English review.",
     }
 
@@ -155,8 +155,8 @@ def build_review(graph: nx.DiGraph, root: Path, provider: SummaryProvider, on_pr
                 members=", ".join((feat.get("members") or [])[:10]),
                 flows=_flow_lines(feat),
                 member_summaries=_member_summaries(graph, feat),
-                test_count=len(feat.get("verified_by") or []),
-                tests=", ".join((feat.get("verified_by") or [])[:6]) or "(none)",
+                test_count=len(feat.get("exercised_by") or []),
+                tests=", ".join((feat.get("exercised_by") or [])[:6]) or "(none)",
             )
             try:
                 review = _parse_json(provider.summarize(prompt, {})) or _structural_review(feat)

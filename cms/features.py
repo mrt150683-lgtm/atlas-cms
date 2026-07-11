@@ -386,7 +386,8 @@ def build_features(
         for other in feat.connects:
             other_id = f"feature:{other}"
             if graph.has_node(other_id):
-                graph.add_edge(feat.node_id, other_id, type="CONNECTS")
+                graph.add_edge(feat.node_id, other_id, type="CONNECTS",
+                               provenance="declared")
     _derive_feature_relations(graph, result)
     return result
 
@@ -427,7 +428,8 @@ def _derive_feature_relations(graph: nx.DiGraph, features: list[Feature]) -> Non
                 None,
             )
             if via:
-                graph.add_edge(a.node_id, b.node_id, type="RELATES", via=via)
+                graph.add_edge(a.node_id, b.node_id, type="RELATES", via=via,
+                               provenance="inferred")
 
 
 def _write_to_graph(graph: nx.DiGraph, feat: Feature) -> None:
@@ -447,7 +449,9 @@ def _write_to_graph(graph: nx.DiGraph, feat: Feature) -> None:
     )
     for m in feat.members:
         if graph.has_node(m):
-            graph.add_edge(m, feat.node_id, type="PART_OF")
+            # human anchor vs LLM discovery — different epistemic status
+            graph.add_edge(m, feat.node_id, type="PART_OF",
+                           provenance="declared" if feat.source == "declared" else "llm")
 
 
 def get_features(graph: nx.DiGraph) -> list[dict]:

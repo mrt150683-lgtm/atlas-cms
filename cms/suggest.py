@@ -57,7 +57,7 @@ def _evidence(graph: nx.DiGraph, root: Path) -> dict:
     for f in features:
         r = f.get("review") or {}
         gaps = "; ".join((r.get("gaps") or [])[:2]) or "none noted"
-        tests = len(f.get("verified_by") or [])
+        tests = len(f.get("exercised_by") or [])
         feature_lines.append(
             f"- {f['name']}: {r.get('verdict', 'unreviewed')} · gaps: {gaps} · {tests} test(s)"
         )
