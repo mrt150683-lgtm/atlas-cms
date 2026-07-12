@@ -318,6 +318,7 @@ def watch(
 def verify(
     feature: str = typer.Argument(None, help="Feature to verify; omit to (re)map tests to all features."),
     root: Path = RootOption,
+    refresh: bool = typer.Option(False, "--refresh", help="Ignore cached coverage and collect it again."),
 ) -> None:
     """Map tests to features via coverage, or run tests that exercise one feature."""
     from .verify import map_tests_to_features, run_coverage, verify_feature
@@ -354,8 +355,7 @@ def verify(
             typer.echo("\nFAIL — one or more tests mapped to this feature failed")
         raise typer.Exit(0 if passed else 1)
 
-    typer.echo("Running test suite under coverage (per-test contexts)…")
-    data = run_coverage(root)
+    data = run_coverage(root, echo=typer.echo, refresh=refresh, stream=True)
     if data is None:
         typer.echo("coverage/pytest failed — is `pip install cms[dev]` done?", err=True)
         raise typer.Exit(1)

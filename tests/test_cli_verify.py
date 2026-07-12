@@ -47,3 +47,17 @@ def test_targeted_verify_failure_does_not_infer_design_divergence(tmp_path: Path
     assert result.exit_code == 1
     assert "one or more tests mapped to this feature failed" in result.output
     assert "implementation diverges" not in result.output
+
+
+def test_verify_help_exposes_forced_coverage_refresh() -> None:
+    result = CliRunner().invoke(app, ["verify", "--help"])
+    assert result.exit_code == 0
+    assert "--refresh" in result.output
+    assert "Ignore cached coverage" in result.output
+
+
+def test_verify_help_exposes_forced_coverage_refresh() -> None:
+    result = CliRunner().invoke(app, ["verify", "--help"])
+    assert result.exit_code == 0
+    assert "--refresh" in result.output
+    assert "Ignore cached coverage" in result.output

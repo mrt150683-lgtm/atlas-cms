@@ -14,16 +14,20 @@ Requires ``coverage`` and ``pytest`` (``pip install cms[dev]``).
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from collections import defaultdict
 from pathlib import Path
+from typing import Callable
 
 import networkx as nx
 
 from .features import get_features
+from .scanner import scan
 
 COVERAGE_RC = """\
 [run]
@@ -33,6 +37,7 @@ branch = False
 [json]
 show_contexts = True
 """
+CACHE_SCHEMA = 1
 
 
 def _python() -> str:
@@ -64,22 +69,66 @@ def _context_to_pytest_id(context: str, known_files: list[str]) -> str | None:
     return None
 
 
-def run_coverage(root: Path, pytest_args: list[str] | None = None) -> dict | None:
-    """Run pytest under coverage with per-test contexts; return coverage JSON."""
+def _coverage_input_hash(root: Path, pytest_args: list[str]) -> str:
+    """Cheap invalidation key for code, tests, config, and command arguments."""
+    rows = [f"args:{json.dumps(pytest_args, sort_keys=True)}"]
+    seen = set()
+    for rec in scan(root):
+        rows.append(f"{rec.rel_path}|{rec.size_bytes}|{rec.mtime}")
+        seen.add(rec.rel_path)
+    # Tests may sit outside an active semantic scope; they still affect coverage.
+    for path in sorted(root.rglob("test*.py")):
+        rel = path.relative_to(root).as_posix()
+        if rel in seen or any(part in {".git", ".venv", "__pycache__"} for part in path.parts):
+            continue
+        stat = path.stat()
+        rows.append(f"{rel}|{stat.st_size}|{stat.st_mtime_ns}")
+    return hashlib.sha256("\n".join(sorted(rows)).encode("utf-8")).hexdigest()
+
+
+def run_coverage(
+    root: Path,
+    pytest_args: list[str] | None = None,
+    *,
+    echo: Callable[[str], None] | None = None,
+    refresh: bool = False,
+    stream: bool = False,
+) -> dict | None:
+    """Run pytest under per-test coverage, with progress and safe caching."""
+    pytest_args = pytest_args or []
+    echo = echo or (lambda _message: None)
+    memory_dir = root / ".memory"
+    cache_file = memory_dir / "coverage_contexts.json"
+    state_file = memory_dir / "verify_state.json"
+    input_hash = _coverage_input_hash(root, pytest_args)
+    if not refresh and cache_file.is_file() and state_file.is_file():
+        try:
+            state = json.loads(state_file.read_text(encoding="utf-8"))
+            if state.get("schema_version") == CACHE_SCHEMA and state.get("input_hash") == input_hash:
+                echo("Coverage cache is current — reusing mapped per-test contexts.")
+                return json.loads(cache_file.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            pass
+
+    started = time.monotonic()
     with tempfile.TemporaryDirectory() as tmp:
         rc = Path(tmp) / ".coveragerc"
         rc.write_text(COVERAGE_RC, encoding="utf-8")
         data_file = Path(tmp) / ".coverage"
         json_file = Path(tmp) / "coverage.json"
         env_args = ["--rcfile", str(rc), "--data-file", str(data_file)]
+        echo("Coverage stage 1/3 — running pytest with per-test contexts…")
         run = subprocess.run(
             [_python(), "-m", "coverage", "run", *env_args,
-             "-m", "pytest", "-q", *(pytest_args or [])],
-            cwd=root, capture_output=True, text=True, timeout=600,
+             "-m", "pytest", "-q", *pytest_args],
+            cwd=root, capture_output=not stream, text=True, timeout=900,
         )
         if run.returncode not in (0, 1):  # 1 = tests failed but ran; still useful
-            print(run.stdout[-2000:] + run.stderr[-2000:], file=sys.stderr)
+            if not stream:
+                print((run.stdout or "")[-2000:] + (run.stderr or "")[-2000:], file=sys.stderr)
             return None
+        echo(f"Coverage stage 1/3 complete in {time.monotonic() - started:.1f}s.")
+        echo("Coverage stage 2/3 — exporting execution contexts…")
         export = subprocess.run(
             [_python(), "-m", "coverage", "json", *env_args,
              "-o", str(json_file), "--show-contexts"],
@@ -88,7 +137,18 @@ def run_coverage(root: Path, pytest_args: list[str] | None = None) -> dict | Non
         if export.returncode != 0:
             print(export.stderr[-2000:], file=sys.stderr)
             return None
-        return json.loads(json_file.read_text(encoding="utf-8"))
+        data = json.loads(json_file.read_text(encoding="utf-8"))
+        echo("Coverage stage 3/3 — saving reusable evidence cache…")
+        memory_dir.mkdir(parents=True, exist_ok=True)
+        cache_file.write_text(json.dumps(data), encoding="utf-8")
+        state_file.write_text(json.dumps({
+            "schema_version": CACHE_SCHEMA,
+            "input_hash": input_hash,
+            "pytest_args": pytest_args,
+            "duration_seconds": round(time.monotonic() - started, 3),
+        }, indent=2), encoding="utf-8")
+        echo(f"Coverage mapping evidence ready in {time.monotonic() - started:.1f}s.")
+        return data
 
 
 # @memory:feature:FeatureVerification

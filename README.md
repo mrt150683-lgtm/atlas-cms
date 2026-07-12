@@ -44,6 +44,7 @@ cms watch                   # keep .memory/ in sync as you edit
 cms impact cms/scanner.py::scan   # blast radius of a change
 cms verify                  # map tests to features via coverage
 cms verify CleanDirectoryScanner  # run exactly the tests mapped as exercising a feature
+cms verify --refresh               # force fresh per-test coverage instead of using a current cache
 cms mcp                     # MCP server for AI agents (see below)
 cms sentinel                # Hermes Sentinel: bug finding + completion quality gate
 cms fuse                    # Constellation: cross-project integration/conflict report
