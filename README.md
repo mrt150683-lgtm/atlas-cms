@@ -19,6 +19,7 @@ the Change-Alignment loop — answers *"did this change do what it was meant to?
 consult memory before grep, ground every edit, and prove they finished.
 
 Full design rationale: [`codebase_memory_system_design_spec.md`](codebase_memory_system_design_spec.md).
+Project credits and contribution provenance: [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
 
 ## Install
 
