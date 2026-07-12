@@ -32,7 +32,7 @@ Existing features (verdict · gaps · tests):
 
 Git hotspots (most-changed files): {hotspots}
 Hidden coupling (files that change together without imports): {coupling}
-Features with no verifying tests: {untested}
+Features with no mapped exercising tests: {untested}
 
 Propose 5-8 suggestions. Respond with ONLY a JSON array:
 [{{
@@ -120,11 +120,11 @@ def _structural_suggestions(graph: nx.DiGraph, evidence: dict) -> list[dict]:
     for name in evidence["untested_list"][:4]:
         conns = len(features.get(name, {}).get("connects", []))
         out.append(_sanitize({
-            "title": f"Add tests verifying {name}",
+            "title": f"Add tests exercising {name}",
             "kind": "hardening",
-            "description": f"{name} has no tests proving it behaves as intended; "
-                           "cms verify cannot vouch for it until it does.",
-            "rationale": f"0 verifying tests; {conns} declared connection(s) make it load-bearing.",
+            "description": f"{name} has no tests mapped as exercising its implementation; "
+                           "cms verify cannot show it is exercised until tests are mapped.",
+            "rationale": f"0 mapped tests; {conns} declared connection(s) make it load-bearing.",
             "value": min(5, 2 + conns // 2), "effort": 2, "builds_on": [name],
         }))
     for u, v, d in graph.edges(data=True):

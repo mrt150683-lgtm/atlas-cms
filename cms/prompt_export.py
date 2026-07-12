@@ -96,7 +96,8 @@ def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8) 
             "Tag significant new functions/classes with @memory: anchors "
             "(# @memory:feature:Name / # @memory:connects:A, B / # @memory:summary:...).",
             "After changing code run `cms update` (or keep `cms watch` running) so the memory stays current.",
-            "Run `cms verify <Feature>` after the change to prove the touched features still behave.",
+            "Run `cms verify <Feature>` after the change to confirm the mapped tests still pass; "
+            "coverage proves execution, not complete behavioural correctness.",
             "Query the memory before grepping: `cms query \"...\"` or the MCP tools.",
         ],
         "verification": (

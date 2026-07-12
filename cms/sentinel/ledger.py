@@ -4,7 +4,7 @@ The ledger is a human-maintained JSON file (``docs/feature_ledger.json``; the
 repo had no completion ledger before Sentinel, so this is its smallest correct
 structure). Each entry claims a status and lists evidence. The auditor checks
 those claims against reality: evidence files must exist on disk, the feature
-should exist in the memory graph, ``complete`` requires verifying tests
+should exist in the memory graph, ``complete`` requires mapped exercising tests
 (graph ``exercised_by`` or listed test files) and no drift review verdict.
 Features present in the graph but missing from the ledger are surfaced too.
 """
@@ -70,7 +70,7 @@ def _graph_features(root: Path) -> dict[str, dict]:
 
 # @memory:feature:HermesSentinel
 # @memory:connects:FeatureTracing, FeatureVerification
-# @memory:summary:Feature ledger auditor — docs/feature_ledger.json claims are checked against graph evidence: files must exist, complete needs verifying tests and no drift verdict, unledgered graph features get flagged.
+# @memory:summary:Feature ledger auditor — docs/feature_ledger.json claims are checked against graph evidence: files must exist, complete needs mapped exercising tests and no drift verdict, unledgered graph features get flagged.
 def audit_ledger(root: Path) -> list[dict]:
     entries, errors = load_ledger(root)
     findings = [
@@ -203,7 +203,7 @@ def init_ledger(root: Path, overwrite: bool = False) -> Path:
                 "tests": tests[:12],
                 "manual_verification": "",
             },
-            "known_limitations": [] if tests else ["no verifying tests mapped yet"],
+            "known_limitations": [] if tests else ["no exercising tests mapped yet"],
             "last_verified": date.today().isoformat(),
         })
     path.parent.mkdir(parents=True, exist_ok=True)

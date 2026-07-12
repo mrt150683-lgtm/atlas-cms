@@ -43,7 +43,7 @@ cms update                  # incremental: only changed files re-summarized
 cms watch                   # keep .memory/ in sync as you edit
 cms impact cms/scanner.py::scan   # blast radius of a change
 cms verify                  # map tests to features via coverage
-cms verify CleanDirectoryScanner  # run exactly the tests proving a feature
+cms verify CleanDirectoryScanner  # run exactly the tests mapped as exercising a feature
 cms mcp                     # MCP server for AI agents (see below)
 cms sentinel                # Hermes Sentinel: bug finding + completion quality gate
 cms fuse                    # Constellation: cross-project integration/conflict report
@@ -187,7 +187,7 @@ discovered, solid edges declared, dashed inferred. Click any node for its trace.
 
 The alignment audit: for every feature the AI compares what you *expect* (the
 declared intent) against what was actually *built* (traced flows, member
-summaries, verifying tests) and hands down a verdict — **aligned / partial /
+summaries, mapped exercising tests) and hands down a verdict — **aligned / partial /
 drift / unverified** — with a one-line plain-English headline, an
 expected-vs-built explanation, concrete gaps, and an education note teaching
 you how it really works under the hood. Plus an app-level rollup.
@@ -205,7 +205,7 @@ feature on the map" for the full evidence.
 ## Suggestions (`cms suggest`)
 
 CMS plans what's worth building next. It studies its own memory — review
-verdicts and gaps, features with no verifying tests, git churn hotspots, hidden
+verdicts and gaps, features with no mapped exercising tests, git churn hotspots, hidden
 coupling — and proposes suggestions each scored **value (1–5) vs effort (1–5)**,
 ranked by **ROI = value/effort**, highest return on investment first.
 

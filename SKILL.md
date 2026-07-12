@@ -171,7 +171,8 @@ the CLI. `--root PATH` targets a project; the API key is read from
 - `cms suggest` — ROI-ranked plan of what to build next.
 - `cms verify` — map tests → features via coverage contexts (`exercised_by`;
   coverage proves the tests *execute* the feature, not that behaviour is correct).
-  `cms verify <Feature>` runs exactly the tests proving that feature.
+  `cms verify <Feature>` runs exactly the tests mapped as exercising that feature;
+  coverage proves execution, not complete behavioural correctness.
 - `cms sentinel` — the quality gate (see §8). Subcommands: `run`, `findings`,
   `show <id>`, `status <id> <status> --reason …`, `export`, `ledger-init`.
 - `cms align "<goal>"` — the change-alignment gate (see §9). `--base <ref>` for

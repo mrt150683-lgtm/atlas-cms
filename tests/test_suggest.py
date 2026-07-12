@@ -45,8 +45,8 @@ def test_suggestions_ranked_by_roi(tmp_path: Path) -> None:
 def test_mock_structural_suggestions_and_export(tmp_path: Path) -> None:
     graph = _graph(tmp_path)
     items = build_suggestions(graph, tmp_path, MockProvider())
-    # Alpha has no verifying tests -> structural hardening suggestion
-    assert any("Add tests verifying Alpha" in s["title"] for s in items)
+    # Alpha has no mapped exercising tests -> structural hardening suggestion
+    assert any("Add tests exercising Alpha" in s["title"] for s in items)
     out = export_suggestions(graph, tmp_path)
     text = out.read_text(encoding="utf-8")
     assert "ranked by return on investment" in text and "ROI" in text

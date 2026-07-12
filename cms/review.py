@@ -2,7 +2,7 @@
 
 For every feature, the reviewer takes the *declared intent* (anchor description,
 connects) as "expected", and the *evidence* (traced flows, member summaries,
-verifying tests) as "built", then judges alignment and explains it at three zoom
+tests mapped as exercising the feature) as "built", then judges alignment and explains it at three zoom
 levels: a one-line verdict, an expected-vs-built explanation with gaps, and an
 education note on how it actually works. An app-level rollup summarises the whole.
 

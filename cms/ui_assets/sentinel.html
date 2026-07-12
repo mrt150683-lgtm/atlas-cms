@@ -365,7 +365,7 @@ function ledger() {
     <div class="sub2">Claimed completion (docs/feature_ledger.json) audited against graph evidence.
       Ledger file: <span class="mono">${esc(inv.feature_ledger || "none — run `cms sentinel ledger-init`")}</span></div>
     <h3>Graph features (live evidence)</h3>
-    <table><tr><th>feature</th><th>source</th><th class="num">members</th><th class="num">verifying tests</th><th>reviewed</th></tr>
+    <table><tr><th>feature</th><th>source</th><th class="num">members</th><th class="num">mapped tests</th><th>reviewed</th></tr>
     ${feats.map((f) => `<tr><td>${esc(f.name)}</td><td>${esc(f.source)}</td>
       <td class="num">${f.members}</td><td class="num">${f.tests}</td>
       <td>${f.reviewed ? "yes" : "—"}</td></tr>`).join("")}

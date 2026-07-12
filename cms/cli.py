@@ -319,7 +319,7 @@ def verify(
     feature: str = typer.Argument(None, help="Feature to verify; omit to (re)map tests to all features."),
     root: Path = RootOption,
 ) -> None:
-    """Map tests to features via coverage, or run the tests proving one feature."""
+    """Map tests to features via coverage, or run tests that exercise one feature."""
     from .verify import map_tests_to_features, run_coverage, verify_feature
 
     root = root.resolve()
@@ -340,12 +340,18 @@ def verify(
         if not tests:
             typer.echo("No tests mapped yet — run `cms verify` (no args) first.")
             raise typer.Exit(1)
-        typer.echo(f"Running {len(tests)} test(s) verifying {matches[0]['name']}:")
+        typer.echo(f"Running {len(tests)} test(s) mapped as exercising {matches[0]['name']}:")
         for t in tests:
             typer.echo(f"  - {t}")
         passed, output = verify_feature(root, tests)
         typer.echo("\n" + output)
-        typer.echo(f"\n{'PASS — feature behaves as specified' if passed else 'FAIL — implementation diverges'}")
+        if passed:
+            typer.echo(
+                "\nPASS — all mapped tests passed; coverage proves these tests executed "
+                "the feature, not that every intended behaviour is specified or correct"
+            )
+        else:
+            typer.echo("\nFAIL — one or more tests mapped to this feature failed")
         raise typer.Exit(0 if passed else 1)
 
     typer.echo("Running test suite under coverage (per-test contexts)…")
