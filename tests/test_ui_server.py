@@ -382,3 +382,49 @@ def test_brainstorm_tab_markup() -> None:
     # the goals panel starts hidden and is revealed by seven logo clicks
     assert "logoClicks >= 7" in html
     assert 'id="goalsPanel" class="card" style="display:none' in html
+
+
+def test_projects_endpoint_lists_mapped_with_current_flag(tmp_path, monkeypatch) -> None:
+    import cms.fuse as fuse
+    from cms.fuse import register_project
+
+    monkeypatch.setattr(fuse, "REGISTRY_PATH", tmp_path / "reg" / "projects.json")
+
+    served = tmp_path / "served"
+    other = tmp_path / "other"
+    for proj in (served, other):
+        (proj / ".memory").mkdir(parents=True)
+        (proj / ".memory" / "graph.json").write_text('{"nodes": []}', encoding="utf-8")
+        register_project(proj)
+    dead = tmp_path / "dead"          # registered but memory vanished -> excluded
+    (dead / ".memory").mkdir(parents=True)
+    (dead / ".memory" / "graph.json").write_text("{}", encoding="utf-8")
+    register_project(dead)
+    (dead / ".memory" / "graph.json").unlink()
+
+    cache = _MemoryCache(served / ".memory" / "graph.json")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(served, cache))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    client = _Client(httpd.server_address[1])
+    try:
+        status, body = client.get("/api/projects")
+        assert status == 200
+        projects = json.loads(body)["projects"]
+        by_name = {p["name"]: p for p in projects}
+        assert set(by_name) == {"served", "other"}
+        assert by_name["served"]["current"] is True
+        assert by_name["other"]["current"] is False
+        assert by_name["other"]["pipeline"] in ("in_progress", "finished", "attention")
+    finally:
+        httpd.shutdown()
+
+
+def test_header_nav_consistent_and_switcher_present() -> None:
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    # all three header links share the pill style (Discovery was unstyled once)
+    for link in ("discoveryLink", "setupLink", "sentinelLink"):
+        assert f'id="{link}" class="navlink"' in html, f"{link} missing .navlink"
+    # fast project switcher wired to the live endpoints
+    assert 'id="projectSwitch"' in html and 'id="projectMenu"' in html
+    assert '"/api/projects"' in html and '"/api/switch-root"' in html

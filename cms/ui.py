@@ -124,6 +124,24 @@ def make_handler(root: Path, cache: _MemoryCache):
                                                 key=lambda c: c.get("project_dir", "")),
                                 "suggestions": sorted(load_suggestions().values(),
                                                       key=lambda s: (s["status"], s["kind"]))})
+                elif url.path == "/api/projects":
+                    from . import semantic_state as sstate
+                    from .fuse import load_registry
+
+                    out = []
+                    for root_str, meta in (load_registry().get("projects") or {}).items():
+                        proj = Path(root_str)
+                        if not (proj / config.MEMORY_DIR_NAME / "graph.json").is_file():
+                            continue
+                        st = sstate.load_state(proj / config.MEMORY_DIR_NAME)
+                        out.append({
+                            "name": meta.get("name") or proj.name,
+                            "root": root_str,
+                            "current": proj.resolve() == root.resolve(),
+                            "pipeline": sstate.pipeline_status(st)["status"],
+                            "last_built": meta.get("last_built"),
+                        })
+                    self._json({"projects": sorted(out, key=lambda p: p["name"].lower())})
                 elif url.path == "/api/brainstorm":
                     from .brainstorm import load_goals, load_ideas
                     from .fuse import build_card, load_registry

@@ -56,18 +56,39 @@
   .brand .project b { color: var(--ink-2); font-weight: 500; }
   .brand .sep { color: var(--ink-3); opacity: 0.5; }
 
-  #sentinelLink {
+  .navlink {
     color: var(--ink-3); font-size: 12px; text-decoration: none;
     padding: 4px 11px; border: 1px solid var(--border); border-radius: 999px;
     transition: color 130ms ease, border-color 130ms ease;
   }
   #sentinelLink:hover { color: #c98500; border-color: rgba(201,133,0,0.5); }
-  #setupLink {
-    color: var(--ink-3); font-size: 12px; text-decoration: none;
-    padding: 4px 11px; border: 1px solid var(--border); border-radius: 999px;
-    transition: color 130ms ease, border-color 130ms ease;
-  }
   #setupLink:hover { color: var(--accent); border-color: rgba(57,135,229,0.5); }
+  #discoveryLink:hover { color: #199e70; border-color: rgba(25,158,112,0.5); }
+
+  /* fast project switcher */
+  #projectSwitch { position: relative; }
+  #projectSwitch .cur {
+    cursor: pointer; user-select: none;
+    color: var(--ink-2); font-weight: 500;
+    border-bottom: 1px dotted var(--ink-3);
+  }
+  #projectSwitch .cur:hover { color: var(--ink); }
+  #projectMenu {
+    display: none; position: absolute; top: calc(100% + 8px); left: 0; z-index: 60;
+    background: var(--panel, #17181c); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px; min-width: 220px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+  }
+  #projectMenu.open { display: block; }
+  #projectMenu .pm-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; border-radius: 7px; cursor: pointer;
+    color: var(--ink-2); font-size: 12.5px;
+  }
+  #projectMenu .pm-row:hover { background: rgba(57,135,229,0.12); color: var(--ink); }
+  #projectMenu .pm-row.cur-row { color: var(--accent); cursor: default; }
+  #projectMenu .pm-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  #projectMenu .pm-note { font-size: 11px; color: var(--ink-3); padding: 6px 10px 4px; }
 
   #mcpBadge {
     display: flex; align-items: center; gap: 7px;
@@ -616,13 +637,16 @@
         <circle class="lg-star" cx="14" cy="8" r="1.15"/>
       </svg>
       <span class="mark">ATLAS</span>
-      <span class="project"><span class="sep">·</span> mapping <b id="projectName" title="">…</b></span>
+      <span class="project" id="projectSwitch"><span class="sep">·</span> mapping
+        <b id="projectName" class="cur" title="Switch project">…</b><span class="cur" style="font-size:10px"> ▾</span>
+        <div id="projectMenu"></div>
+      </span>
       <span id="providerChip" style="display:none;margin-left:10px;font:11px var(--font);color:var(--muted);border:1px solid var(--line);border-radius:9px;padding:1.5px 8px;white-space:nowrap"></span>
     </div>
     <div id="mcpBadge"><span class="pulse-dot"></span><span id="mcpBadgeText">MCP</span></div>
-    <a id="discoveryLink" href="/discovery" title="Constellation &amp; Scout — cross-project fusion and the plan-idea engine">Discovery</a>
-    <a id="setupLink" href="/setup" title="Scope &amp; share — choose what's processed, export a bundle">Setup</a>
-    <a id="sentinelLink" href="/sentinel" title="Hermes Sentinel — bug finding &amp; completion audit">Sentinel</a>
+    <a id="discoveryLink" class="navlink" href="/discovery" title="Constellation &amp; Scout — cross-project fusion and the plan-idea engine">Discovery</a>
+    <a id="setupLink" class="navlink" href="/setup" title="Scope &amp; share — choose what's processed, export a bundle">Setup</a>
+    <a id="sentinelLink" class="navlink" href="/sentinel" title="Hermes Sentinel — bug finding &amp; completion audit">Sentinel</a>
     <div class="search">
       <span class="icon"></span>
       <input id="searchInput" type="text" placeholder="Ask the codebase… e.g. where is the ignore filtering?" autocomplete="off" spellcheck="false">
@@ -756,6 +780,36 @@ function showFatal(msg) {
   el.innerHTML = `<div class="big">Something broke in the viewer</div><code>${esc(msg)}</code>`;
 }
 
+/* fast project switcher: click the project name -> pick a mapped project ->
+   live rebind via /api/switch-root -> reload onto its map */
+async function initProjectSwitch(meta) {
+  const menu = $("projectMenu");
+  const data = await fetch("/api/projects").then(r => r.json()).catch(() => null);
+  const projects = (data && data.projects) || [];
+  if (projects.length < 2) return;  // nothing to swap between
+  const dot = s => s === "finished" ? "#199e70" : s === "attention" ? "#e05252" : "#c98500";
+  menu.innerHTML = `<div class="pm-note">Mapped projects — click to switch</div>` +
+    projects.map(p => `
+      <div class="pm-row ${p.current ? "cur-row" : ""}" data-root="${esc(p.root)}"
+           ${p.current ? "" : 'title="' + esc(p.root) + '"'}>
+        <span class="pm-dot" style="background:${dot(p.pipeline)}"></span>
+        <span style="flex:1">${esc(p.name)}</span>
+        ${p.current ? "<span style='font-size:10px'>current</span>" : ""}
+      </div>`).join("");
+  const toggle = e => { e.stopPropagation(); menu.classList.toggle("open"); };
+  document.querySelectorAll("#projectSwitch .cur").forEach(el => el.onclick = toggle);
+  document.addEventListener("click", () => menu.classList.remove("open"));
+  menu.querySelectorAll(".pm-row:not(.cur-row)").forEach(row => row.onclick = async e => {
+    e.stopPropagation();
+    row.innerHTML = `<span class="pm-dot" style="background:var(--accent)"></span>switching…`;
+    const res = await fetch("/api/switch-root", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: row.dataset.root }) }).then(r => r.json()).catch(() => null);
+    if (res && res.switched) location.reload();
+    else row.innerHTML = `<span class="pm-dot" style="background:#e05252"></span>switch failed`;
+  });
+}
+
 async function boot() {
   const [meta, graph, tree, semantic] = await Promise.all([
     fetch("/api/meta").then(r => r.json()),
@@ -777,6 +831,7 @@ async function boot() {
     chip.title = `Root: ${meta.root}\nSemantic provider status`;
   }
   document.title = `Atlas · ${meta.project}`;
+  initProjectSwitch(meta);
   if (meta.stale) {
     const b = document.createElement("div");
     b.innerHTML = "⟳ Atlas was updated since this server started — <b>relaunch CMS.bat</b> to apply.";
