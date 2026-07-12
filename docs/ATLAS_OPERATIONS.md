@@ -12,6 +12,11 @@ how to maintain it. Written 2026-07-11.*
 - A second editable install exists in the global Python 3.11 (`cms` on PATH
   from `...\Python311\Scripts\cms.exe`). Both point at the same source; the
   `.venv` is the one Codex's MCP entry and `CMS.bat` use.
+- **Launcher health:** `CMS.bat` does not trust `python.exe` merely because the
+  file exists. It import-probes `CMS_PYTHON` (an optional explicit override),
+  the project `.venv`, `py -3.11`, then `python` on `PATH`. A copied or stale
+  venv is rejected with the repair commands below instead of producing an
+  opaque Windows launcher error.
 - **Recreate the venv** (e.g. after a Python upgrade):
 
   ```powershell

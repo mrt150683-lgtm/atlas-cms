@@ -8,7 +8,7 @@ commit. Items that have not met that bar remain **open**.
 |---|---|---|---|
 | AR-001 | complete | Keep verification claims proportional to coverage evidence. | CLI, prompts, reviews, suggestions, Sentinel labels, and manuals now say mapped tests prove execution rather than complete behavioural correctness; 39 focused tests pass. |
 | AR-002 | complete | Prevent stale review and suggestion artifacts from presenting as current advice. | Live pipeline status remains unfinished while judgments need refresh; stale review is labelled historical, invalid review is withheld, and stale suggestions are hidden in sidebar and overlay; semantic-state and UI tests pass. |
-| AR-003 | open | Detect and recover from a present-but-broken Python launcher/runtime. | — |
+| AR-003 | complete | Detect and recover from a present-but-broken Python launcher/runtime. | `CMS.bat` import-probes an explicit override, project venv, `py -3.11`, and PATH Python; broken venvs are rejected with exact repair instructions; launcher contract tests pass. |
 | AR-004 | open | Add observable progress and reduce avoidable cost in full coverage mapping. | — |
 | AR-005 | open | Canonicalize duplicate AI-discovered features before they enter the graph. | — |
 | AR-006 | open | Keep the large feature map responsive and make the graph an evidence view rather than a blocking navigation surface. | — |
