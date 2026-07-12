@@ -17,3 +17,6 @@ dist/
 
 # Per-machine workspace link
 cms.workspace.json
+
+# Raw screenshot drops at the repo root (curated copies live in docs/images/)
+/Images/

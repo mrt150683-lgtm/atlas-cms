@@ -4,6 +4,10 @@
 
 *(Atlas is the product; `cms` is the command line and Python package — `pip install`, `cms run-all`, `cms mcp`.)*
 
+![The knowledge-graph map — files sized by lines, edges are imports, live feature discovery in the sidebar](docs/images/map.png)
+
+![Click any node for its inspector: lines, git history, AI summary and components — mapping Atlas's own MCP server here](docs/images/inspector.png)
+
 ---
 
 Atlas is a self-bootstrapping structural + semantic memory layer for codebases, built for AI
@@ -223,6 +227,15 @@ A local, zero-dependency web UI over the memory layer at `http://127.0.0.1:7717`
 - **Search** — press `/` and ask in plain language; results rank via the same
   intent engine as `cms query`.
 - Deep-link a file with `?file=cms/scanner.py`. Serves on localhost only.
+
+### Screenshots
+
+| | |
+|---|---|
+| ![Feature map — declared vs AI-discovered features with their connections](docs/images/feature-map.png) *Feature map: declared (amber) vs AI-discovered (green) features and their connections* | ![Heat view — commit-frequency coloring with co-change coupling](docs/images/heat-view.png) *Heat view: churn coloring, dashed amber = files that change together without imports* |
+| ![Hover tooltips with per-file summaries and git stats](docs/images/map-tooltip.png) *Hover any node for its summary, lines, commits and provenance* | ![Annotated file reader](docs/images/file-reader.png) *Built-in reader: markdown rendering, source view, quote-anchored notes* |
+| ![Discovery — Constellation fusion report](docs/images/discovery.png) *Discovery: cross-project integrations, emergent features and conflicts (Constellation)* | ![Brainstorm — taste-learning idea generation](docs/images/brainstorm.png) *Brainstorm: temperature-dialed new concepts that learn from 👍/👎* |
+| ![Hermes Sentinel quality gate](docs/images/sentinel.png) *Hermes Sentinel: findings, workflow checks and the completion quality gate* | ![Setup — sources & exclusions transparency](docs/images/setup.png) *Setup: what gets analysed, what's skipped, and why — with evidence* |
 
 Everything lands in `.memory/` inside the analysed project:
 
