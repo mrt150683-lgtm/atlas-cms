@@ -175,6 +175,18 @@ the CLI. `--root PATH` targets a project; the API key is read from
   recorded so drift makes the report verifiably stale. LLM sections are
   labelled plan material — never ground truth.
 
+**Scout — plan hunting & idea synthesis**
+- `cms scout scan <dir>` — hunt every `*plan*.md` under a tree (junk pruned),
+  card new/changed ones with a real provider: one deep description sentence,
+  feature tags, goals, Atlas-candidate flag. Content-hash cached — unchanged
+  plans are never re-charged.
+- `cms scout review` — ONE call over all cards + the constellation registry:
+  new idea concepts, cross-plan patterns pointing at goals, project pairings,
+  Atlas-onboarding candidates. Suggestions persist with statuses
+  (`proposed|accepted|rejected|ignored`); **rejected/ignored ideas are fed
+  back as do-not-repropose and stay dismissed.**
+- `cms scout list [--ideas]` / `cms scout status <id> <verdict>`.
+
 **Scope / share**
 - `cms scope show|set <paths…>|clear` — limit which subdirs/files get processed
   (persisted as `.cmsscope.json`); only selected paths are scanned + AI-summarised,

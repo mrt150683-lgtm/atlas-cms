@@ -520,6 +520,88 @@ def fuse(
     typer.echo(f"\nWritten to {FUSION_DIR / 'latest.md'}")
 
 
+scout_app = typer.Typer(help="Scout — hunt plan.md documents across a directory, card them, and mass-review for ideas/patterns/candidates.",
+                        no_args_is_help=True)
+app.add_typer(scout_app, name="scout")
+
+
+@scout_app.command("scan")
+def scout_scan(
+    directory: Path = typer.Argument(Path("."), help="Directory tree to hunt for *plan*.md files."),
+    provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai (mock refused)."),
+    max_new: int = typer.Option(60, "--max", help="Max NEW/changed plans to summarize this run."),
+) -> None:
+    """Find plan documents and card the new/changed ones (content-hash cached)."""
+    from .scout import ScoutError, scan_plans
+
+    try:
+        stats = scan_plans(directory.resolve(), get_provider(provider), echo=typer.echo, max_new=max_new)
+    except ScoutError as exc:
+        typer.echo(f"scout failed: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Scout: {stats['found']} plan file(s) — {stats['new']} carded, "
+               f"{stats['unchanged']} unchanged (no cost), {stats['failed']} failed")
+
+
+@scout_app.command("review")
+def scout_review(
+    provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai (mock refused)."),
+) -> None:
+    """Mass-review every plan card: idea concepts, patterns, pairings, Atlas candidates."""
+    from .scout import ScoutError, mass_review
+
+    try:
+        result = mass_review(get_provider(provider))
+    except ScoutError as exc:
+        typer.echo(f"scout review failed: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Reviewed {result['cards_reviewed']} card(s); "
+               f"{result['dismissed_excluded']} dismissed idea(s) excluded.")
+    for s in result["suggestions"]:
+        typer.echo(f"  [{s['kind'][:-1] if s['kind'].endswith('s') else s['kind']}] "
+                   f"{s['id']}  {s['title']}")
+        typer.echo(f"      {s['description'][:120]}")
+    if not result["suggestions"]:
+        typer.echo("  (no new suggestions — existing ones kept their status)")
+    typer.echo("Decide with:  cms scout status <id> accepted|rejected|ignored")
+
+
+@scout_app.command("list")
+def scout_list(
+    ideas: bool = typer.Option(False, "--ideas", help="List suggestions instead of plan cards."),
+) -> None:
+    """Show plan cards, or suggestions with their statuses."""
+    from .scout import load_cards, load_suggestions
+
+    if ideas:
+        for s in sorted(load_suggestions().values(), key=lambda s: (s["status"], s["kind"])):
+            typer.echo(f"  {s['id']}  [{s['status']:<9}] [{s['kind']:<16}] {s['title']}")
+        return
+    for c in sorted(load_cards().values(), key=lambda c: c.get("project_dir", "")):
+        if c.get("status") == "ok":
+            typer.echo(f"  {c['project_dir']}/{c['name']}"
+                       + ("  [atlas-candidate]" if c.get("atlas_candidate") else ""))
+            typer.echo(f"      {c['one_liner']}")
+        else:
+            typer.echo(f"  {c.get('project_dir')}/{c.get('name')}  [FAILED — will retry on next scan]")
+
+
+@scout_app.command("status")
+def scout_status(
+    sid: str = typer.Argument(..., help="Suggestion id (from scout review / list --ideas)."),
+    status: str = typer.Argument(..., help="accepted | rejected | ignored | proposed"),
+) -> None:
+    """Record your verdict; rejected/ignored ideas are never re-proposed."""
+    from .scout import ScoutError, set_suggestion_status
+
+    try:
+        s = set_suggestion_status(sid, status)
+    except ScoutError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"{s['id']} -> {s['status']}: {s['title']}")
+
+
 @app.command()
 def prompt(
     task: str = typer.Argument(..., help="What you plan to do, in your own words."),

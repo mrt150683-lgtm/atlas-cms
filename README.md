@@ -41,6 +41,7 @@ cms verify CleanDirectoryScanner  # run exactly the tests proving a feature
 cms mcp                     # MCP server for AI agents (see below)
 cms sentinel                # Hermes Sentinel: bug finding + completion quality gate
 cms fuse                    # Constellation: cross-project integration/conflict report
+cms scout scan ~/Desktop    # hunt plan.md docs, card them, mass-review for ideas/patterns
 cms scan                    # just the clean tree (subset of run-all)
 cms build-graph             # scan + knowledge graph only
 cms summarize               # (re)generate AI summaries only
