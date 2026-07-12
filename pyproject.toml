@@ -7,6 +7,7 @@ name = "cms"
 version = "0.1.0"
 description = "Codebase Memory System - a structural + semantic memory layer for codebases, built for AI agents"
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 dependencies = [
     "networkx>=3.0",

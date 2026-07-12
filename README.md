@@ -24,6 +24,7 @@ consult memory before grep, ground every edit, and prove they finished.
 
 Full design rationale: [`codebase_memory_system_design_spec.md`](codebase_memory_system_design_spec.md).
 Project credits and contribution provenance: [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
+License: [AGPL-3.0](LICENSE) — free to use and study; ship it (or host it) modified and your changes must be open too.
 
 ## Install
 
@@ -368,3 +369,13 @@ get AI summaries but no structural parse.
 Query ranking is keyword+structure. Next up: tree-sitter for full-fidelity
 multi-language ASTs (calls/inheritance across languages), embedding-based
 semantic search.
+
+## License
+
+Atlas is licensed under the **GNU Affero General Public License v3.0**
+([LICENSE](LICENSE)). You are free to use, study, modify and share it — but if
+you distribute it or run a modified version as a network service, your changes
+must be published under the same license.
+
+Copyright © 2026 Alex Terry (mrt150683-lgtm). For commercial licensing outside
+the AGPL's terms, open an issue or get in touch.
