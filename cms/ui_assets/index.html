@@ -1666,7 +1666,7 @@ function featureDetailHtml(f) {
         `${c.out ? "→" : "←"} ${esc(c.name)}<span class="fd-kind">${c.derived ? "inferred" : "declared"}</span></a>`
       ).join("") : "") +
     `<div class="fd-meta">${(f.flows || []).length} flow(s)` +
-    (((f.exercised_by || f.verified_by || []).length) ? ` · ${(f.exercised_by || f.verified_by).length} test(s)` : "") + `</div>`;
+    (((f.exercised_by || f.verified_by || []).length) ? ` · ${(f.exercised_by || f.verified_by).length} mapped test(s)` : "") + `</div>`;
 }
 
 function featureStatusHTML() {
@@ -1843,6 +1843,7 @@ function flowStepsHtml(feat) {
 
 function renderFeatureInspector(feat) {
   const members = (feat.members || []).map(m => S.byId.get(m)).filter(Boolean);
+  const exercisedBy = feat.exercised_by || feat.verified_by || [];
   let html = `
     <div class="i-kind">feature · ${esc(feat.source || "declared")}</div>
     <div class="i-name">${esc(feat.name)}</div>
@@ -1851,7 +1852,16 @@ function renderFeatureInspector(feat) {
       <div class="stat"><div class="v">${members.length}</div><div class="k">members</div></div>
       <div class="stat"><div class="v">${(feat.entry_points || []).length}</div><div class="k">entries</div></div>
       <div class="stat"><div class="v">${(feat.flows || []).length}</div><div class="k">flows</div></div>
+      <div class="stat"><div class="v">${exercisedBy.length}</div><div class="k">mapped tests</div></div>
     </div>`;
+  html += `<div class="i-section"><h3>Test execution evidence (${exercisedBy.length})</h3>` +
+    `<div class="i-path" style="font-family:var(--font);font-size:11px;margin-bottom:9px">` +
+    `Coverage shows which tests executed this feature's member lines. Passing them does not prove every intended behaviour is specified or correct.` +
+    `</div>` +
+    (exercisedBy.length
+      ? `<div class="conn-list">${exercisedBy.map(t => `<div><span class="dir">test</span>${esc(t)}</div>`).join("")}</div>`
+      : `<div class="placeholder">No tests are mapped yet. Run <b>cms verify</b> to refresh coverage evidence.</div>`) +
+    `</div>`;
   const links = S.graph.links || S.graph.edges || [];
   const conns = [];  // {name, out, derived, via}
   const seen = new Set();

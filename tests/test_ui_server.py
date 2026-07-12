@@ -270,6 +270,11 @@ def test_features_section_never_hidden_markup() -> None:
     assert 'id="providerChip"' in html and "meta.root" in html
     # invalid/stale judgment banners exist
     assert "not valid semantic output" in html and "valid but frozen" in html
+    # feature inspection exposes coverage evidence without overstating it
+    assert "Test execution evidence" in html
+    assert "Coverage shows which tests executed" in html
+    assert "does not prove every intended behaviour" in html
+    assert "No tests are mapped yet" in html
 
 
 def test_discovery_page_and_apis(tmp_path, monkeypatch) -> None:
