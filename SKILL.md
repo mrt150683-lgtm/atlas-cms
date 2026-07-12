@@ -212,6 +212,7 @@ files get summaries only.
 ├── review.md                         # the AI alignment audit
 ├── suggestions.md                    # ROI-ranked plan
 ├── prompts/*.md                      # exported task briefs
+├── semantic_state.json               # positive per-stage evidence: discovery/review/suggestions status, provider, hashes
 ├── notes.json                        # viewer annotations (quote-anchored)
 ├── activity.jsonl                    # every MCP tool call (drives UI pulses)
 ├── sentinel/                         # findings.json, scans.json, latest.json, reports/
@@ -292,6 +293,18 @@ OpenAI-compatible endpoint — Ollama/LM Studio/xAI/OpenAI), **mock**
 (deterministic, self-labelling structural summaries — automatic fallback so the
 pipeline always runs, even offline). Mock output is explicitly labelled; never
 present it as a real semantic summary.
+
+**Semantic completion requires a real provider and positive evidence.**
+`.memory/semantic_state.json` records, per stage (summaries / feature
+discovery / review / suggestions), what ran, with which provider+model,
+over which input hash, producing which output hash. Mock never writes
+completion markers; provider failures record `failed` and retry after
+inputs change; a legitimate zero-feature discovery IS recorded complete.
+Judgment built before valid discovery (or without evidence) is invalid
+and rebuilt automatically once; a valid judgment whose feature-set hash
+drifted is frozen-stale — refresh via `cms review` / `cms suggest`.
+Never infer a stage ran from node existence — read the state (UI shows
+it; `GET /api/semantic` serves it).
 
 ## 11. Conventions & gotchas for agents
 

@@ -83,6 +83,13 @@ Use exact rel paths from the list. Return [] if nothing new is clear.
 """
 
 
+class DiscoveryError(RuntimeError):
+    """Real-provider feature discovery failed (transport error or malformed
+    output). Deliberately NOT swallowed into an empty result: an API error
+    or unparseable response must never be recorded as 'discovery completed
+    and found nothing'."""
+
+
 def discover_features_llm(
     graph: nx.DiGraph, provider: SummaryProvider, known: list[str],
     known_files: dict[str, set[str]] | None = None, max_new: int = 6,
@@ -103,10 +110,15 @@ def discover_features_llm(
     )
     try:
         raw = provider.summarize(prompt, {})
-        match = re.search(r"\[[\s\S]*\]", raw)
-        items = json.loads(match.group(0)) if match else []
-    except Exception:
-        return []
+    except Exception as exc:
+        raise DiscoveryError(f"provider call failed: {type(exc).__name__}: {exc}") from exc
+    match = re.search(r"\[[\s\S]*\]", raw)
+    if match is None:
+        raise DiscoveryError("provider returned no JSON array (malformed discovery output)")
+    try:
+        items = json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        raise DiscoveryError(f"provider returned invalid JSON: {exc}") from exc
     features = []
     for item in items[:max_new]:
         name = str(item.get("name", "")).strip()
@@ -310,17 +322,14 @@ def _mock_narrative(graph: nx.DiGraph, feat: Feature) -> str:
 # @memory:feature:FeatureTracing
 # @memory:connects:MemoryAnchors, KnowledgeGraphConstruction, FeatureVerification
 # @memory:summary:Features as first-class graph nodes — declared via anchors or LLM-discovered, with entry points, branching call flows, narratives and verification checklists.
-def build_features(
-    graph: nx.DiGraph, provider: SummaryProvider, on_progress=None,
-    narrative_cache: dict[str, str] | None = None,
-    extra_features: list[Feature] | None = None,
-    discover: bool = True,
-) -> list[Feature]:
-    """Discover + trace + narrate all features, writing them into the graph.
+def prepare_known(graph: nx.DiGraph, extra_features: list[Feature] | None = None):
+    """The known-feature context discovery runs against: declared features
+    plus valid re-injected extras, their file sets, and the synonym filter.
 
-    `narrative_cache` maps feature name -> (narrative, original_provider) to reuse; `extra_features`
-    re-injects previously discovered features (whose source is not anchors);
-    `discover=False` skips the LLM discovery pass (incremental updates)."""
+    Returns (features_map, known_files, is_duplicate). Extracted from
+    build_features so incremental_update can run discovery as its own
+    phase (serialized + evidence-recorded) and feed results back in via
+    extra_features with discover=False."""
     features = collect_declared_features(graph)
 
     def file_set(feat: Feature) -> set[str]:
@@ -350,11 +359,35 @@ def build_features(
         feat.members = [m for m in feat.members if graph.has_node(m)]
         if feat.members and feat.name not in features and not is_duplicate(feat):
             features[feat.name] = feat
+    known_files = {name: file_set(f) for name, f in features.items()}
+    return features, known_files, is_duplicate
+
+
+def build_features(
+    graph: nx.DiGraph, provider: SummaryProvider, on_progress=None,
+    narrative_cache: dict[str, str] | None = None,
+    extra_features: list[Feature] | None = None,
+    discover: bool = True,
+) -> list[Feature]:
+    """Discover + trace + narrate all features, writing them into the graph.
+
+    `narrative_cache` maps feature name -> (narrative, original_provider) to reuse; `extra_features`
+    re-injects previously discovered features (whose source is not anchors);
+    `discover=False` skips the LLM discovery pass (incremental updates)."""
+    features, known_files, is_duplicate = prepare_known(graph, extra_features)
     if discover:
-        known_files = {name: file_set(f) for name, f in features.items()}
-        for feat in discover_features_llm(graph, provider, known=list(features), known_files=known_files):
-            if not is_duplicate(feat):
-                features[feat.name] = feat
+        try:
+            for feat in discover_features_llm(graph, provider, known=list(features), known_files=known_files):
+                if not is_duplicate(feat):
+                    features[feat.name] = feat
+        except DiscoveryError as exc:
+            # legacy soft path (cli trace etc.): keep building declared
+            # features. incremental_update runs discovery itself with
+            # discover=False here, and records failures as durable state.
+            import sys
+
+            print(f"cms: feature discovery failed ({exc}); continuing with declared features.",
+                  file=sys.stderr)
 
     result = []
     for i, feat in enumerate(sorted(features.values(), key=lambda f: f.name), 1):

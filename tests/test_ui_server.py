@@ -210,3 +210,48 @@ def test_switch_root_rebinds_live(tmp_path, monkeypatch) -> None:
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_semantic_endpoint_reports_stage_evidence(server) -> None:
+    """The UI must not reconstruct semantic validity from node existence —
+    /api/semantic serves durable stage evidence + live validity directly."""
+    import cms.semantic_state as ss
+
+    client, root = server
+    ss.record_stage(root / ".memory", "features", status="skipped",
+                    provider="mock", real_provider=False,
+                    reason="feature discovery requires a real provider")
+    status, body = client.get("/api/semantic")
+    assert status == 200
+    sem = json.loads(body)
+    assert sem["project"] == root.name and sem["root"] == str(root)
+    assert set(sem["stages"]) == {"summaries", "features", "review", "suggestions"}
+    assert sem["stages"]["features"]["status"] == "skipped"
+    assert sem["stages"]["review"]["status"] == "never_run"
+    assert "provider" in sem and "real" in sem["provider"]
+    assert "counts" in sem and sem["counts"]["feature_count"] >= 1  # Greeting
+    assert sem["live"]["review"]["validity"] in ("missing", "invalid")
+    # no secrets anywhere in the payload
+    assert "key" not in body.decode("utf-8").lower() or "api_key" not in body.decode("utf-8")
+
+
+def test_features_section_never_hidden_markup() -> None:
+    """Zero features must render an explicit state, not an empty hidden
+    panel. The wrap has no display:none and every semantic status has a
+    visible explanation string in the frontend."""
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html").read_text(
+        encoding="utf-8")
+    wrap = html.split('id="featuresWrap"')[1][:120]
+    assert "display:none" not in wrap
+    assert 'id="featStatus"' in html
+    for msg in ("Feature discovery has never run",
+                "Feature discovery requires a real provider",
+                "Feature discovery failed",
+                "Feature discovery is running",
+                "zero features found",
+                "Feature data is stale"):
+        assert msg in html, f"missing visible semantic state: {msg!r}"
+    # project identity + provider provenance surfaced
+    assert 'id="providerChip"' in html and "meta.root" in html
+    # invalid/stale judgment banners exist
+    assert "not valid semantic output" in html and "valid but frozen" in html

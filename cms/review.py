@@ -132,6 +132,7 @@ def _structural_review(feat: dict) -> dict:
                  f"{tests} exercising test(s). Structural evidence only — no AI judgement.",
         "gaps": [] if tests else ["No tests currently exercise this feature."],
         "education": "Run `cms review` with a configured provider for a full plain-English review.",
+        "structural": True,  # positive marker: this is NOT semantic output
     }
 
 

@@ -404,6 +404,15 @@ def review(
     )
     export_graph(mem.graph, memory_dir)
     out = export_review(mem.graph, memory_dir)
+    if llm.name != "mock":  # manual refresh keeps the provenance record truthful
+        from . import semantic_state as ss
+
+        ss.record_stage(
+            memory_dir, "review", status="complete", provider=llm.name,
+            model=getattr(llm, "model", None), real_provider=True,
+            feature_set_hash=ss.feature_set_hash(mem.graph),
+            **ss.feature_counts(mem.graph),
+        )
     app_r = result["app"]
     typer.echo(f"\nOverall: {app_r['verdict'].upper()} — {app_r['headline']}")
     typer.echo(f"Verdicts: " + ", ".join(f"{n} {v}" for v, n in app_r["counts"].items() if n))
@@ -432,6 +441,15 @@ def suggest(
     suggestions = build_suggestions(mem.graph, root, llm)
     export_graph(mem.graph, memory_dir)
     out = export_suggestions(mem.graph, memory_dir)
+    if llm.name != "mock":
+        from . import semantic_state as ss
+
+        ss.record_stage(
+            memory_dir, "suggestions", status="complete", provider=llm.name,
+            model=getattr(llm, "model", None), real_provider=True,
+            feature_set_hash=ss.feature_set_hash(mem.graph),
+            items=len(suggestions), **ss.feature_counts(mem.graph),
+        )
     for i, s in enumerate(suggestions[:top], 1):
         typer.echo(f"{i}. [ROI {s['roi']}×] {s['title']}   ({s['kind']} · value {s['value']} · effort {s['effort']})")
         typer.echo(f"     {s['description']}")

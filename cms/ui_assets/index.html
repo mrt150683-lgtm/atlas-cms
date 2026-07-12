@@ -616,7 +616,8 @@
         <circle class="lg-star" cx="14" cy="8" r="1.15"/>
       </svg>
       <span class="mark">ATLAS</span>
-      <span class="project"><span class="sep">·</span> mapping <b id="projectName">…</b></span>
+      <span class="project"><span class="sep">·</span> mapping <b id="projectName" title="">…</b></span>
+      <span id="providerChip" style="display:none;margin-left:10px;font:11px var(--font);color:var(--muted);border:1px solid var(--line);border-radius:9px;padding:1.5px 8px;white-space:nowrap"></span>
     </div>
     <div id="mcpBadge"><span class="pulse-dot"></span><span id="mcpBadgeText">MCP</span></div>
     <a id="setupLink" href="/setup" title="Scope &amp; share — choose what's processed, export a bundle">Setup</a>
@@ -629,8 +630,9 @@
   </header>
 
   <nav id="tree">
-    <div id="featuresWrap" style="display:none">
+    <div id="featuresWrap">
       <div class="section sec-toggle" data-sec="features"><span class="sec-chev"></span>Features <span class="sec-count" id="featCount"></span></div>
+      <div id="featStatus" style="font:11px var(--font);color:var(--muted);padding:2px 12px 6px;line-height:1.45"></div>
       <div id="featureList" class="sec-body"></div>
     </div>
     <div class="section sec-toggle" data-sec="explorer"><span class="sec-chev"></span>Explorer <span class="sec-count" id="fileCount"></span></div>
@@ -754,12 +756,25 @@ function showFatal(msg) {
 }
 
 async function boot() {
-  const [meta, graph, tree] = await Promise.all([
+  const [meta, graph, tree, semantic] = await Promise.all([
     fetch("/api/meta").then(r => r.json()),
     fetch("/api/graph").then(r => r.ok ? r.json() : null),
     fetch("/api/tree").then(r => r.ok ? r.json() : null),
+    fetch("/api/semantic").then(r => r.ok ? r.json() : null).catch(() => null),
   ]);
-  S.meta = meta; $("projectName").textContent = meta.project;
+  S.meta = meta; S.semantic = semantic;
+  $("projectName").textContent = meta.project;
+  // active project must be unmistakable: full root on hover, provider chip
+  $("projectName").title = meta.root || "";
+  if (semantic && semantic.provider) {
+    const p = semantic.provider;
+    const chip = $("providerChip");
+    chip.style.display = "";
+    chip.textContent = p.real ? `${p.name}${p.model ? " · " + p.model : ""}`
+                              : "mock provider — semantic layer inactive";
+    chip.style.color = p.real ? "var(--muted)" : "#c98500";
+    chip.title = `Root: ${meta.root}\nSemantic provider status`;
+  }
   document.title = `Atlas · ${meta.project}`;
   if (meta.stale) {
     const b = document.createElement("div");
@@ -1475,9 +1490,38 @@ function featureDetailHtml(f) {
     (((f.exercised_by || f.verified_by || []).length) ? ` · ${(f.exercised_by || f.verified_by).length} test(s)` : "") + `</div>`;
 }
 
+function featureStatusHTML() {
+  // The Features section NEVER silently hides: every semantic state renders
+  // a visible explanation (positive evidence, not inferred from emptiness).
+  const sem = S.semantic;
+  const st = (sem && sem.stages && sem.stages.features) || { status: "never_run" };
+  const counts = (sem && sem.counts) || {};
+  const prov = st.provider ? `${st.provider}${st.model ? " · " + st.model : ""}` : "";
+  const when = st.generated_at ? st.generated_at.replace("T", " ").replace("Z", " UTC") : "";
+  if (sem && sem.build_running)
+    return `<span style="color:#86b6ef">Feature discovery is running…</span>`;
+  if (st.status === "failed")
+    return `<span style="color:#e05252">Feature discovery failed</span> — ${esc(st.error || "provider error")}. ` +
+           `It retries on the next update after changes.`;
+  if (st.status === "skipped")
+    return `<span style="color:#c98500">Feature discovery requires a real provider.</span> ` +
+           `${esc(st.reason || "")}`;
+  if (st.status !== "complete")
+    return `<span style="color:#c98500">Feature discovery has never run.</span> ` +
+           `Run <b>cms update</b> with a configured API key.`;
+  const current = sem && sem.live && sem.live.features && sem.live.features.current;
+  const base = `${counts.declared_feature_count ?? 0} declared · ` +
+               `${counts.discovered_feature_count ?? 0} AI-discovered` +
+               (prov ? ` · ${esc(prov)}` : "") + (when ? ` · ${esc(when)}` : "");
+  if ((counts.feature_count ?? S.features.length) === 0)
+    return `<span style="color:#199e70">Discovery completed — zero features found.</span> ${base}`;
+  return (current ? "" :
+    `<span style="color:#c98500">Feature data is stale — run cms update.</span> `) + base;
+}
+
 function renderFeatureList() {
-  if (!S.features.length) return;
-  $("featuresWrap").style.display = "";
+  $("featStatus").innerHTML = featureStatusHTML();
+  if (!S.features.length) { $("featCount").textContent = "0"; $("featureList").innerHTML = ""; return; }
   $("featCount").textContent = S.features.length;
   const groups = [
     ["Declared by you", "#c98500", S.features.filter(f => f.source !== "discovered")],
@@ -2093,7 +2137,28 @@ function openReview() {
   }
   $("reviewHead").innerHTML = head;
 
-  $("reviewBody").innerHTML = feats.length ? feats.map(f => {
+  // validity banner: an empty or pre-discovery review must never present
+  // itself as a meaningful real-provider result
+  let banner = "";
+  const live = S.semantic && S.semantic.live;
+  const rv = live && live.review;
+  const rstage = (S.semantic && S.semantic.stages && S.semantic.stages.review) || {};
+  if (rv && rv.validity !== "valid") {
+    const msgs = {
+      missing: "No review has been generated yet.",
+      invalid: `This review is <b>not valid semantic output</b>: ${esc(rv.reason || "")}. ` +
+               `It will be rebuilt automatically once real feature discovery completes.`,
+      stale: `This review is <b>valid but frozen</b> — the feature set changed since it was ` +
+             `generated (${esc(rv.reason || "")}). Refresh explicitly with <b>cms review</b>.`,
+    };
+    const color = rv.validity === "stale" ? "#c98500" : "#e05252";
+    banner = `<div style="border:1px solid ${color};border-radius:8px;padding:8px 12px;margin:8px 0;` +
+             `font:12px var(--font);color:${color}">${msgs[rv.validity] || esc(rv.reason || "")}` +
+             (rstage.status === "failed" ? ` Last attempt failed: ${esc(rstage.error || "")}.` : "") +
+             `</div>`;
+  }
+
+  $("reviewBody").innerHTML = banner + (feats.length ? feats.map(f => {
     const r = f.review;
     return `<div class="rv-row" data-rv="${esc(f.name)}">
       <div class="rv-line">
@@ -2111,8 +2176,17 @@ function openReview() {
         <a class="rv-zoom" data-zoom="${esc(f.id)}">Zoom into this feature on the map →</a>
       </div>
     </div>`;
-  }).join("") : `<div style="padding:20px 22px;color:var(--ink-3)">No review yet — run <code style="color:var(--accent)">cms review</code> first.</div>`;
+  }).join("") : `<div style="padding:20px 22px;color:var(--ink-3)">No review yet — run <code style="color:var(--accent)">cms review</code> first.</div>`);
 
+  const sv = live && live.suggestions;
+  if (sv && sv.validity !== "valid") {
+    $("reviewBody").insertAdjacentHTML("beforeend",
+      `<div style="margin:8px 0;padding:8px 12px;border:1px solid ${sv.validity === "stale" ? "#c98500" : "#e05252"};` +
+      `border-radius:8px;font:12px var(--font);color:${sv.validity === "stale" ? "#c98500" : "#e05252"}">` +
+      `Suggestions: ${sv.validity === "stale"
+        ? "valid but frozen — refresh with <b>cms suggest</b>."
+        : `not valid semantic output (${esc(sv.reason || "")}).`}</div>`);
+  }
   const sugg = S.byId.get("suggestions:app");
   if (sugg && (sugg.items || []).length) {
     $("reviewBody").insertAdjacentHTML("beforeend",

@@ -95,6 +95,43 @@ any shell — it prefers `.venv` and never pauses when given arguments.
   real provider — a structural/mock run is labelled and must not be treated
   as a verified review.
 
+## Semantic-stage evidence (`.memory/semantic_state.json`)
+
+Atlas persists positive, versioned evidence that each semantic stage ran:
+`summaries`, `features` (LLM discovery), `review`, `suggestions`. Each
+record carries status (`complete | failed | skipped | never_run`),
+provider + model, `real_provider`, timestamps, input/output hashes, the
+`feature_set_hash` a judgment evaluated, and feature counts. Written
+atomically; no secrets. Staleness is *derived* live (hash comparison),
+never guessed from node existence.
+
+Rules:
+- **Real-provider-only semantic completion.** Mock builds never create
+  completion markers, judgment nodes, or a "successful" zero-feature
+  state — they record an explicit `skipped` with the reason, and the UI
+  says so. Provider errors / malformed output record `failed` (prior
+  good evidence preserved under `last_success`) and retry on the next
+  update after inputs change.
+- **Legacy migration.** Projects that pre-date this record (real
+  summaries, zero features, judgment nodes built pre-discovery) read as
+  `never_run` and recover on a NORMAL `cms update` / app launch / UI
+  build — no `--full`, no special-casing.
+- **A legitimate zero-feature discovery is recorded `complete`** and is
+  not re-charged while inputs are unchanged.
+- **Frozen vs invalid judgment.** Invalid judgment (mock/structural, no
+  evidence, or generated against an empty pre-discovery feature set) is
+  rebuilt automatically once real discovery completes — that is
+  *initialization recovery*. A VALID real-provider judgment whose
+  feature-set hash has drifted is **frozen**: exposed as stale in the UI
+  and refreshed only by explicit `cms review` / `cms suggest`. Routine
+  updates never silently re-charge judgment.
+
+Diagnosing "zero features": open the UI — the Features section is never
+hidden; it states which case you are in (never ran / needs a real
+provider / failed with the error / ran and legitimately found zero /
+stale). `GET /api/semantic` gives the same as JSON. The active project
+root is on the header (hover the project name) with a provider chip.
+
 ## Known limitations
 
 - One MCP server process serves one project root (chosen at launch via the

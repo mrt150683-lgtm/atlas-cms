@@ -125,6 +125,8 @@ def make_handler(root: Path, cache: _MemoryCache):
                 elif url.path == "/api/meta":
                     self._json({"project": root.name, "root": str(root),
                                 "stale": _newest_code_mtime() > _boot_code_mtime + 1.0})
+                elif url.path == "/api/semantic":
+                    self._semantic()
                 elif url.path == "/api/query":
                     self._query(query)
                 elif url.path == "/api/activity":
@@ -432,6 +434,34 @@ def make_handler(root: Path, cache: _MemoryCache):
                 self._error(404, f"{name} not found — run `cms run-all` first")
                 return
             self._send(200, path.read_bytes(), "application/json; charset=utf-8")
+
+        def _semantic(self) -> None:
+            """Semantic-stage status for the UI: durable per-stage evidence
+            plus live staleness/validity, so the frontend never reconstructs
+            semantic completion from node existence. No secrets."""
+            from . import semantic_state as sstate
+            from .providers import get_provider
+
+            state = sstate.load_state(memory_dir)
+            payload = {
+                "project": root.name, "root": str(root),
+                "schema_version": state.get("schema_version"),
+                "stages": {name: sstate.stage(state, name) for name in sstate.STAGES},
+                "build_running": bool(build_state.get("running")),
+                "build_message": build_state.get("message", ""),
+            }
+            try:
+                prov = get_provider(None)
+                payload["provider"] = {"name": prov.name,
+                                       "model": getattr(prov, "model", None),
+                                       "real": prov.name != "mock"}
+            except Exception:
+                payload["provider"] = {"name": "unavailable", "model": None, "real": False}
+            memory = cache.get()
+            if memory is not None:
+                payload["counts"] = sstate.feature_counts(memory.graph)
+                payload["live"] = sstate.derive_staleness(state, memory.graph)
+            self._json(payload)
 
         def _query(self, query: dict) -> None:
             text = (query.get("q") or [""])[0].strip()

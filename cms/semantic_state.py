@@ -1,0 +1,169 @@
+"""Durable semantic-state evidence — positive proof that each semantic stage ran.
+
+Atlas must never infer semantic completion from incidental graph contents
+(a graph existing, summaries existing, judgment nodes existing, zero
+features, the absence of mock labels, or the absence of an exception).
+This module persists, per stage, an explicit record of what was attempted,
+with which provider, over which inputs, producing which outputs — written
+atomically to ``.memory/semantic_state.json``.
+
+Stages: ``summaries``, ``features`` (LLM discovery), ``review``,
+``suggestions``. Statuses: ``complete | failed | skipped | never_run``
+(staleness is *derived* by comparing recorded hashes against the current
+graph — see :func:`derive_staleness` — so a frozen-but-valid judgment keeps
+its ``complete`` record and is merely *exposed* as stale, per the
+review-freeze policy).
+
+No secrets, prompts, or provider credentials are stored here.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import time
+from pathlib import Path
+
+from . import config
+
+SCHEMA_VERSION = 1
+STATE_FILENAME = "semantic_state.json"
+STAGES = ("summaries", "features", "review", "suggestions")
+# bump when DISCOVERY_PROMPT / feature semantics change enough that old
+# discovery output should be considered non-current
+DISCOVERY_SCHEMA_VERSION = 1
+
+NEVER_RUN = {"status": "never_run"}
+
+
+def state_path(memory_dir: Path) -> Path:
+    return memory_dir / STATE_FILENAME
+
+
+def load_state(memory_dir: Path) -> dict:
+    try:
+        return json.loads(state_path(memory_dir).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def stage(state: dict, name: str) -> dict:
+    return (state.get("stages") or {}).get(name) or dict(NEVER_RUN)
+
+
+def record_stage(memory_dir: Path, name: str, **fields) -> dict:
+    """Read-modify-write one stage record; atomic replace on save."""
+    state = load_state(memory_dir)
+    state["schema_version"] = SCHEMA_VERSION
+    stages = state.setdefault("stages", {})
+    record = dict(fields)
+    record.setdefault("generated_at", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    record["schema_version"] = SCHEMA_VERSION
+    stages[name] = record
+    memory_dir.mkdir(parents=True, exist_ok=True)
+    tmp = state_path(memory_dir).with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
+    tmp.replace(state_path(memory_dir))
+    return state
+
+
+def _sha(items) -> str:
+    return hashlib.sha256(
+        json.dumps(items, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:24]
+
+
+def discovery_input_hash(graph) -> str:
+    """Deterministic hash of everything feature discovery evaluates: the
+    file set, the summaries fed into the prompt, declared-feature anchors,
+    and the discovery schema version. Ordering-stable; no timestamps."""
+    files = sorted(
+        (a.get("path", ""), (a.get("summary") or "").strip())
+        for _, a in graph.nodes(data=True) if a.get("type") == "file"
+    )
+    anchors = sorted(
+        (a.get("path") or a.get("qualname") or n, json.dumps(a.get("anchors"), sort_keys=True))
+        for n, a in graph.nodes(data=True) if a.get("anchors")
+    )
+    return _sha([DISCOVERY_SCHEMA_VERSION, files, anchors])
+
+
+def feature_set_hash(graph) -> str:
+    """Deterministic hash of the semantic feature set a judgment evaluates:
+    names, declared/discovered source, members, entry points, connections
+    and descriptions. No unstable ordering, no timestamps."""
+    feats = sorted(
+        [
+            a.get("name", ""), a.get("source", ""),
+            sorted(a.get("members") or []),
+            sorted(a.get("entry_points") or []),
+            sorted(a.get("connects") or []),
+            (a.get("description") or "").strip(),
+        ]
+        for _, a in graph.nodes(data=True) if a.get("type") == "feature"
+    )
+    return _sha(feats)
+
+
+def feature_counts(graph) -> dict:
+    total = declared = discovered = 0
+    for _, a in graph.nodes(data=True):
+        if a.get("type") != "feature":
+            continue
+        total += 1
+        if a.get("source") == "discovered":
+            discovered += 1
+        else:
+            declared += 1
+    return {"feature_count": total, "declared_feature_count": declared,
+            "discovered_feature_count": discovered}
+
+
+# ── judgment validity ────────────────────────────────────────────────────
+
+def judgment_validity(state: dict, graph, node_id: str, stage_name: str) -> tuple[str, str]:
+    """Classify a judgment artifact (review:app / suggestions:app).
+
+    Returns (verdict, reason) with verdict one of:
+      - ``missing``  — node absent: build it (initialization).
+      - ``invalid``  — node exists but is not a real judgment of a real
+        feature set: mock/structural output, no semantic-state evidence
+        (legacy), or generated against an empty pre-discovery feature set
+        while features now exist. Rebuild automatically.
+      - ``stale``    — a VALID real-provider judgment whose recorded
+        feature_set_hash no longer matches the current one. Deliberately
+        frozen: exposed, never silently regenerated (refresh via
+        `cms review` / `cms suggest`).
+      - ``valid``    — real, evidenced, hash-current. No-op.
+    """
+    if not graph.has_node(node_id):
+        return "missing", "artifact absent"
+    rec = stage(state, stage_name)
+    if rec.get("status") != "complete":
+        return "invalid", f"no positive completion evidence (state: {rec.get('status')})"
+    if not rec.get("real_provider"):
+        return "invalid", "generated without a real provider"
+    counts = feature_counts(graph)
+    if rec.get("feature_count", 0) == 0 and counts["feature_count"] > 0:
+        return "invalid", "generated against an empty pre-discovery feature set"
+    if rec.get("feature_set_hash") != feature_set_hash(graph):
+        return "stale", "feature set changed since this judgment was generated"
+    return "valid", "current"
+
+
+def derive_staleness(state: dict, graph) -> dict:
+    """Live view: per-stage currency, computed against the current graph.
+    Serves the UI/API; never mutates the durable record."""
+    out = {}
+    cur_input = discovery_input_hash(graph)
+    cur_fsh = feature_set_hash(graph)
+    feats = stage(state, "features")
+    out["features"] = {
+        "current": feats.get("status") == "complete" and feats.get("input_hash") == cur_input,
+        "current_input_hash": cur_input,
+    }
+    for name, node_id in (("review", "review:app"), ("suggestions", "suggestions:app")):
+        verdict, reason = judgment_validity(state, graph, node_id, name)
+        out[name] = {"validity": verdict, "reason": reason,
+                     "current_feature_set_hash": cur_fsh}
+    return out
