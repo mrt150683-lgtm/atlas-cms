@@ -121,10 +121,13 @@ nearest project holding `.memory/graph.json`, so one global entry serves every
 repo. In an un-mapped repo it stays alive and tools answer "no memory layer —
 run `cms run-all`".
 
-18 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
+19 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
 
 - **Grounding / read** — `query_codebase`, `get_file_summary`, `get_source`,
   `get_feature_trace`, `list_features`, `who_calls`, `who_imports`, `get_impact`.
+- **Discuss** — `ask_codebase`: plain-language Q&A over the whole memory
+  (flows, features, connections, intent-vs-reality), evidence named. Also in
+  the UI as the Ask Atlas chat popup and on the CLI as `cms ask "…"`.
 - **Judgment / plan** — `get_review`, `get_suggestions`, `get_sentinel_report`,
   `export_task_prompt`.
 - **Alignment loop** — `declare_intent`, `check_alignment`.

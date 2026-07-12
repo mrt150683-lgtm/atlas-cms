@@ -124,6 +124,10 @@ def make_handler(root: Path, cache: _MemoryCache):
                                                 key=lambda c: c.get("project_dir", "")),
                                 "suggestions": sorted(load_suggestions().values(),
                                                       key=lambda s: (s["status"], s["kind"]))})
+                elif url.path == "/api/chat":
+                    from .chat import load_transcript
+
+                    self._json({"transcript": load_transcript(root)})
                 elif url.path == "/api/projects":
                     from . import semantic_state as sstate
                     from .fuse import load_registry
@@ -236,6 +240,24 @@ def make_handler(root: Path, cache: _MemoryCache):
                         self._json({"updated": True, "suggestion": s})
                     except ScoutError as exc:
                         self._json({"updated": False, "error": str(exc)}, 400)
+                elif url.path == "/api/chat":
+                    from .activity import log_activity
+                    from .chat import ChatError, ask, load_transcript
+                    from .providers import get_provider
+
+                    try:
+                        entry = ask(root, str(body.get("question") or ""),
+                                    get_provider(None),
+                                    history=load_transcript(root, limit=6))
+                        log_activity(memory_dir, "ask_codebase",
+                                     entry["evidence_nodes"],
+                                     label=entry["q"][:120])
+                        self._json({"answer": entry["a"],
+                                    "evidence_nodes": entry["evidence_nodes"],
+                                    "matched_features": entry["matched_features"],
+                                    "model": entry["model"]})
+                    except ChatError as exc:
+                        self._json({"error": str(exc)}, 400)
                 elif url.path == "/api/brainstorm/generate":
                     from .brainstorm import BrainstormError, generate_ideas
                     from .providers import get_provider

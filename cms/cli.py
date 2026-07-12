@@ -460,6 +460,27 @@ def suggest(
 
 
 @app.command()
+def ask(
+    question: str = typer.Argument(..., help="Plain-language question about this codebase."),
+    root: Path = RootOption,
+    provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai (mock refused)."),
+) -> None:
+    """Discuss the codebase: flows, features, connections, intent-vs-reality —
+    answers grounded in the memory layer with the evidence named."""
+    from .chat import ChatError, ask as _ask, load_transcript
+
+    try:
+        entry = _ask(root.resolve(), question, get_provider(provider),
+                     history=load_transcript(root.resolve(), limit=6))
+    except ChatError as exc:
+        typer.echo(f"ask failed: {exc}", err=True)
+        raise typer.Exit(1)
+    typer.echo(entry["a"])
+    if entry["matched_features"]:
+        typer.echo(f"\n[grounded in: {', '.join(entry['matched_features'])}]", err=True)
+
+
+@app.command()
 def fuse(
     projects: list[Path] = typer.Argument(None, help="Project roots to fuse (default: every registered mapped project)."),
     provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai (mock is refused)."),

@@ -428,3 +428,52 @@ def test_header_nav_consistent_and_switcher_present() -> None:
     # fast project switcher wired to the live endpoints
     assert 'id="projectSwitch"' in html and 'id="projectMenu"' in html
     assert '"/api/projects"' in html and '"/api/switch-root"' in html
+
+
+def test_chat_endpoint_and_popup_markup(tmp_path, monkeypatch) -> None:
+    """POST /api/chat answers grounded; GET restores the transcript; the
+    popup markup is present and themed."""
+    import cms.providers as providers_mod
+
+    class StubChat:
+        name, model = "stub-real", "m1"
+
+        def summarize(self, prompt, context):
+            if "OWNER'S QUESTION" in prompt:
+                return "Greeting is built and traced. (app.py:2-3)"
+            return "Summary."
+
+    monkeypatch.setattr(providers_mod, "get_provider", lambda *_: StubChat())
+
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "app.py").write_text(SOURCE, encoding="utf-8")
+    records = scan(root)
+    graph = build_graph(records)
+    build_features(graph, MockProvider())
+    export_tree(root, records, root / ".memory")
+    export_graph(graph, root / ".memory")
+    cache = _MemoryCache(root / ".memory" / "graph.json")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(root, cache))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    client = _Client(httpd.server_address[1])
+    try:
+        status, body = client.post("/api/chat", {"question": "what is the greeting feature?"})
+        data = json.loads(body)
+        assert status == 200 and data["answer"].startswith("Greeting is built")
+        assert "Greeting" in data["matched_features"]
+
+        status, body = client.get("/api/chat")
+        transcript = json.loads(body)["transcript"]
+        assert len(transcript) == 1 and transcript[0]["q"].startswith("what is")
+
+        status, body = client.post("/api/chat", {"question": ""})
+        assert status == 400
+    finally:
+        httpd.shutdown()
+
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    for el in ("chatFab", "chatBox", "chatMsgs", "chatInput", "chatSend"):
+        assert f'id="{el}"' in html, f"missing {el}"
+    assert '"/api/chat"' in html

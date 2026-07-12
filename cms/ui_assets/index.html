@@ -90,6 +90,52 @@
   #projectMenu .pm-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
   #projectMenu .pm-note { font-size: 11px; color: var(--ink-3); padding: 6px 10px 4px; }
 
+  /* ── Ask Atlas chat popup ─────────────────────────────────── */
+  #chatFab {
+    position: fixed; right: 22px; bottom: 22px; z-index: 70;
+    width: 46px; height: 46px; border-radius: 50%;
+    background: var(--accent); border: none; cursor: pointer;
+    color: #fff; font-size: 19px; line-height: 1;
+    box-shadow: 0 6px 22px rgba(57,135,229,0.35);
+    transition: transform 130ms ease;
+  }
+  #chatFab:hover { transform: scale(1.07); }
+  #chatBox {
+    display: none; position: fixed; right: 22px; bottom: 80px; z-index: 70;
+    width: 400px; max-width: calc(100vw - 44px); height: 520px; max-height: 72vh;
+    background: var(--panel, #17181c); border: 1px solid var(--border);
+    border-radius: 14px; box-shadow: 0 14px 44px rgba(0,0,0,0.55);
+    flex-direction: column; overflow: hidden;
+  }
+  #chatBox.open { display: flex; }
+  #chatHead {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--ink-2);
+  }
+  #chatHead b { color: var(--ink); font-weight: 600; }
+  #chatHead .x { margin-left: auto; cursor: pointer; color: var(--ink-3);
+                 font-size: 16px; border: none; background: none; }
+  #chatHead .x:hover { color: var(--ink); }
+  #chatMsgs { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex;
+              flex-direction: column; gap: 10px; }
+  .cmsg { max-width: 88%; padding: 8px 12px; border-radius: 12px;
+          font-size: 12.8px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+  .cmsg.me { align-self: flex-end; background: rgba(57,135,229,0.16);
+             border: 1px solid rgba(57,135,229,0.35); color: var(--ink); }
+  .cmsg.atlas { align-self: flex-start; background: rgba(255,255,255,0.035);
+                border: 1px solid var(--border); color: var(--ink-2); }
+  .cmsg.atlas .feats { margin-top: 6px; font-size: 10.5px; color: var(--accent); }
+  .cmsg.err { border-color: rgba(224,82,82,0.5); color: #e05252; }
+  #chatInputRow { display: flex; gap: 8px; padding: 10px 12px;
+                  border-top: 1px solid var(--border); }
+  #chatInput { flex: 1; background: var(--bg, #101114); border: 1px solid var(--border);
+               border-radius: 9px; color: var(--ink); padding: 8px 12px;
+               font: 12.5px var(--font); outline: none; resize: none; height: 38px; }
+  #chatInput:focus { border-color: var(--accent); }
+  #chatSend { background: var(--accent); border: none; color: #fff; border-radius: 9px;
+              padding: 0 16px; font: 12.5px var(--font); cursor: pointer; }
+  #chatSend:disabled { opacity: 0.45; cursor: default; }
+
   #mcpBadge {
     display: flex; align-items: center; gap: 7px;
     padding: 4px 11px; border-radius: 999px;
@@ -737,6 +783,23 @@
   </aside>
 </div>
 
+<button id="chatFab" title="Ask Atlas about this codebase">💬</button>
+<div id="chatBox">
+  <div id="chatHead">
+    <svg width="16" height="16" viewBox="0 0 28 28" aria-hidden="true">
+      <path d="M14 4 L25 23 L3 23 Z" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+      <circle cx="14" cy="8" r="1.15" fill="var(--accent)"/>
+    </svg>
+    <b>Ask Atlas</b><span id="chatProject" style="color:var(--ink-3)"></span>
+    <button class="x" title="Close">×</button>
+  </div>
+  <div id="chatMsgs"></div>
+  <div id="chatInputRow">
+    <textarea id="chatInput" placeholder="e.g. Is the Constellation feature fully aligned with the core idea behind it?"></textarea>
+    <button id="chatSend">Ask</button>
+  </div>
+</div>
+
 <script>
 "use strict";
 /* Palette: validated dark categorical slots (dataviz reference palette). */
@@ -779,6 +842,65 @@ function showFatal(msg) {
   el.style.display = "flex";
   el.innerHTML = `<div class="big">Something broke in the viewer</div><code>${esc(msg)}</code>`;
 }
+
+/* ── Ask Atlas: grounded chat over the memory layer ─────────── */
+function chatMsg(cls, text, feats) {
+  const el = document.createElement("div");
+  el.className = "cmsg " + cls;
+  el.textContent = text;
+  if (feats && feats.length) {
+    const f = document.createElement("div");
+    f.className = "feats";
+    f.textContent = "grounded in: " + feats.join(" · ");
+    el.appendChild(f);
+  }
+  $("chatMsgs").appendChild(el);
+  $("chatMsgs").scrollTop = $("chatMsgs").scrollHeight;
+  return el;
+}
+
+async function initChat() {
+  $("chatProject").textContent = " · " + ((S.meta && S.meta.project) || "");
+  const data = await fetch("/api/chat").then(r => r.json()).catch(() => null);
+  for (const t of (data && data.transcript || []).slice(-6)) {
+    chatMsg("me", t.q);
+    chatMsg("atlas", t.a, t.matched_features);
+  }
+  if (!$("chatMsgs").children.length)
+    chatMsg("atlas", "Ask me anything about this codebase — flows, features, " +
+      "connections, or whether something actually does what it's supposed to do. " +
+      "Every answer is grounded in the memory layer, with the evidence named.");
+}
+
+$("chatFab").onclick = () => {
+  $("chatBox").classList.toggle("open");
+  if ($("chatBox").classList.contains("open")) $("chatInput").focus();
+};
+document.querySelector("#chatHead .x").onclick = () => $("chatBox").classList.remove("open");
+
+async function sendChat() {
+  const q = $("chatInput").value.trim();
+  if (!q || $("chatSend").disabled) return;
+  $("chatInput").value = "";
+  chatMsg("me", q);
+  const thinking = chatMsg("atlas", "thinking — assembling evidence…");
+  $("chatSend").disabled = true;
+  try {
+    const r = await fetch("/api/chat", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: q }) }).then(r => r.json());
+    thinking.remove();
+    if (r.error) chatMsg("atlas err", r.error);
+    else chatMsg("atlas", r.answer, r.matched_features);
+  } catch (e) {
+    thinking.remove();
+    chatMsg("atlas err", "request failed: " + e);
+  } finally { $("chatSend").disabled = false; $("chatInput").focus(); }
+}
+$("chatSend").onclick = sendChat;
+$("chatInput").addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); }
+});
 
 /* fast project switcher: click the project name -> pick a mapped project ->
    live rebind via /api/switch-root -> reload onto its map */
@@ -832,6 +954,7 @@ async function boot() {
   }
   document.title = `Atlas · ${meta.project}`;
   initProjectSwitch(meta);
+  initChat();
   if (meta.stale) {
     const b = document.createElement("div");
     b.innerHTML = "⟳ Atlas was updated since this server started — <b>relaunch CMS.bat</b> to apply.";

@@ -23,6 +23,7 @@ from .impact import analyze_impact
 from .memory import CodebaseMemory
 
 PROTOCOL_VERSION = "2024-11-05"
+HISTORY_FOR_MCP = 6  # transcript turns fed back for conversational continuity
 
 TOOLS = [
     {
@@ -154,6 +155,17 @@ TOOLS = [
                 "path": {"type": "string", "description": "Directory of (or inside) the project to switch to, e.g. C:/repos/other-app"},
             },
             "required": ["path"],
+        },
+    },
+    {
+        "name": "ask_codebase",
+        "description": "Discuss the codebase in plain language: flows, features, bugs, connections, and whether something does what it's SUPPOSED to do (declared intent vs built reality). Assembles evidence from every memory layer (query hits, feature traces, reviews, Sentinel, pipeline state) and answers simply, citing features and path:lines. If the declared intent is missing it says what IS built and asks what you expect. Needs a real provider.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "Plain-language question, e.g. 'Is the Constellation feature fully aligned with the core idea behind it?'"},
+            },
+            "required": ["question"],
         },
     },
     {
@@ -429,6 +441,21 @@ class MCPServer:
             "nodes": graph.number_of_nodes(), "edges": graph.number_of_edges(),
         }
 
+    # @memory:feature:CodebaseChat
+    # @memory:summary:ask_codebase over MCP — external agents get the same grounded plain-language Q&A as the UI popup, including intent-vs-reality judgment.
+    def ask_codebase(self, question: str) -> dict:
+        from .chat import ChatError, ask, load_transcript
+        from .providers import get_provider
+
+        try:
+            entry = ask(self.root, question, get_provider(None),
+                        history=load_transcript(self.root, limit=HISTORY_FOR_MCP))
+        except ChatError as exc:
+            return {"error": str(exc)}
+        return {"answer": entry["a"], "evidence_nodes": entry["evidence_nodes"],
+                "matched_features": entry["matched_features"],
+                "provider": entry["provider"], "model": entry["model"]}
+
     # @memory:feature:Constellation
     # @memory:connects:AgentMemoryAccess, FeatureTracing
     # @memory:summary:Multi-project discovery over MCP — list mapped projects, read the fusion report, and conversationally refine it; the IDE agent is the chat surface.
@@ -449,6 +476,8 @@ class MCPServer:
             out.append(entry)
         return sorted(out, key=lambda e: e["name"])
 
+    # @memory:feature:Constellation
+    # @memory:summary:Serve the latest cross-project fusion report with drift status and the refinement trail.
     def get_fusion_report(self) -> dict:
         from .fuse import fusion_history, fusion_staleness, load_fusion
 
@@ -460,6 +489,8 @@ class MCPServer:
                 "stale_members": fusion_staleness(report),
                 "refinements": fusion_history()}
 
+    # @memory:feature:Constellation
+    # @memory:summary:Conversational refinement — revise the fusion report per the owner's direction; failures preserve last-known-good.
     def refine_fusion(self, direction: str) -> dict:
         from .fuse import FusionError, fusion_staleness
         from .fuse import refine_fusion as _refine

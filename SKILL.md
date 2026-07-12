@@ -51,7 +51,7 @@ attached or a `.memory/` dir exists, use the tools below first.
 This is the loop Atlas exists to serve. `declare_intent` + `check_alignment` are
 the input and the honest-finish of a change; everything else is grounding.
 
-## 3. MCP tools (18) — the primary agent surface
+## 3. MCP tools (19) — the primary agent surface
 
 Server id `cms` (stdio JSON-RPC). Every call is logged to
 `.memory/activity.jsonl` and rendered live in the UI (glow pulses + a badge —
@@ -90,6 +90,18 @@ the human can literally watch you think). Tools:
 - `export_task_prompt(task, as_json=False)` — assemble a full, memory-grounded
   task brief (where to work, features involved, blast radius, related planned
   work, verification steps) for a described task.
+
+**Discuss**
+- `ask_codebase(question)` — plain-language Q&A over the WHOLE memory layer:
+  flows, features, bugs, connections, and intent-vs-reality ("is Constellation
+  fully aligned with the core idea behind it?"). Atlas assembles the evidence
+  pack itself (ranked hits, matched feature traces + reviews, app review,
+  Sentinel gate, pipeline state) and answers simply, citing features and
+  path:lines. When the declared intent is missing it states what IS built and
+  asks what the owner expects — it never invents intent. Conversational: the
+  project transcript (`.memory/chat.jsonl`) feeds continuity. Real provider
+  required. Use the granular tools when you need raw data; use this when the
+  human (or you) wants a judgment explained in plain words.
 
 **Constellation (multi-project discovery) — the conversational fusion loop**
 - `list_projects()` — every Atlas-mapped project on the machine with
@@ -151,6 +163,8 @@ the CLI. `--root PATH` targets a project; the API key is read from
 - `cms impact <target>` — blast radius + suggested `pytest` line.
 - `cms prompt "<plan>"` — export a memory-grounded task brief (`--json` for the
   data pack).
+- `cms ask "<question>"` — the chat surface as a command: grounded
+  plain-language answer, evidence features named (mirrors `ask_codebase`).
 
 **Judge / verify**
 - `cms review [Feature]` — build/print the built-vs-expected alignment audit.
@@ -259,6 +273,7 @@ provenance `heuristic`); other files get summaries only.
 ├── suggestions.md                    # ROI-ranked plan
 ├── prompts/*.md                      # exported task briefs
 ├── semantic_state.json               # positive per-stage evidence: discovery/review/suggestions status, provider, hashes
+├── chat.jsonl                        # Ask-Atlas transcript (grounded Q&A, evidence nodes per answer)
 ├── notes.json                        # viewer annotations (quote-anchored)
 ├── activity.jsonl                    # every MCP tool call (drives UI pulses)
 ├── sentinel/                         # findings.json, scans.json, latest.json, reports/
@@ -379,6 +394,9 @@ it; `GET /api/semantic` serves it).
 
 - **Understand an unfamiliar area:** `query_codebase("<topic>")` →
   `get_file_summary(path)` → `get_source(path, a, b)`.
+- **Explain something to the human (or sanity-check a feature):**
+  `ask_codebase("is <Feature> doing what it's supposed to?")` — grounded
+  intent-vs-reality answer in plain words, evidence named.
 - **Plan a safe edit:** `get_impact("<target>")` (blast radius + tests) →
   `get_review("<feature>")` (respect gaps).
 - **Do a change end-to-end:** `declare_intent("<goal>")` → edit →
