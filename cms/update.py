@@ -8,6 +8,7 @@ the LLM. ``watch`` polls for changes and re-runs the update.
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -197,13 +198,24 @@ def ensure_judgment(root: Path, provider: SummaryProvider, echo=print) -> dict:
     or when only the mock provider is available (mock output must never
     pose as an AI review — the caller should say so instead).
     Returns {"review": bool, "suggestions": bool} — what was built.
-    """
-    from .memory import CodebaseMemory
 
+    Serialized process-wide: app startup sync, the UI build worker and the
+    watcher can coexist, and concurrent callers must not both pay for an
+    LLM review of the same project (the absence check re-runs under the
+    lock, so the loser sees the winner's nodes and no-ops).
+    """
     ran = {"review": False, "suggestions": False}
     graph_path = root / config.MEMORY_DIR_NAME / "graph.json"
     if provider.name == "mock" or not graph_path.is_file():
         return ran
+    with _judgment_lock:
+        return _ensure_judgment_locked(root, provider, echo, graph_path, ran)
+
+
+_judgment_lock = threading.Lock()
+
+
+def _ensure_judgment_locked(root, provider, echo, graph_path, ran) -> dict:
     mem = CodebaseMemory.load(graph_path)
     memory_dir = root / config.MEMORY_DIR_NAME
 

@@ -144,3 +144,44 @@ def test_ensure_judgment_builds_once_and_skips_mock(tmp_path: Path) -> None:
     # second call: already present -> nothing rebuilt
     assert ensure_judgment(root, DiscoveringProvider(), echo=lambda *a: None) == \
         {"review": False, "suggestions": False}
+
+
+def test_ensure_judgment_concurrent_callers_build_once(tmp_path: Path) -> None:
+    """App startup sync and the UI build worker can race ensure_judgment while
+    artifacts are absent. The lock + re-check must make exactly one caller pay
+    for the build; the loser sees the winner's nodes and no-ops."""
+    import threading
+
+    from cms.update import ensure_judgment
+
+    root = _project(tmp_path)
+    incremental_update(root, DiscoveringProvider(), echo=lambda *a: None)
+
+    class SlowProvider(DiscoveringProvider):
+        name = "slow"
+
+        def summarize(self, prompt: str, context: dict) -> str:
+            time.sleep(0.05)  # widen the race window
+            return super().summarize(prompt, context)
+
+    provider = SlowProvider()
+    results: list[dict] = []
+    threads = [
+        threading.Thread(target=lambda: results.append(
+            ensure_judgment(root, provider, echo=lambda *a: None)))
+        for _ in range(2)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+
+    assert len(results) == 2
+    built = [r for r in results if r["review"] or r["suggestions"]]
+    noop = [r for r in results if not r["review"] and not r["suggestions"]]
+    assert len(built) == 1 and len(noop) == 1, results
+    assert built[0] == {"review": True, "suggestions": True}
+
+    from cms.memory import CodebaseMemory
+    mem = CodebaseMemory.load(root / ".memory" / "graph.json")
+    assert mem.graph.has_node("review:app") and mem.graph.has_node("suggestions:app")
