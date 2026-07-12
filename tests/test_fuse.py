@@ -32,12 +32,18 @@ class FusionProvider:
     name = "fusion-test"
     model = "test-model"
 
-    def __init__(self, fusion=GOOD_FUSION, discovery='[]'):
+    def __init__(self, fusion=GOOD_FUSION, discovery='[]', refined=None):
         self.fusion = fusion
         self.discovery = discovery
+        self.refined = refined if refined is not None else fusion
         self.fusion_calls = 0
 
     def summarize(self, prompt, context):
+        if "refining an existing cross-project fusion report" in prompt:
+            self.fusion_calls += 1
+            if isinstance(self.refined, Exception):
+                raise self.refined
+            return self.refined
         if "principal architect" in prompt:
             self.fusion_calls += 1
             if isinstance(self.fusion, Exception):
@@ -149,3 +155,53 @@ def test_fusion_staleness_flags_drifted_member(tmp_path):
         "# @memory:feature:Anchored\ndef f():\n    pass\n", encoding="utf-8")
     incremental_update(roots[1], FusionProvider(discovery="[]"), echo=lambda *a: None)
     assert fuse.fusion_staleness(report) == ["beta"]
+
+
+REFINED_FUSION = json.dumps({
+    "integrations": [{"title": "Deep transcript-memory pipeline",
+                      "projects": ["alpha", "beta"],
+                      "features": ["Transcription", "NoteVault"],
+                      "description": "focused per direction",
+                      "first_step": "define the ingest contract"}],
+    "emergent": [], "conflicts": [],
+})
+
+
+def test_refine_updates_report_and_history(tmp_path):
+    roots = [_mapped_project(tmp_path, "alpha", "Transcription"),
+             _mapped_project(tmp_path, "beta", "NoteVault")]
+    build_fusion(roots, FusionProvider())
+
+    report = fuse.refine_fusion("focus on the transcript pipeline, drop conflicts",
+                                FusionProvider(refined=REFINED_FUSION))
+    assert report["integrations"][0]["title"] == "Deep transcript-memory pipeline"
+    assert report["conflicts"] == []
+    assert report["direction"].startswith("focus on the transcript")
+    assert report["refined_from"]  # links back to the report it revised
+
+    latest = fuse.load_fusion()
+    assert latest["integrations"][0]["title"] == "Deep transcript-memory pipeline"
+    hist = fuse.fusion_history()
+    assert len(hist) == 1 and hist[0]["direction"].startswith("focus on")
+    md = (fuse.FUSION_DIR / "latest.md").read_text(encoding="utf-8")
+    assert "Deep transcript-memory pipeline" in md
+
+
+def test_refine_guards_and_last_known_good(tmp_path):
+    # no report yet
+    with pytest.raises(FusionError, match="no fusion report"):
+        fuse.refine_fusion("anything", FusionProvider())
+
+    roots = [_mapped_project(tmp_path, "alpha", "Transcription"),
+             _mapped_project(tmp_path, "beta", "NoteVault")]
+    original = build_fusion(roots, FusionProvider())
+
+    with pytest.raises(FusionError, match="real provider"):
+        fuse.refine_fusion("x", MockProvider())
+    with pytest.raises(FusionError, match="direction"):
+        fuse.refine_fusion("   ", FusionProvider())
+    # malformed refinement output must NOT clobber the last good report
+    with pytest.raises(FusionError, match="no JSON object"):
+        fuse.refine_fusion("go", FusionProvider(refined="prose only"))
+    assert fuse.load_fusion()["generated_at"] == original["generated_at"]
+    assert fuse.fusion_history() == []

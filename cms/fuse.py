@@ -60,6 +60,29 @@ class FusionError(RuntimeError):
     """Real-provider fusion failed (transport or malformed output)."""
 
 
+REFINE_PROMPT = """You are refining an existing cross-project fusion report according to the owner's direction.
+
+OWNER'S DIRECTION:
+{direction}
+
+CURRENT REPORT (JSON):
+{report}
+
+PROJECT CARDS (current evidence):
+{cards}
+
+STRUCTURAL OVERLAPS (deterministic):
+{overlaps}
+
+Return ONLY the full revised JSON object in the SAME schema
+(integrations / emergent / conflicts, same item fields). Apply the direction
+faithfully: drop, expand, refocus or deepen items as instructed; keep items
+the direction does not touch. Max {max_items} per list; every item must name
+>= 2 projects and cite real feature names from the cards. Concrete, no
+marketing language.
+"""
+
+
 # ── registry ─────────────────────────────────────────────────────────────
 
 def load_registry() -> dict:
@@ -214,17 +237,7 @@ def build_fusion(roots: list[Path], provider: SummaryProvider,
         raw = provider.summarize(prompt, {"max_tokens": FUSION_MAX_TOKENS})
     except Exception as exc:
         raise FusionError(f"provider call failed: {type(exc).__name__}: {exc}") from exc
-    match = re.search(r"\{[\s\S]*\}", raw)
-    if match is None:
-        raise FusionError("provider returned no JSON object (malformed fusion output)")
-    try:
-        parsed = json.loads(match.group(0))
-    except json.JSONDecodeError as exc:
-        raise FusionError(f"provider returned invalid JSON: {exc}") from exc
-
-    def _items(key):
-        items = parsed.get(key) or []
-        return [dict(i, provenance="llm") for i in items[:max_items] if isinstance(i, dict)]
+    sections = _parse_fusion_json(raw, max_items)
 
     report = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -234,14 +247,106 @@ def build_fusion(roots: list[Path], provider: SummaryProvider,
                                  "features": len(c["features"])} for c in ready},
         "excluded": [{"name": c["name"], "reason": c["reason"]} for c in excluded],
         "structural_overlaps": overlaps,
-        "integrations": _items("integrations"),
-        "emergent": _items("emergent"),
-        "conflicts": _items("conflicts"),
+        **sections,
     }
     FUSION_DIR.mkdir(parents=True, exist_ok=True)
     ss.atomic_write_json(FUSION_DIR / "latest.json", report)
     (FUSION_DIR / "latest.md").write_text(render_fusion_md(report), encoding="utf-8")
     return report
+
+
+def load_fusion() -> dict | None:
+    try:
+        return json.loads((FUSION_DIR / "latest.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def fusion_history(limit: int = 12) -> list[dict]:
+    """Refinement trail: [{generated_at, direction}] oldest→newest."""
+    out = []
+    try:
+        for line in (FUSION_DIR / "history.jsonl").read_text(encoding="utf-8").splitlines():
+            try:
+                entry = json.loads(line)
+                out.append({"generated_at": entry.get("generated_at"),
+                            "direction": entry.get("direction")})
+            except json.JSONDecodeError:
+                continue
+    except OSError:
+        pass
+    return out[-limit:]
+
+
+def _parse_fusion_json(raw: str, max_items: int) -> dict:
+    match = re.search(r"\{[\s\S]*\}", raw)
+    if match is None:
+        raise FusionError("provider returned no JSON object (malformed fusion output)")
+    try:
+        parsed = json.loads(match.group(0))
+    except json.JSONDecodeError as exc:
+        raise FusionError(f"provider returned invalid JSON: {exc}") from exc
+    return {
+        key: [dict(i, provenance="llm") for i in (parsed.get(key) or [])[:max_items]
+              if isinstance(i, dict)]
+        for key in ("integrations", "emergent", "conflicts")
+    }
+
+
+def refine_fusion(direction: str, provider: SummaryProvider,
+                  max_items: int = 6) -> dict:
+    """Revise the latest fusion report per the owner's direction (the
+    conversational loop's write path). The previous report is only replaced
+    after the new one parses — failures preserve last-known-good. Each
+    refinement appends to history.jsonl with its direction."""
+    direction = (direction or "").strip()
+    if not direction:
+        raise FusionError("refinement needs a direction (what to change/focus/drop)")
+    if provider.name == "mock":
+        raise FusionError("fusion refinement requires a real provider")
+    report = load_fusion()
+    if report is None:
+        raise FusionError("no fusion report yet — run `cms fuse` first")
+
+    roots = [Path(info["root"]) for info in (report.get("projects") or {}).values()]
+    cards = [c for c in (build_card(r) for r in roots) if c.get("ready")]
+    if len(cards) < 2:
+        raise FusionError("fewer than 2 member projects still have recorded "
+                          "discovery — re-run `cms fuse`")
+    overlaps = structural_overlaps(cards)
+    prompt = REFINE_PROMPT.format(
+        direction=direction[:1500],
+        report=json.dumps({k: report.get(k) for k in
+                           ("integrations", "emergent", "conflicts")}, indent=1),
+        cards=json.dumps([{k: v for k, v in c.items() if k not in ("root", "ready")}
+                          for c in cards], indent=1),
+        overlaps=json.dumps(overlaps, indent=1) or "(none)",
+        max_items=max_items,
+    )
+    try:
+        raw = provider.summarize(prompt, {"max_tokens": FUSION_MAX_TOKENS})
+    except Exception as exc:
+        raise FusionError(f"provider call failed: {type(exc).__name__}: {exc}") from exc
+    sections = _parse_fusion_json(raw, max_items)  # raises before any overwrite
+
+    new_report = {
+        **report, **sections,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "provider": provider.name, "model": getattr(provider, "model", None),
+        "structural_overlaps": overlaps,
+        "refined_from": report.get("generated_at"),
+        "direction": direction,
+        "projects": {c["name"]: {"root": c["root"],
+                                 "feature_set_hash": c["feature_set_hash"],
+                                 "features": len(c["features"])} for c in cards},
+    }
+    FUSION_DIR.mkdir(parents=True, exist_ok=True)
+    with open(FUSION_DIR / "history.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps({"generated_at": new_report["generated_at"],
+                            "direction": direction, "report": new_report}) + "\n")
+    ss.atomic_write_json(FUSION_DIR / "latest.json", new_report)
+    (FUSION_DIR / "latest.md").write_text(render_fusion_md(new_report), encoding="utf-8")
+    return new_report
 
 
 def fusion_staleness(report: dict) -> list[str]:

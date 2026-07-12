@@ -465,10 +465,26 @@ def fuse(
     provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai (mock is refused)."),
     list_only: bool = typer.Option(False, "--list", help="Show the project registry and readiness, then exit."),
     as_json: bool = typer.Option(False, "--json", help="Print the report as JSON."),
+    refine: str = typer.Option(None, "--refine", help="Revise the latest report per this direction instead of rebuilding."),
 ) -> None:
     """Constellation: fuse multiple mapped projects — integration opportunities,
     emergent features, and conflicts across codebases (real provider required)."""
     from .fuse import FUSION_DIR, FusionError, build_card, build_fusion, load_registry
+
+    if refine:
+        from .fuse import refine_fusion
+
+        llm = get_provider(provider)
+        try:
+            report = refine_fusion(refine, llm)
+        except FusionError as exc:
+            typer.echo(f"refine failed: {exc}", err=True)
+            raise typer.Exit(1)
+        typer.echo(f"Refined ({report['generated_at']}): "
+                   f"{len(report['integrations'])} integrations, "
+                   f"{len(report['emergent'])} emergent, {len(report['conflicts'])} conflicts")
+        typer.echo(f"Written to {FUSION_DIR / 'latest.md'}")
+        return
 
     roots = [p.resolve() for p in (projects or [])]
     if not roots:

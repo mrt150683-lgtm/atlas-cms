@@ -157,6 +157,27 @@ TOOLS = [
         },
     },
     {
+        "name": "list_projects",
+        "description": "The constellation: every Atlas-mapped project on this machine, with readiness (does it have positively recorded feature discovery?), feature counts and hashes. Use before fusing or when the user mentions their other codebases.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_fusion_report",
+        "description": "The latest cross-project fusion report (integrations, emergent features, conflicts across mapped codebases), plus which member projects have drifted since it was written and the refinement history. Discuss it with the user, then refine_fusion with their direction.",
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "refine_fusion",
+        "description": "Revise the fusion report per the user's direction ('focus on the transcription->memory pipeline, drop the podcast angle'). This is the conversational loop: get_fusion_report -> discuss -> refine_fusion -> repeat until the plan is right. Real provider required; each refinement is recorded.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "direction": {"type": "string", "description": "What to change, focus, deepen or drop — consolidated from the conversation."},
+            },
+            "required": ["direction"],
+        },
+    },
+    {
         "name": "check_alignment",
         "description": "Did the change do what was declared? Judges the git diff against the active intent — returns a verdict (aligned/partial/drift/unverified), concrete gaps, Sentinel findings on changed files, and the exact tests to run. Call after making changes.",
         "inputSchema": {
@@ -407,6 +428,49 @@ class MCPServer:
             "files": sum(1 for _, a in graph.nodes(data=True) if a.get("type") == "file"),
             "nodes": graph.number_of_nodes(), "edges": graph.number_of_edges(),
         }
+
+    # @memory:feature:Constellation
+    # @memory:connects:AgentMemoryAccess, FeatureTracing
+    # @memory:summary:Multi-project discovery over MCP — list mapped projects, read the fusion report, and conversationally refine it; the IDE agent is the chat surface.
+    def list_projects(self) -> list[dict]:
+        from .fuse import build_card, load_registry
+
+        out = []
+        for root_str, meta in (load_registry().get("projects") or {}).items():
+            card = build_card(Path(root_str))
+            entry = {"name": card["name"], "root": root_str,
+                     "ready": bool(card.get("ready")),
+                     "last_built": meta.get("last_built")}
+            if card.get("ready"):
+                entry["features"] = len(card["features"])
+                entry["feature_set_hash"] = card["feature_set_hash"]
+            else:
+                entry["reason"] = card.get("reason")
+            out.append(entry)
+        return sorted(out, key=lambda e: e["name"])
+
+    def get_fusion_report(self) -> dict:
+        from .fuse import fusion_history, fusion_staleness, load_fusion
+
+        report = load_fusion()
+        if report is None:
+            return {"error": "no fusion report yet — run `cms fuse` "
+                             "(needs >= 2 mapped projects with recorded discovery)"}
+        return {"report": report,
+                "stale_members": fusion_staleness(report),
+                "refinements": fusion_history()}
+
+    def refine_fusion(self, direction: str) -> dict:
+        from .fuse import FusionError, fusion_staleness
+        from .fuse import refine_fusion as _refine
+        from .providers import get_provider
+
+        try:
+            report = _refine(direction, get_provider(None))
+        except FusionError as exc:
+            return {"error": str(exc)}
+        return {"refined": True, "direction": direction,
+                "report": report, "stale_members": fusion_staleness(report)}
 
     def get_source(self, path: str, start_line: int = 1, end_line: int | None = None) -> dict:
         target = (self.root / path).resolve()

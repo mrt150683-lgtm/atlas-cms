@@ -181,6 +181,64 @@ def test_switch_project_guardrails_and_lazy_build_pickup(tmp_path: Path) -> None
     assert any("thing.py" in h["node_id"] for h in hits)
 
 
+def test_constellation_tools_via_mcp(tmp_path: Path, monkeypatch) -> None:
+    """list_projects / get_fusion_report / refine_fusion — the conversational
+    fusion loop as an agent drives it over JSON-RPC."""
+    import cms.fuse as fuse
+    from cms.update import incremental_update
+
+    monkeypatch.setattr(fuse, "REGISTRY_PATH", tmp_path / "reg" / "projects.json")
+    monkeypatch.setattr(fuse, "FUSION_DIR", tmp_path / "reg" / "fusion")
+
+    fusion_json = ('{"integrations": [{"title": "Wire A into B", "projects": ["p_a", "p_b"],'
+                   ' "features": ["Alpha", "Beta"], "description": "d", "first_step": "s"}],'
+                   ' "emergent": [], "conflicts": []}')
+
+    class Prov:
+        name, model = "stub-real", "m1"
+
+        def __init__(self, disc):
+            self.disc = disc
+
+        def summarize(self, prompt, context):
+            if "named FEATURES" in prompt:
+                return self.disc
+            if "principal architect" in prompt or "fusion report" in prompt:
+                return fusion_json
+            if "FEATURE TRACE" in prompt:
+                return "## Purpose\nx\n## Flow\nx\n## Verification Checklist\n- x"
+            return "Summary."
+
+    for name, feat in (("p_a", "Alpha"), ("p_b", "Beta")):
+        proj = tmp_path / name
+        proj.mkdir()
+        (proj / "m.py").write_text("def f():\n    pass\n", encoding="utf-8")
+        incremental_update(proj, Prov(f'[{{"name": "{feat}", "description": "d", "files": ["m.py"]}}]'),
+                           echo=lambda *a: None)
+
+    server = _server(tmp_path)  # bound root is irrelevant: constellation is machine-level
+    projects = _tool(server, "list_projects", {})
+    assert [(p["name"], p["ready"]) for p in projects] == [("p_a", True), ("p_b", True)]
+
+    # no report yet -> explicit error, not empty success
+    assert "error" in _tool(server, "get_fusion_report", {})
+
+    fuse.build_fusion([tmp_path / "p_a", tmp_path / "p_b"], Prov("[]"))
+    got = _tool(server, "get_fusion_report", {})
+    assert got["report"]["integrations"][0]["title"] == "Wire A into B"
+    assert got["stale_members"] == [] and got["refinements"] == []
+
+    monkeypatch.setattr("cms.providers.get_provider", lambda *_: Prov("[]"))
+    out = _tool(server, "refine_fusion", {"direction": "deepen the A->B wiring"})
+    assert out["refined"] is True
+    assert _tool(server, "get_fusion_report", {})["refinements"][0]["direction"] == \
+        "deepen the A->B wiring"
+
+    monkeypatch.setattr("cms.providers.get_provider",
+                        lambda *_: __import__("cms.providers", fromlist=["MockProvider"]).MockProvider())
+    assert "real provider" in _tool(server, "refine_fusion", {"direction": "x"})["error"]
+
+
 def test_serve_stdio_loop(tmp_path: Path, monkeypatch, capsys) -> None:
     """The actual server loop: newline-delimited JSON-RPC in, responses out,
     garbage and blank lines ignored."""

@@ -112,7 +112,7 @@ nearest project holding `.memory/graph.json`, so one global entry serves every
 repo. In an un-mapped repo it stays alive and tools answer "no memory layer —
 run `cms run-all`".
 
-15 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
+18 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
 
 - **Grounding / read** — `query_codebase`, `get_file_summary`, `get_source`,
   `get_feature_trace`, `list_features`, `who_calls`, `who_imports`, `get_impact`.
@@ -121,6 +121,9 @@ run `cms run-all`".
 - **Alignment loop** — `declare_intent`, `check_alignment`.
 - **Session control** — `switch_project` (flip the server to another project
   root mid-session; unmapped targets get the exact build command back).
+- **Constellation** — `list_projects`, `get_fusion_report`, `refine_fusion`:
+  multi-project discovery — read and conversationally refine the
+  cross-codebase fusion report (see `cms fuse`).
 
 Every call is logged to `.memory/activity.jsonl`, and the UI renders live glow
 pulses on the touched nodes plus an `MCP · tool` badge — you can watch your

@@ -51,7 +51,7 @@ attached or a `.memory/` dir exists, use the tools below first.
 This is the loop Atlas exists to serve. `declare_intent` + `check_alignment` are
 the input and the honest-finish of a change; everything else is grounding.
 
-## 3. MCP tools (15) — the primary agent surface
+## 3. MCP tools (18) — the primary agent surface
 
 Server id `cms` (stdio JSON-RPC). Every call is logged to
 `.memory/activity.jsonl` and rendered live in the UI (glow pulses + a badge —
@@ -90,6 +90,18 @@ the human can literally watch you think). Tools:
 - `export_task_prompt(task, as_json=False)` — assemble a full, memory-grounded
   task brief (where to work, features involved, blast radius, related planned
   work, verification steps) for a described task.
+
+**Constellation (multi-project discovery) — the conversational fusion loop**
+- `list_projects()` — every Atlas-mapped project on the machine with
+  readiness, feature counts and hashes.
+- `get_fusion_report()` — the latest cross-project fusion report
+  (integrations / emergent features / conflicts) + drifted members +
+  refinement history.
+- `refine_fusion(direction)` — revise the report per the user's direction.
+  **This is how you converse a hybrid-app plan into shape**: get the report,
+  discuss it with the user, consolidate their steer into one direction,
+  refine, repeat. Real provider required; every refinement is recorded;
+  failures never clobber the last good report.
 
 **The alignment loop (intent → verdict)**
 - `declare_intent(goal=None)` — record what the current change is meant to do
