@@ -232,8 +232,9 @@ nodes. **Node ids are structured** — use these forms directly with tools:
 
 Query ranking is keyword + structure (name/anchor/summary/path matches with a
 graph-degree boost) — not embedding-based yet. Structural parsing covers Python
-(full AST) and TypeScript/JavaScript (lightweight: declarations + imports); other
-files get summaries only.
+(full AST) and TypeScript/JavaScript (lightweight: declarations, imports, and
+best-effort CALLS/`extends` INHERITS edges resolved through named imports —
+provenance `heuristic`); other files get summaries only.
 
 ## 6. Memory layer layout (`.memory/`)
 
@@ -354,9 +355,15 @@ it; `GET /api/semantic` serves it).
   feature isn't "done" until `cms verify <Feature>` passes and Sentinel is clean.
 - **The exe snapshots code + UI at build time.** After changing `cms/` or
   `ui_assets`, `CMS.exe` must be rebuilt or it serves stale behavior.
-- Localhost-only UI; structural parsing = Python (full AST) + TS/JS (imports +
-  declarations; no call/inherit edges yet), other files summary-only; call resolution is best-effort
-  static; query ranking is keyword-based (embeddings are future work).
+- Localhost-only UI; structural parsing = Python (full AST) + TS/JS (declarations,
+  imports, heuristic call/extends edges via named-import resolution), other files
+  summary-only; call resolution is best-effort static; query ranking is
+  keyword-based (embeddings are future work).
+- **The FINISHED contract**: `/api/semantic` exposes `pipeline.status` —
+  `finished` (all stages positively complete; watcher just waits for changes),
+  `in_progress` (stages remain; any build continues from the evidence), or
+  `attention` (a stage failed; retries on input change or cooldown). Derived
+  from stage evidence, never a stored flag.
 
 ## 12. Quick recipes
 

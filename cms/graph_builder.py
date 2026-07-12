@@ -179,7 +179,11 @@ def _parse_file(rec: FileRecord) -> _FileInfo | None:
         except OSError as exc:
             info.parse_error = str(exc)
             return info
-        info.components, info.js_imports = parse_js(rec.rel_path, source)
+        info.components, info.js_imports, named, info.calls = parse_js(rec.rel_path, source)
+        # named import bindings share from_imports' shape: local -> (module, orig);
+        # resolve_from_import routes JS "modules" (specifiers) via _resolve_js_import
+        info.from_imports = named
+        info.anchor_groups = parse_anchors(source)
         return info
     return None
 
@@ -307,11 +311,20 @@ def build_graph(records: list[FileRecord]) -> nx.DiGraph:
         return None
 
     def resolve_from_import(info: _FileInfo, local_name: str) -> str | None:
-        """Local name bound by `from mod import name` -> node id in a scanned file."""
+        """Local name bound by an import -> node id in a scanned file.
+        Python: `from mod import name` via the dotted-module index.
+        JS/TS: `import { name } from './x'` via specifier resolution; a
+        default import falls back to the target file's same-named export."""
         entry = info.from_imports.get(local_name)
         if not entry:
             return None
         module, orig = entry
+        if info.record.language in JS_LANGS:
+            target_rel = _resolve_js_import(info.record.rel_path, module, file_set)
+            if target_rel is None:
+                return None
+            return (top_level.get((target_rel, orig))
+                    or top_level.get((target_rel, local_name)))
         target_rel = resolve_module(module)
         if target_rel is None:
             return None

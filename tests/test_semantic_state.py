@@ -317,3 +317,23 @@ def test_failed_discovery_retries_after_cooldown(tmp_path: Path) -> None:
     incremental_update(root, p3, echo=lambda *a: None)
     assert p3.discovery_calls == 1
     assert ss.stage(ss.load_state(mem_dir), "features")["status"] == "complete"
+
+
+def test_pipeline_status_contract(tmp_path: Path) -> None:
+    """FINISHED is derived from stage evidence, never stored separately."""
+    root = _project(tmp_path)
+    p = SemanticProvider()
+    incremental_update(root, p, echo=lambda *a: None)
+    state = ss.load_state(root / ".memory")
+    pipe = ss.pipeline_status(state)
+    assert pipe["status"] == "in_progress"
+    assert set(pipe["remaining"]) == {"review", "suggestions"}
+
+    ensure_judgment(root, p, echo=lambda *a: None)
+    pipe = ss.pipeline_status(ss.load_state(root / ".memory"))
+    assert pipe == {"status": "finished", "remaining": []}
+
+    # a failed stage -> attention, with the failure named
+    ss.record_stage(root / ".memory", "features", status="failed", error="x")
+    pipe = ss.pipeline_status(ss.load_state(root / ".memory"))
+    assert pipe["status"] == "attention" and pipe["failed"] == ["features"]

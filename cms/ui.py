@@ -477,6 +477,7 @@ def make_handler(root: Path, cache: _MemoryCache):
                 "project": root.name, "root": str(root),
                 "schema_version": state.get("schema_version"),
                 "stages": {name: sstate.stage(state, name) for name in sstate.STAGES},
+                "pipeline": sstate.pipeline_status(state),
                 "build_running": bool(build_state.get("running")),
                 "build_message": build_state.get("message", ""),
             }

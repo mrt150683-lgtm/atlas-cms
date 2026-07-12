@@ -205,3 +205,28 @@ def test_refine_guards_and_last_known_good(tmp_path):
         fuse.refine_fusion("go", FusionProvider(refined="prose only"))
     assert fuse.load_fusion()["generated_at"] == original["generated_at"]
     assert fuse.fusion_history() == []
+
+
+def test_registry_skips_temp_roots_and_prunes_dead_ones(tmp_path, monkeypatch):
+    import tempfile
+
+    # a "real" project registers (registry + root both live in the test world)
+    real = _mapped_project(tmp_path, "realproj", "Thing")
+    assert str(real) in load_registry()["projects"]
+
+    # simulate production: the system temp dir is elsewhere, the registry is
+    # durable -> roots under temp (pytest/sentinel fixtures) are never recorded
+    faketemp = tmp_path / "faketemp"
+    faketemp.mkdir()
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(faketemp))
+    tmproot = faketemp / "cms-fixture-xyz"
+    (tmproot / ".memory").mkdir(parents=True)
+    register_project(tmproot)
+    assert str(tmproot) not in load_registry().get("projects", {})
+
+    # entries whose memory layer vanished are pruned on the next write
+    import shutil
+    shutil.rmtree(real / ".memory")
+    other = _mapped_project(tmp_path, "otherproj", "Other")
+    reg = load_registry()["projects"]
+    assert str(real) not in reg and str(other) in reg

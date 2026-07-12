@@ -139,6 +139,33 @@ def feature_counts(graph) -> dict:
 
 # ── judgment validity ────────────────────────────────────────────────────
 
+def pipeline_status(state: dict) -> dict:
+    """The FINISHED contract, derived from stage evidence (never stored as a
+    separate flag that could drift from the facts):
+
+    - ``finished``    — every semantic stage is positively complete; the
+      pipeline has nothing left to do and only waits for changes (watcher).
+    - ``attention``   — a stage FAILED; it will retry (input change or
+      cooldown) but the human should know.
+    - ``in_progress`` — stages remain (never_run/skipped); a build with a
+      real provider will continue exactly where the evidence says it
+      stopped, until finished.
+    """
+    remaining = []
+    failed = []
+    for name in STAGES:
+        status = stage(state, name).get("status")
+        if status == "failed":
+            failed.append(name)
+        elif status != "complete":
+            remaining.append(name)
+    if failed:
+        return {"status": "attention", "failed": failed, "remaining": remaining}
+    if remaining:
+        return {"status": "in_progress", "remaining": remaining}
+    return {"status": "finished", "remaining": []}
+
+
 def judgment_validity(state: dict, graph, node_id: str, stage_name: str) -> tuple[str, str]:
     """Classify a judgment artifact (review:app / suggestions:app).
 

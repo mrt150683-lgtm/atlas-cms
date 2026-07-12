@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import re
 
-_CLASS = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)")
+_CLASS = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Za-z_$][\w$]*)"
+                    r"(?:\s+extends\s+([A-Za-z_$][\w$.]*))?")
 _TYPEISH = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:declare\s+)?(?:interface|type|enum)\s+([A-Za-z_$][\w$]*)")
 _FUNC = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)")
 _CONST = re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*(?::\s*[^=]+?)?=\s*(.*)$")
@@ -23,6 +24,33 @@ _REQUIRE = re.compile(r"""\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)""")
 _DYNIMPORT = re.compile(r"""\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)""")
 
 _LINE_COMMENT = re.compile(r"//.*$")
+# named ES import bindings: `import Default, { a, b as c } from './x'`
+_IMPORT_CLAUSE = re.compile(
+    r"^\s*import\s+(?:type\s+)?([^;'\"]+?)\s+from\s*['\"]([^'\"]+)['\"]", re.M)
+_CALL_SITE = re.compile(r"(?:\bnew\s+)?\b([A-Za-z_$][\w$]*)\s*\(")
+_JS_KEYWORDS = {
+    "if", "for", "while", "switch", "catch", "return", "typeof", "await",
+    "function", "constructor", "super", "import", "require", "new", "throw",
+    "delete", "void", "yield", "in", "of", "do", "else", "try", "finally",
+}
+
+
+def _named_bindings(clause: str) -> list[tuple[str, str]]:
+    """'D, { a, b as c }' -> [(local, original), ...]; namespace imports skipped."""
+    out: list[tuple[str, str]] = []
+    brace = re.search(r"\{([^}]*)\}", clause)
+    if brace:
+        for part in brace.group(1).split(","):
+            part = part.strip()
+            if not part or part.startswith("type "):
+                continue
+            m = re.match(r"([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$", part)
+            if m:
+                out.append((m.group(2) or m.group(1), m.group(1)))
+    head = clause.split("{")[0].strip().rstrip(",").strip()
+    if head and re.fullmatch(r"[A-Za-z_$][\w$]*", head):
+        out.append((head, "default"))  # default import: local -> 'default'
+    return out
 
 
 def _looks_functionlike(rhs: str) -> bool:
@@ -56,9 +84,14 @@ def parse_js(rel_path: str, source: str):
     seen: set[str] = set()
     for idx, line in enumerate(lines):
         kind = name = None
-        m = _CLASS.match(line) or _TYPEISH.match(line)
-        if m:
-            kind, name = "class", m.group(1)
+        bases: list[str] = []
+        mcls = _CLASS.match(line)
+        if mcls:
+            kind, name = "class", mcls.group(1)
+            if mcls.group(2):
+                bases = [mcls.group(2).split(".")[-1]]
+        elif (mt := _TYPEISH.match(line)):
+            kind, name = "class", mt.group(1)
         elif (mf := _FUNC.match(line)):
             kind, name = "func", mf.group(1)
         elif (mc := _CONST.match(line)) and _looks_functionlike(mc.group(2)):
@@ -72,6 +105,7 @@ def parse_js(rel_path: str, source: str):
             kind=kind, name=name, qualname=name,
             start_line=start, end_line=max(end, start),
             signature=line.strip()[:140],
+            bases=bases,
         ))
 
     specs: list[str] = []
@@ -80,4 +114,29 @@ def parse_js(rel_path: str, source: str):
     specs += _IMPORT_BARE.findall(source)
     seen_s: set[str] = set()
     imports = [s for s in specs if not (s in seen_s or seen_s.add(s))]
-    return comps, imports
+
+    # named import bindings: local name -> (specifier, original export name)
+    named_imports: dict[str, tuple[str, str]] = {}
+    for clause, spec in _IMPORT_CLAUSE.findall(source):
+        for local, orig in _named_bindings(clause):
+            named_imports[local] = (spec, orig)
+
+    # call sites: names invoked inside each component's span, filtered to
+    # KNOWN candidates (same-file declarations + named imports) — precision
+    # over recall; these become provenance=heuristic CALLS edges.
+    candidates = {c.name for c in comps} | set(named_imports)
+    calls: list[tuple[str, tuple]] = []
+    seen_calls: set[tuple[str, str]] = set()
+    for comp in comps:
+        body = "\n".join(lines[comp.start_line - 1:comp.end_line])
+        body = _LINE_COMMENT.sub("", body)
+        for m in _CALL_SITE.finditer(body):
+            callee = m.group(1)
+            if callee in _JS_KEYWORDS or callee == comp.name or callee not in candidates:
+                continue
+            key = (comp.qualname, callee)
+            if key not in seen_calls:
+                seen_calls.add(key)
+                calls.append((comp.qualname, ("name", callee)))
+
+    return comps, imports, named_imports, calls

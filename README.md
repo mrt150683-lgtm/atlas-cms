@@ -346,8 +346,10 @@ cms sentinel  # quality gate: fails on active critical findings
 
 Current scope: **Python** (full AST — classes/functions/imports/calls/inheritance)
 and **TypeScript/JavaScript** (`.ts/.tsx/.js/.jsx` via a lightweight parser —
-top-level declarations as components + import/require/export-from resolved to
-connections); other whitelisted files get AI summaries but no structural parse.
+top-level declarations as components, import/require/export-from resolved to
+connections, plus best-effort CALLS and `extends` INHERITS edges resolved
+through named imports, tagged `provenance: heuristic`); other whitelisted files
+get AI summaries but no structural parse.
 Query ranking is keyword+structure. Next up: tree-sitter for full-fidelity
 multi-language ASTs (calls/inheritance across languages), embedding-based
 semantic search.

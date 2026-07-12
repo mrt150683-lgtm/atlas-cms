@@ -1501,6 +1501,10 @@ function featureStatusHTML() {
   const when = st.generated_at ? st.generated_at.replace("T", " ").replace("Z", " UTC") : "";
   if (sem && sem.build_running)
     return `<span style="color:#86b6ef">Feature discovery is running…</span>`;
+  const pipe = sem && sem.pipeline;
+  if (pipe && pipe.status === "attention")
+    return `<span style="color:#e05252">Pipeline needs attention — failed: ${esc(pipe.failed.join(", "))}.</span> ` +
+           `Retries on the next update (or after the cooldown).`;
   if (st.status === "failed")
     return `<span style="color:#e05252">Feature discovery failed</span> — ${esc(st.error || "provider error")}. ` +
            `It retries on the next update after changes.`;
@@ -1511,13 +1515,18 @@ function featureStatusHTML() {
     return `<span style="color:#c98500">Feature discovery has never run.</span> ` +
            `Run <b>cms update</b> with a configured API key.`;
   const current = sem && sem.live && sem.live.features && sem.live.features.current;
+  const finished = pipe && pipe.status === "finished" && current;
   const base = `${counts.declared_feature_count ?? 0} declared · ` +
                `${counts.discovered_feature_count ?? 0} AI-discovered` +
                (prov ? ` · ${esc(prov)}` : "") + (when ? ` · ${esc(when)}` : "");
   if ((counts.feature_count ?? S.features.length) === 0)
     return `<span style="color:#199e70">Discovery completed — zero features found.</span> ${base}`;
-  return (current ? "" :
-    `<span style="color:#c98500">Feature data is stale — run cms update.</span> `) + base;
+  if (finished)
+    return `<span style="color:#199e70">✓ FINISHED — all stages complete, watching for changes.</span> ${base}`;
+  if (!current)
+    return `<span style="color:#c98500">Feature data is stale — run cms update.</span> ` + base;
+  return `<span style="color:#86b6ef">Pipeline in progress — remaining: ` +
+         `${esc(((pipe && pipe.remaining) || []).join(", ") || "…")}.</span> ${base}`;
 }
 
 function renderFeatureList() {

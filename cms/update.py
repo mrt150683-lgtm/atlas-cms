@@ -475,6 +475,9 @@ def watch(root: Path, provider: SummaryProvider, interval: float = 2.0, echo=pri
             changed_count = len(set(current) ^ set(last))
             echo(f"\nchange detected ({changed_count} entries) — updating memory")
             stats = incremental_update(root, provider, echo=echo)
+            # keep driving toward FINISHED: rebuild missing/invalid judgment
+            # too, so a running session converges without a relaunch
+            ensure_judgment(root, provider, echo=echo)
             echo(
                 f"updated: {stats.summarized} files re-summarized, "
                 f"{stats.features} features traced"

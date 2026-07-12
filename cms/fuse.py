@@ -94,15 +94,30 @@ def load_registry() -> dict:
 
 def register_project(root: Path) -> None:
     """Record a mapped project (called after every successful build). Silent
-    on failure — the registry is convenience, never load-bearing."""
+    on failure — the registry is convenience, never load-bearing.
+
+    Hygiene: throwaway roots (pytest/sentinel fixtures under the system temp
+    dir) are never registered, and entries whose memory layer has vanished
+    are pruned on each write — the constellation lists real projects only."""
     try:
+        import tempfile
+
         root = Path(root).resolve()
+        tmp = str(Path(tempfile.gettempdir()).resolve()).lower()
+        # throwaway roots must not pollute a DURABLE registry (a test registry
+        # living under temp itself may record temp roots — that's its world)
+        if str(root).lower().startswith(tmp) and \
+                not str(REGISTRY_PATH.resolve()).lower().startswith(tmp):
+            return
         reg = load_registry()
         projects = reg.setdefault("projects", {})
         projects[str(root)] = {
             "name": root.name,
             "last_built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
+        for stale in [r for r in projects
+                      if not (Path(r) / config.MEMORY_DIR_NAME / "graph.json").is_file()]:
+            del projects[stale]
         REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
         ss.atomic_write_json(REGISTRY_PATH, reg)
     except OSError:
