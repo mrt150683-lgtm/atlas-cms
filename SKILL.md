@@ -152,6 +152,17 @@ the CLI. `--root PATH` targets a project; the API key is read from
   branch/PR mode, `--scan` to refresh Sentinel first, `--json`. Subcommands:
   `status`, `history`. **Exits non-zero on a `drift` verdict.**
 
+**Fuse (Constellation) — multi-project discovery**
+- `cms fuse [ROOTS…] [--list] [--json]` — fuse ≥2 mapped projects into a
+  cross-codebase report: integration opportunities, emergent features only
+  possible in combination, and conflicts/overlaps — built from each project's
+  existing memory (zero re-processing) plus deterministic structural overlap
+  detection. Real provider required; only projects with positively recorded
+  feature discovery are fused (others listed as excluded, with the reason).
+  Report at `~/.cms/fusion/latest.md`; member `feature_set_hash`es are
+  recorded so drift makes the report verifiably stale. LLM sections are
+  labelled plan material — never ground truth.
+
 **Scope / share**
 - `cms scope show|set <paths…>|clear` — limit which subdirs/files get processed
   (persisted as `.cmsscope.json`); only selected paths are scanned + AI-summarised,

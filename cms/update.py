@@ -212,6 +212,10 @@ def incremental_update(
             **rec, "feature_set_hash": ss.feature_set_hash(graph),
             **ss.feature_counts(graph),
         })
+
+    from .fuse import register_project
+
+    register_project(root)  # constellation registry (never load-bearing)
     return stats
 
 

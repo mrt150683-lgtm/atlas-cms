@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -456,6 +457,51 @@ def suggest(
         if s["rationale"]:
             typer.echo(f"     why: {s['rationale']}")
     typer.echo(f"\nWritten to {out}")
+
+
+@app.command()
+def fuse(
+    projects: list[Path] = typer.Argument(None, help="Project roots to fuse (default: every registered mapped project)."),
+    provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai (mock is refused)."),
+    list_only: bool = typer.Option(False, "--list", help="Show the project registry and readiness, then exit."),
+    as_json: bool = typer.Option(False, "--json", help="Print the report as JSON."),
+) -> None:
+    """Constellation: fuse multiple mapped projects — integration opportunities,
+    emergent features, and conflicts across codebases (real provider required)."""
+    from .fuse import FUSION_DIR, FusionError, build_card, build_fusion, load_registry
+
+    roots = [p.resolve() for p in (projects or [])]
+    if not roots:
+        roots = [Path(r) for r in (load_registry().get("projects") or {})]
+    if list_only or not roots:
+        if not roots:
+            typer.echo("No registered projects yet — build a memory layer somewhere first (cms run-all).")
+            raise typer.Exit(1)
+        for r in sorted(roots):
+            card = build_card(r)
+            mark = "ready" if card.get("ready") else f"NOT READY — {card.get('reason')}"
+            feats = len(card.get("features", [])) if card.get("ready") else "-"
+            typer.echo(f"  {card['name']:<24} {str(feats):>3} features   {mark}")
+        if list_only:
+            return
+
+    llm = get_provider(provider)
+    typer.echo(f"Fusing {len(roots)} project(s) with provider: {llm.name}")
+    try:
+        report = build_fusion(roots, llm)
+    except FusionError as exc:
+        typer.echo(f"fusion failed: {exc}", err=True)
+        raise typer.Exit(1)
+    if as_json:
+        typer.echo(json.dumps(report, indent=1))
+        return
+    typer.echo(f"\nProjects: {', '.join(report['projects'])}")
+    for c in report.get("excluded", []):
+        typer.echo(f"  excluded: {c['name']} — {c['reason']}")
+    for key, label in (("integrations", "INTEGRATE"), ("emergent", "EMERGENT"), ("conflicts", "CONFLICT")):
+        for i in report.get(key) or []:
+            typer.echo(f"  [{label}] {i.get('title')}  ({', '.join(i.get('projects', []))})")
+    typer.echo(f"\nWritten to {FUSION_DIR / 'latest.md'}")
 
 
 @app.command()
