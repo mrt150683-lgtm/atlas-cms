@@ -343,3 +343,17 @@ def test_pipeline_status_contract(tmp_path: Path) -> None:
     ss.record_stage(root / ".memory", "features", status="failed", error="x")
     pipe = ss.pipeline_status(ss.load_state(root / ".memory"))
     assert pipe["status"] == "attention" and pipe["failed"] == ["features"]
+
+
+def test_artifact_provenance_is_distinct_from_runtime_availability(tmp_path: Path) -> None:
+    memory_dir = tmp_path / ".memory"
+    ss.record_stage(memory_dir, "summaries", status="complete", real_provider=True,
+                    provider="anthropic", model="model-a", generated_at="2026-07-12T10:00:00Z")
+    ss.record_stage(memory_dir, "features", status="skipped", real_provider=False,
+                    provider="mock", reason="runtime unavailable")
+
+    provenance = ss.artifact_provenance(ss.load_state(memory_dir))
+
+    assert provenance["available"] is True
+    assert provenance["identities"] == [{"provider": "anthropic", "model": "model-a"}]
+    assert [stage["stage"] for stage in provenance["stages"]] == ["summaries"]

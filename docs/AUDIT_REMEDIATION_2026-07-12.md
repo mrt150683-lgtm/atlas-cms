@@ -12,7 +12,7 @@ commit. Items that have not met that bar remain **open**.
 | AR-004 | open | Add observable progress and reduce avoidable cost in full coverage mapping. | — |
 | AR-005 | open | Canonicalize duplicate AI-discovered features before they enter the graph. | — |
 | AR-006 | open | Keep the large feature map responsive and make the graph an evidence view rather than a blocking navigation surface. | — |
-| AR-007 | open | Distinguish current runtime provider, artifact provenance, freshness, and unavailable capabilities. | — |
+| AR-007 | complete | Distinguish current runtime provider, artifact provenance, freshness, and unavailable capabilities. | Semantic API now reports durable artifact provenance separately from runtime provider; the header names runtime, loaded artifact providers/models, chat availability, stage timestamps, and freshness remains governed by live pipeline state; focused tests pass. |
 | AR-008 | complete | Show mapped-test evidence and its limits in the feature inspector. | Feature inspector now shows mapped-test count, exact test IDs, empty state, refresh action, and the coverage-evidence limitation; UI integration tests pass. |
 | AR-009 | open | Validate CLI commands emitted by Ask Atlas against the live command surface. | — |
 | AR-010 | open | Reduce Sentinel information noise from detector definitions, documentation examples, and test fixtures. | — |

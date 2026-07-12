@@ -244,6 +244,7 @@ def test_semantic_endpoint_reports_stage_evidence(server) -> None:
     assert sem["stages"]["features"]["status"] == "skipped"
     assert sem["stages"]["review"]["status"] == "never_run"
     assert "provider" in sem and "real" in sem["provider"]
+    assert "artifacts" in sem and "available" in sem["artifacts"]
     assert "counts" in sem and sem["counts"]["feature_count"] >= 1  # Greeting
     assert sem["live"]["review"]["validity"] in ("missing", "invalid")
     # no secrets anywhere in the payload
@@ -268,6 +269,9 @@ def test_features_section_never_hidden_markup() -> None:
         assert msg in html, f"missing visible semantic state: {msg!r}"
     # project identity + provider provenance surfaced
     assert 'id="providerChip"' in html and "meta.root" in html
+    assert "Current runtime provider" in html
+    assert "Loaded artifact provenance" in html
+    assert "chat unavailable" in html
     # invalid/stale judgment banners exist
     assert "not valid semantic output" in html and "valid but frozen" in html
     assert "Historical AI Review — not current" in html

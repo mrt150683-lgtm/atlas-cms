@@ -125,9 +125,16 @@ def make_handler(root: Path, cache: _MemoryCache):
                                 "suggestions": sorted(load_suggestions().values(),
                                                       key=lambda s: (s["status"], s["kind"]))})
                 elif url.path == "/api/chat":
-                    from .chat import load_transcript
+                    from .chat import list_sessions, load_transcript
 
-                    self._json({"transcript": load_transcript(root)})
+                    sid = (query.get("session") or [""])[0]
+                    if sid:
+                        from .chat import session_history
+
+                        self._json({"transcript": session_history(root, sid, limit=50)})
+                    else:
+                        self._json({"sessions": list_sessions(root),
+                                    "transcript": load_transcript(root)})
                 elif url.path == "/api/projects":
                     from . import semantic_state as sstate
                     from .fuse import load_registry
@@ -245,10 +252,14 @@ def make_handler(root: Path, cache: _MemoryCache):
                     from .chat import ChatError, ask, load_transcript
                     from .providers import get_provider
 
+                    from .chat import session_history
+
+                    sid = str(body.get("session") or "default")
                     try:
                         entry = ask(root, str(body.get("question") or ""),
                                     get_provider(None),
-                                    history=load_transcript(root, limit=6))
+                                    history=session_history(root, sid),
+                                    session=sid)
                         log_activity(memory_dir, "ask_codebase",
                                      entry["evidence_nodes"],
                                      label=entry["q"][:120])
@@ -566,6 +577,7 @@ def make_handler(root: Path, cache: _MemoryCache):
                 "schema_version": state.get("schema_version"),
                 "stages": {name: sstate.stage(state, name) for name in sstate.STAGES},
                 "pipeline": sstate.pipeline_status(state),
+                "artifacts": sstate.artifact_provenance(state),
                 "build_running": bool(build_state.get("running")),
                 "build_message": build_state.get("message", ""),
             }

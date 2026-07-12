@@ -102,38 +102,71 @@
   #chatFab:hover { transform: scale(1.07); }
   #chatBox {
     display: none; position: fixed; right: 22px; bottom: 80px; z-index: 70;
-    width: 400px; max-width: calc(100vw - 44px); height: 520px; max-height: 72vh;
+    width: 620px; max-width: calc(100vw - 44px); height: 680px; max-height: 82vh;
     background: var(--panel, #17181c); border: 1px solid var(--border);
-    border-radius: 14px; box-shadow: 0 14px 44px rgba(0,0,0,0.55);
+    border-radius: 16px; box-shadow: 0 18px 56px rgba(0,0,0,0.6);
     flex-direction: column; overflow: hidden;
   }
   #chatBox.open { display: flex; }
   #chatHead {
-    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
-    border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--ink-2);
+    display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border); font-size: 13px; color: var(--ink-2);
+    background: rgba(255,255,255,0.015); flex: none;
   }
-  #chatHead b { color: var(--ink); font-weight: 600; }
-  #chatHead .x { margin-left: auto; cursor: pointer; color: var(--ink-3);
-                 font-size: 16px; border: none; background: none; }
+  #chatHead b { color: var(--ink); font-weight: 600; font-size: 13.5px; }
+  #chatHead .spacer { flex: 1; }
+  #chatHead .hbtn {
+    cursor: pointer; color: var(--ink-3); font: 11.5px var(--font);
+    border: 1px solid var(--border); background: none; border-radius: 999px;
+    padding: 3px 12px; transition: color 130ms ease, border-color 130ms ease;
+  }
+  #chatHead .hbtn:hover { color: var(--ink); border-color: var(--accent); }
+  #chatHead .hbtn.on { color: var(--accent); border-color: var(--accent); }
+  #chatHead .x { cursor: pointer; color: var(--ink-3); font-size: 17px;
+                 border: none; background: none; padding: 0 2px; }
   #chatHead .x:hover { color: var(--ink); }
-  #chatMsgs { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex;
-              flex-direction: column; gap: 10px; }
-  .cmsg { max-width: 88%; padding: 8px 12px; border-radius: 12px;
-          font-size: 12.8px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word; }
+  #chatBody { flex: 1; display: flex; min-height: 0; }
+  #chatHistory {
+    display: none; width: 210px; flex: none; border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 8px;
+  }
+  #chatBox.hist #chatHistory { display: block; }
+  #chatHistory .hs-title { font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--ink-3); padding: 4px 8px 8px; }
+  #chatHistory .hs-row { padding: 7px 9px; border-radius: 8px; cursor: pointer;
+    margin-bottom: 2px; }
+  #chatHistory .hs-row:hover { background: rgba(57,135,229,0.1); }
+  #chatHistory .hs-row.on { background: rgba(57,135,229,0.16); }
+  #chatHistory .hs-name { font-size: 11.5px; color: var(--ink-2); line-height: 1.35;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #chatHistory .hs-meta { font-size: 10px; color: var(--ink-3); margin-top: 3px;
+    font-family: var(--mono); }
+  #chatHistory .hs-empty { font-size: 11.5px; color: var(--ink-3); padding: 8px; }
+  #chatMain { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #chatMsgs { flex: 1; overflow-y: auto; padding: 16px 18px; display: flex;
+              flex-direction: column; gap: 12px; }
+  .cmsg { max-width: 86%; padding: 10px 14px; border-radius: 13px;
+          font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-wrap: break-word; }
   .cmsg.me { align-self: flex-end; background: rgba(57,135,229,0.16);
-             border: 1px solid rgba(57,135,229,0.35); color: var(--ink); }
+             border: 1px solid rgba(57,135,229,0.35); color: var(--ink);
+             border-bottom-right-radius: 4px; }
   .cmsg.atlas { align-self: flex-start; background: rgba(255,255,255,0.035);
-                border: 1px solid var(--border); color: var(--ink-2); }
-  .cmsg.atlas .feats { margin-top: 6px; font-size: 10.5px; color: var(--accent); }
+                border: 1px solid var(--border); color: var(--ink-2);
+                border-bottom-left-radius: 4px; }
+  .cmsg.atlas .feats { margin-top: 8px; padding-top: 7px; font-size: 10.5px;
+                       color: var(--accent); border-top: 1px solid var(--border); }
   .cmsg.err { border-color: rgba(224,82,82,0.5); color: #e05252; }
-  #chatInputRow { display: flex; gap: 8px; padding: 10px 12px;
-                  border-top: 1px solid var(--border); }
+  .cmsg.hello { max-width: 100%; text-align: center; background: none; border: none;
+                color: var(--ink-3); font-size: 12px; }
+  #chatInputRow { display: flex; gap: 10px; padding: 12px 14px; flex: none;
+                  border-top: 1px solid var(--border); align-items: flex-end; }
   #chatInput { flex: 1; background: var(--bg, #101114); border: 1px solid var(--border);
-               border-radius: 9px; color: var(--ink); padding: 8px 12px;
-               font: 12.5px var(--font); outline: none; resize: none; height: 38px; }
+               border-radius: 11px; color: var(--ink); padding: 10px 14px;
+               font: 13px/1.45 var(--font); outline: none; resize: none;
+               height: 62px; max-height: 130px; }
   #chatInput:focus { border-color: var(--accent); }
-  #chatSend { background: var(--accent); border: none; color: #fff; border-radius: 9px;
-              padding: 0 16px; font: 12.5px var(--font); cursor: pointer; }
+  #chatSend { background: var(--accent); border: none; color: #fff; border-radius: 11px;
+              padding: 10px 20px; font: 13px var(--font); cursor: pointer; height: 42px; }
   #chatSend:disabled { opacity: 0.45; cursor: default; }
 
   #mcpBadge {
@@ -945,12 +978,21 @@ async function boot() {
   $("projectName").title = meta.root || "";
   if (semantic && semantic.provider) {
     const p = semantic.provider;
+    const artifacts = semantic.artifacts || { available: false, identities: [], stages: [] };
+    const artifactNames = (artifacts.identities || []).map(a =>
+      `${a.provider}${a.model ? " · " + a.model : ""}`);
+    const runtimeName = `${p.name}${p.model ? " · " + p.model : ""}`;
     const chip = $("providerChip");
     chip.style.display = "";
-    chip.textContent = p.real ? `${p.name}${p.model ? " · " + p.model : ""}`
-                              : "mock provider — semantic layer inactive";
+    chip.textContent = `runtime: ${runtimeName}` +
+      (p.real ? "" : " · chat unavailable") +
+      (artifacts.available ? ` · artifacts: ${artifactNames.join(", ")}` : " · no real semantic artifacts");
     chip.style.color = p.real ? "var(--muted)" : "#c98500";
-    chip.title = `Root: ${meta.root}\nSemantic provider status`;
+    const stageLines = (artifacts.stages || []).map(a =>
+      `${a.stage}: ${a.provider}${a.model ? " · " + a.model : ""}${a.generated_at ? " · " + a.generated_at : ""}`);
+    chip.title = `Root: ${meta.root}\nCurrent runtime provider: ${runtimeName}` +
+      (p.real ? "" : "\nAsk Atlas and new AI generation are unavailable") +
+      (stageLines.length ? `\nLoaded artifact provenance:\n${stageLines.join("\n")}` : "\nNo real-provider artifacts loaded");
   }
   document.title = `Atlas · ${meta.project}`;
   initProjectSwitch(meta);

@@ -235,3 +235,33 @@ def live_pipeline_status(state: dict, graph) -> dict:
             "reason": "judgment artifacts require an explicit refresh",
         }
     return status
+
+
+def artifact_provenance(state: dict) -> dict:
+    """Summarize who generated the durable semantic artifacts.
+
+    Runtime provider availability is a separate fact; this describes only
+    positively completed, real-provider stage output already on disk.
+    """
+    completed = []
+    for name in STAGES:
+        rec = stage(state, name)
+        if rec.get("status") == "complete" and rec.get("real_provider"):
+            completed.append({
+                "stage": name,
+                "provider": rec.get("provider"),
+                "model": rec.get("model"),
+                "generated_at": rec.get("generated_at"),
+            })
+    identities = sorted({
+        (rec["provider"], rec["model"])
+        for rec in completed if rec["provider"]
+    })
+    return {
+        "available": bool(completed),
+        "identities": [
+            {"provider": provider, "model": model}
+            for provider, model in identities
+        ],
+        "stages": completed,
+    }
