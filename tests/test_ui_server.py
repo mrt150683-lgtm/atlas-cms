@@ -313,3 +313,17 @@ def test_discovery_page_and_apis(tmp_path, monkeypatch) -> None:
         assert status == 400
     finally:
         httpd.shutdown()
+
+
+def test_discovery_page_has_subtabs() -> None:
+    """The Discovery page must be tabbed (too much data for one scroll):
+    six panels, tab counters, idea status chips, and a plan-card filter."""
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "constellation.html"
+            ).read_text(encoding="utf-8")
+    for tab in ("integrations", "emergent", "conflicts", "ideas", "plans", "history"):
+        assert f'data-tab="{tab}"' in html, f"missing tab {tab}"
+        assert f'id="p-{tab}"' in html, f"missing panel {tab}"
+        assert f'id="n-{tab}"' in html, f"missing counter {tab}"
+    assert 'id="ideaChips"' in html          # status filter chips
+    assert 'id="cardFilter"' in html         # plan-card text filter
+    assert "location.hash" in html           # deep-linkable tabs

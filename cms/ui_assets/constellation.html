@@ -23,13 +23,12 @@
   header a { color: var(--ink-2); text-decoration: none; font-size: 12.5px;
              border: 1px solid var(--line); border-radius: 14px; padding: 3px 12px; }
   header a:hover { color: var(--ink); border-color: var(--accent); }
-  main { max-width: 1060px; margin: 0 auto; padding: 26px 20px 80px; }
+  main { max-width: 1060px; margin: 0 auto; padding: 22px 20px 80px; }
   h1 { font-size: 19px; margin: 4px 0 2px; }
-  .sub { color: var(--ink-3); font-size: 12px; margin-bottom: 22px; }
-  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .14em;
-       color: var(--ink-3); margin: 30px 0 10px; }
+  .sub { color: var(--ink-3); font-size: 12px; }
+  #reportMeta { margin: 10px 0 4px; }
   .card { background: var(--panel); border: 1px solid var(--line);
-          border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+          border-radius: 10px; padding: 13px 16px; margin-bottom: 9px; }
   .badge { display: inline-block; font-size: 10.5px; border-radius: 9px;
            padding: 1px 8px; margin-left: 8px; vertical-align: 1px; }
   .b-llm { color: var(--amber); border: 1px solid var(--amber); }
@@ -52,9 +51,31 @@
   .status-rejected, .status-ignored { color: var(--ink-3); text-decoration: line-through; }
   .kind { font-size: 10.5px; color: var(--ink-3); text-transform: uppercase;
           letter-spacing: .1em; }
-  .refine-tip { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-                padding: 12px 16px; color: var(--ink-2); font-size: 12.5px; margin-top: 14px; }
-  .refine-tip code { color: var(--accent); font-family: var(--mono); font-size: 12px; }
+
+  /* tabs */
+  #tabs { display: flex; gap: 6px; margin: 18px 0 16px; border-bottom: 1px solid var(--line);
+          flex-wrap: wrap; }
+  #tabs button { background: none; border: none; border-bottom: 2px solid transparent;
+          color: var(--ink-2); font: 13px var(--font); padding: 7px 14px; cursor: pointer; }
+  #tabs button:hover { color: var(--ink); }
+  #tabs button.active { color: var(--ink); border-bottom-color: var(--accent); }
+  #tabs .n { color: var(--ink-3); font-size: 11px; margin-left: 5px;
+             font-family: var(--mono); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* filters */
+  .chips { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .chips button { background: none; border: 1px solid var(--line); color: var(--ink-2);
+          border-radius: 12px; padding: 2px 12px; font: 11.5px var(--font); cursor: pointer; }
+  .chips button.on { border-color: var(--accent); color: var(--ink); }
+  #cardFilter { width: 100%; max-width: 380px; margin-bottom: 12px; background: var(--bg);
+          border: 1px solid var(--line); border-radius: 8px; color: var(--ink);
+          padding: 6px 12px; font: 12.5px var(--font); outline: none; }
+  #cardFilter:focus { border-color: var(--accent); }
+  .refine-tip { border: 1px solid var(--line); border-radius: 10px; background: var(--panel);
+                padding: 10px 14px; color: var(--ink-2); font-size: 12px; margin-top: 14px; }
+  .refine-tip code { color: var(--accent); font-family: var(--mono); font-size: 11.5px; }
 </style>
 </head>
 <body>
@@ -73,32 +94,60 @@
 </header>
 <main>
   <h1>Discovery — Constellation &amp; Scout</h1>
-  <div class="sub">Cross-project fusion (how your codebases could work together) and the plan-scout idea engine.
-    LLM output is plan material, not ground truth; structural signals are deterministic.</div>
+  <div class="sub">Cross-project fusion and the plan-scout idea engine. LLM output is plan
+    material, not ground truth; structural signals are deterministic.</div>
+  <div id="reportMeta" class="sub"></div>
+  <div id="staleBanner"></div>
 
-  <h2>Constellation — fusion report</h2>
-  <div id="fusionMeta" class="sub"></div>
-  <div id="fusion"></div>
-  <div class="refine-tip">Refine conversationally from your IDE agent (<code>get_fusion_report</code> →
-    <code>refine_fusion("direction")</code>) or <code>cms fuse --refine "…"</code>.
-    Rebuild from scratch: <code>cms fuse</code>.</div>
+  <div id="tabs">
+    <button data-tab="integrations">Integrations<span class="n" id="n-integrations"></span></button>
+    <button data-tab="emergent">Emergent<span class="n" id="n-emergent"></span></button>
+    <button data-tab="conflicts">Conflicts<span class="n" id="n-conflicts"></span></button>
+    <button data-tab="ideas">Ideas<span class="n" id="n-ideas"></span></button>
+    <button data-tab="plans">Plan cards<span class="n" id="n-plans"></span></button>
+    <button data-tab="history">History<span class="n" id="n-history"></span></button>
+  </div>
 
-  <h2>Scout — ideas from your plan documents</h2>
-  <div id="scoutMeta" class="sub"></div>
-  <div id="ideas"></div>
+  <div class="panel" id="p-integrations"></div>
+  <div class="panel" id="p-emergent"></div>
+  <div class="panel" id="p-conflicts"></div>
+  <div class="panel" id="p-ideas">
+    <div class="chips" id="ideaChips"></div>
+    <div id="ideaList"></div>
+  </div>
+  <div class="panel" id="p-plans">
+    <input id="cardFilter" type="text" placeholder="Filter plan cards… (name, tag, words)" autocomplete="off">
+    <div id="cardList"></div>
+  </div>
+  <div class="panel" id="p-history"></div>
 
-  <h2>Scout — plan cards</h2>
-  <div id="cards"></div>
+  <div class="refine-tip">Refine conversationally from your IDE agent
+    (<code>get_fusion_report</code> → <code>refine_fusion("direction")</code>) or
+    <code>cms fuse --refine "…"</code> · rebuild: <code>cms fuse</code> · more plans:
+    <code>cms scout scan &lt;dir&gt;</code> then <code>cms scout review</code>.</div>
 </main>
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
   ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 
-function itemCard(i, extraBadge) {
+const state = { ideas: [], cards: [], ideaFilter: "proposed" };
+
+/* tabs */
+function showTab(name) {
+  document.querySelectorAll("#tabs button").forEach(b =>
+    b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".panel").forEach(p =>
+    p.classList.toggle("active", p.id === "p-" + name));
+  location.hash = name;
+}
+document.querySelectorAll("#tabs button").forEach(b =>
+  b.onclick = () => showTab(b.dataset.tab));
+
+function itemCard(i) {
   return `<div class="card">
     <span class="title">${esc(i.title)}</span>
-    <span class="badge b-${esc(i.provenance || "llm")}">${esc(i.provenance || "llm")}</span>${extraBadge || ""}
+    <span class="badge b-${esc(i.provenance || "llm")}">${esc(i.provenance || "llm")}</span>
     <span class="projects"> ${esc((i.projects || i.builds_on || []).join(" · "))}</span>
     <div class="desc">${esc(i.description || "")}</div>
     ${i.first_step ? `<div class="hint">first step: ${esc(i.first_step)}</div>` : ""}
@@ -108,45 +157,62 @@ function itemCard(i, extraBadge) {
 
 async function loadFusion() {
   const data = await fetch("/api/fusion").then(r => r.json()).catch(() => null);
-  if (!data || !data.report) {
-    $("fusion").innerHTML = `<div class="empty">No fusion report yet — run <code>cms fuse</code>
+  const empty = `<div class="empty">No fusion report yet — run <code>cms fuse</code>
       across two or more mapped projects.</div>`;
+  if (!data || !data.report) {
+    ["integrations", "emergent", "conflicts", "history"].forEach(t => {
+      $("p-" + t).innerHTML = empty; $("n-" + t).textContent = "";
+    });
     return;
   }
   const r = data.report;
-  const stale = data.stale_members || [];
-  $("fusionMeta").textContent =
+  $("reportMeta").textContent =
     `${Object.keys(r.projects).join(" · ")} — ${r.generated_at} · ${r.provider}` +
     (r.model ? ` · ${r.model}` : "") +
-    (r.direction ? ` · refined: “${r.direction.slice(0, 70)}…”` : "");
-  let html = "";
-  if (stale.length)
-    html += `<div class="card"><span class="badge b-stale">stale</span>
-      feature sets changed since this report: ${esc(stale.join(", "))} — re-run <code>cms fuse</code>.</div>`;
-  const groups = [["integrations", "Integrations"], ["emergent", "Emergent features"], ["conflicts", "Conflicts"]];
-  for (const [key, label] of groups) {
+    (r.direction ? ` · refined: “${r.direction.slice(0, 60)}…”` : "");
+  const stale = data.stale_members || [];
+  $("staleBanner").innerHTML = stale.length ?
+    `<div class="card"><span class="badge b-stale">stale</span>
+     feature sets changed since this report: ${esc(stale.join(", "))} —
+     re-run <code style="color:var(--accent)">cms fuse</code>.</div>` : "";
+
+  for (const key of ["integrations", "emergent"]) {
     const items = r[key] || [];
-    if (items.length) html += `<div class="kind" style="margin:12px 0 6px">${label} · ${items.length}</div>`
-      + items.map(i => itemCard(i)).join("");
+    $("n-" + key).textContent = items.length || "";
+    $("p-" + key).innerHTML = items.length ? items.map(itemCard).join("")
+      : `<div class="empty">None proposed in the current report.</div>`;
   }
-  html += `<div class="kind" style="margin:12px 0 6px">Structural overlaps · ${(r.structural_overlaps || []).length}</div>`
-    + (r.structural_overlaps || []).map(o =>
-      `<div class="card"><span class="badge b-structural">structural</span>
+  const conf = r.conflicts || [];
+  const overlaps = r.structural_overlaps || [];
+  $("n-conflicts").textContent = (conf.length + overlaps.length) || "";
+  $("p-conflicts").innerHTML =
+    (conf.length ? `<div class="kind" style="margin-bottom:8px">LLM-assessed conflicts · ${conf.length}</div>`
+      + conf.map(itemCard).join("") : "") +
+    `<div class="kind" style="margin:14px 0 8px">Structural overlaps (deterministic) · ${overlaps.length}</div>` +
+    (overlaps.map(o => `<div class="card"><span class="badge b-structural">structural</span>
        <span class="projects">${esc((o.projects || []).join(" · "))}</span>
-       <div class="desc">${esc(o.evidence)}</div></div>`).join("");
-  if ((data.refinements || []).length)
-    html += `<div class="kind" style="margin:12px 0 6px">Refinement history</div>` +
-      data.refinements.map(h => `<div class="card meta">${esc(h.generated_at)} — ${esc(h.direction)}</div>`).join("");
-  $("fusion").innerHTML = html;
+       <div class="desc">${esc(o.evidence)}</div></div>`).join("")
+     || `<div class="empty">No structural overlaps detected.</div>`);
+
+  const hist = data.refinements || [];
+  $("n-history").textContent = hist.length || "";
+  $("p-history").innerHTML = hist.length
+    ? hist.slice().reverse().map(h =>
+        `<div class="card meta">${esc(h.generated_at)} — ${esc(h.direction)}</div>`).join("")
+    : `<div class="empty">No refinements yet — this is the original report.</div>`;
 }
 
-async function loadScout() {
-  const data = await fetch("/api/scout").then(r => r.json()).catch(() => null);
-  const ideas = (data && data.suggestions) || [];
-  const cards = (data && data.cards) || [];
-  $("scoutMeta").textContent = `${cards.filter(c => c.status === "ok").length} plan card(s) · `
-    + `${ideas.filter(s => s.status === "proposed").length} open idea(s) · rejected/ignored are never re-proposed`;
-  $("ideas").innerHTML = ideas.length ? ideas.map(s => `
+/* ideas */
+function renderIdeas() {
+  const f = state.ideaFilter;
+  const shown = state.ideas.filter(s => f === "all" ? true : s.status === f);
+  const counts = { all: state.ideas.length };
+  for (const s of state.ideas) counts[s.status] = (counts[s.status] || 0) + 1;
+  $("ideaChips").innerHTML = ["proposed", "accepted", "rejected", "ignored", "all"].map(v =>
+    `<button data-f="${v}" class="${f === v ? "on" : ""}">${v} · ${counts[v] || 0}</button>`).join("");
+  document.querySelectorAll("#ideaChips button").forEach(b =>
+    b.onclick = () => { state.ideaFilter = b.dataset.f; renderIdeas(); });
+  $("ideaList").innerHTML = shown.length ? shown.map(s => `
     <div class="card srow" data-sid="${esc(s.id)}">
       <div class="body">
         <span class="kind">${esc(s.kind)}</span>
@@ -160,27 +226,55 @@ async function loadScout() {
           `<button data-v="${v}">${v}</button>`).join(" ")}
       </div>
     </div>`).join("")
-    : `<div class="empty">No ideas yet — run <code>cms scout scan &lt;dir&gt;</code> then
-       <code>cms scout review</code>.</div>`;
-  document.querySelectorAll(".verdicts button").forEach(b => b.onclick = async () => {
+    : `<div class="empty">No ${f === "all" ? "" : f + " "}ideas` +
+      (state.ideas.length ? "." : ` yet — run <code>cms scout scan &lt;dir&gt;</code> then
+       <code>cms scout review</code>.`) + `</div>`;
+  document.querySelectorAll("#ideaList .verdicts button").forEach(b => b.onclick = async () => {
     const sid = b.closest("[data-sid]").dataset.sid;
     await fetch("/api/scout/status", { method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: sid, status: b.dataset.v }) });
     loadScout();
   });
-  $("cards").innerHTML = cards.length ? cards.map(c => c.status === "ok" ? `
+}
+
+/* plan cards */
+function renderCards() {
+  const q = ($("cardFilter").value || "").toLowerCase();
+  const ok = state.cards.filter(c => c.status === "ok");
+  const failed = state.cards.filter(c => c.status !== "ok");
+  const match = c => !q || `${c.project_dir}/${c.name} ${c.one_liner} ${(c.tags || []).join(" ")}`
+      .toLowerCase().includes(q);
+  const shown = ok.filter(match);
+  $("cardList").innerHTML = (shown.map(c => `
     <div class="card">
       <span class="title">${esc(c.project_dir)}/${esc(c.name)}</span>
       ${c.atlas_candidate ? '<span class="badge b-structural">atlas candidate</span>' : ""}
       <div class="desc">${esc(c.one_liner)}</div>
       <div class="meta">${esc((c.tags || []).join(" · "))}</div>
-    </div>` : `
+    </div>`).join("") || `<div class="empty">${ok.length ? "No cards match the filter."
+      : "No plan cards yet — run <code>cms scout scan &lt;dir&gt;</code>."}</div>`) +
+    (q ? "" : failed.map(c => `
     <div class="card"><span class="title status-ignored">${esc(c.project_dir)}/${esc(c.name)}</span>
-      <span class="badge b-stale">card failed — retried next scan</span></div>`).join("")
-    : `<div class="empty">No plan cards yet.</div>`;
+      <span class="badge b-stale">card failed — retried next scan</span></div>`).join(""));
+}
+$("cardFilter").oninput = renderCards;
+
+async function loadScout() {
+  const data = await fetch("/api/scout").then(r => r.json()).catch(() => null);
+  state.ideas = (data && data.suggestions) || [];
+  state.cards = (data && data.cards) || [];
+  $("n-ideas").textContent = state.ideas.filter(s => s.status === "proposed").length || "";
+  $("n-plans").textContent = state.cards.filter(c => c.status === "ok").length || "";
+  if (!state.ideas.some(s => s.status === state.ideaFilter) && state.ideaFilter !== "all")
+    state.ideaFilter = state.ideas.some(s => s.status === "proposed") ? "proposed" : "all";
+  renderIdeas();
+  renderCards();
 }
 
+const initial = (location.hash || "#integrations").slice(1);
+showTab(["integrations", "emergent", "conflicts", "ideas", "plans", "history"]
+  .includes(initial) ? initial : "integrations");
 loadFusion(); loadScout();
 </script>
 </body>
