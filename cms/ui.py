@@ -124,6 +124,21 @@ def make_handler(root: Path, cache: _MemoryCache):
                                                 key=lambda c: c.get("project_dir", "")),
                                 "suggestions": sorted(load_suggestions().values(),
                                                       key=lambda s: (s["status"], s["kind"]))})
+                elif url.path == "/api/brainstorm":
+                    from .brainstorm import load_goals, load_ideas
+                    from .fuse import build_card, load_registry
+
+                    projects = []
+                    for root_str, meta in (load_registry().get("projects") or {}).items():
+                        card = build_card(Path(root_str))
+                        if card.get("ready"):
+                            projects.append({"name": card["name"], "root": root_str})
+                    self._json({
+                        "ideas": sorted(load_ideas().values(),
+                                        key=lambda i: i["created_at"], reverse=True),
+                        "goals": load_goals(),
+                        "projects": sorted(projects, key=lambda p: p["name"]),
+                    })
                 elif url.path == "/api/dirtree":
                     self._dirtree()
                 elif url.path == "/api/scope":
@@ -203,6 +218,39 @@ def make_handler(root: Path, cache: _MemoryCache):
                         self._json({"updated": True, "suggestion": s})
                     except ScoutError as exc:
                         self._json({"updated": False, "error": str(exc)}, 400)
+                elif url.path == "/api/brainstorm/generate":
+                    from .brainstorm import BrainstormError, generate_ideas
+                    from .providers import get_provider
+
+                    try:
+                        new = generate_ideas(
+                            get_provider(None),
+                            temperature=float(body.get("temperature", 1.0)),
+                            project_root=body.get("project_root") or None,
+                        )
+                        self._json({"generated": len(new), "ideas": new})
+                    except BrainstormError as exc:
+                        self._json({"generated": 0, "error": str(exc)}, 400)
+                elif url.path == "/api/brainstorm/rate":
+                    from .brainstorm import BrainstormError, rate_idea
+
+                    try:
+                        idea = rate_idea(str(body.get("id") or ""),
+                                         str(body.get("verdict") or ""))
+                        self._json({"updated": True, "idea": idea})
+                    except BrainstormError as exc:
+                        self._json({"updated": False, "error": str(exc)}, 400)
+                elif url.path == "/api/brainstorm/goals":
+                    from .brainstorm import BrainstormError, add_goal, remove_goal
+
+                    try:
+                        if body.get("remove"):
+                            goals = remove_goal(str(body["remove"]))
+                        else:
+                            goals = add_goal(str(body.get("text") or ""))
+                        self._json({"goals": goals})
+                    except BrainstormError as exc:
+                        self._json({"error": str(exc)}, 400)
                 else:
                     self._error(404, "not found")
             except BrokenPipeError:

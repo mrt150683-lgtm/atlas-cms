@@ -33,12 +33,16 @@ class AnthropicProvider:
         self.model = model or config.ANTHROPIC_MODEL
 
     def summarize(self, prompt: str, context: dict) -> str:
+        kwargs = {}
+        if context.get("temperature") is not None:
+            kwargs["temperature"] = float(context["temperature"])  # brainstorm dial
         response = self._client.messages.create(
             model=self.model,
             # callers with structured output (e.g. feature discovery over a
             # large repo) can raise the ceiling so JSON doesn't truncate
             max_tokens=int(context.get("max_tokens") or config.MAX_TOKENS),
             messages=[{"role": "user", "content": prompt}],
+            **kwargs,
         )
         return "".join(b.text for b in response.content if b.type == "text").strip()
 
@@ -54,13 +58,14 @@ class OpenAICompatProvider:
         self.api_key = os.environ.get("CMS_OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
 
     def summarize(self, prompt: str, context: dict) -> str:
-        payload = json.dumps(
-            {
-                "model": self.model,
-                "max_tokens": int(context.get("max_tokens") or config.MAX_TOKENS),
-                "messages": [{"role": "user", "content": prompt}],
-            }
-        ).encode("utf-8")
+        body = {
+            "model": self.model,
+            "max_tokens": int(context.get("max_tokens") or config.MAX_TOKENS),
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if context.get("temperature") is not None:
+            body["temperature"] = float(context["temperature"])
+        payload = json.dumps(body).encode("utf-8")
         request = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=payload,

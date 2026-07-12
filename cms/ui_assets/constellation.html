@@ -106,6 +106,7 @@
     <button data-tab="ideas">Ideas<span class="n" id="n-ideas"></span></button>
     <button data-tab="plans">Plan cards<span class="n" id="n-plans"></span></button>
     <button data-tab="history">History<span class="n" id="n-history"></span></button>
+    <button data-tab="brainstorm">Brainstorm<span class="n" id="n-brainstorm"></span></button>
   </div>
 
   <div class="panel" id="p-integrations"></div>
@@ -120,6 +121,39 @@
     <div id="cardList"></div>
   </div>
   <div class="panel" id="p-history"></div>
+  <div class="panel" id="p-brainstorm">
+    <div class="card" id="bsControls">
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2)">
+          focused <input id="bsTemp" type="range" min="0.2" max="1" step="0.1" value="1"
+                         style="width:130px"> wild
+          <span id="bsTempVal" class="meta" style="margin:0">1.0</span>
+        </label>
+        <select id="bsProject" style="background:var(--bg);border:1px solid var(--line);
+                border-radius:8px;color:var(--ink);padding:5px 10px;font:12.5px var(--font)">
+          <option value="">🎲 unrelated to anything — pure new concepts</option>
+        </select>
+        <button id="bsGen" style="background:var(--accent);border:none;color:#fff;
+                border-radius:8px;padding:6px 18px;font:12.5px var(--font);cursor:pointer">
+          Generate 10 ideas</button>
+        <span id="bsBusy" class="meta" style="display:none;margin:0">thinking…</span>
+      </div>
+      <div class="meta" id="bsSignal" style="margin-top:8px"></div>
+    </div>
+    <div id="goalsPanel" class="card" style="display:none;border-color:var(--amber)">
+      <div class="kind" style="color:var(--amber);margin-bottom:8px">Custom goals — standing directives for every batch</div>
+      <div id="goalList"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input id="goalInput" type="text" placeholder="e.g. ideas that could help cure diseases · make me £500/week · focus on audio"
+               style="flex:1;background:var(--bg);border:1px solid var(--line);border-radius:8px;
+                      color:var(--ink);padding:6px 12px;font:12.5px var(--font);outline:none">
+        <button id="goalAdd" style="background:none;border:1px solid var(--amber);color:var(--amber);
+                border-radius:8px;padding:5px 14px;font:12px var(--font);cursor:pointer">Add goal</button>
+      </div>
+    </div>
+    <div class="chips" id="bsChips"></div>
+    <div id="bsIdeas"></div>
+  </div>
 
   <div class="refine-tip">Refine conversationally from your IDE agent
     (<code>get_fusion_report</code> → <code>refine_fusion("direction")</code>) or
@@ -272,10 +306,126 @@ async function loadScout() {
   renderCards();
 }
 
+/* ── Brainstorm ─────────────────────────────────────────────── */
+const bs = { ideas: [], goals: [], projects: [], filter: "new" };
+
+$("bsTemp").oninput = () => $("bsTempVal").textContent = (+$("bsTemp").value).toFixed(1);
+
+function renderGoals() {
+  $("goalList").innerHTML = bs.goals.length ? bs.goals.map(g =>
+    `<div style="display:flex;align-items:center;gap:8px;padding:3px 0">
+       <span style="flex:1;color:var(--ink-2);font-size:12.5px">${esc(g.text)}</span>
+       <button data-g="${esc(g.id)}" style="background:none;border:none;color:var(--red);
+         cursor:pointer;font-size:14px" title="Remove">×</button>
+     </div>`).join("")
+    : `<div class="meta" style="margin:0">No goals yet — every batch runs unconstrained.</div>`;
+  document.querySelectorAll("#goalList button").forEach(b => b.onclick = async () => {
+    const r = await fetch("/api/brainstorm/goals", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ remove: b.dataset.g }) }).then(r => r.json());
+    bs.goals = r.goals || []; renderGoals(); renderSignal();
+  });
+}
+$("goalAdd").onclick = async () => {
+  const text = $("goalInput").value.trim();
+  if (!text) return;
+  const r = await fetch("/api/brainstorm/goals", { method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }) }).then(r => r.json());
+  if (r.goals) { bs.goals = r.goals; $("goalInput").value = ""; renderGoals(); renderSignal(); }
+};
+
+/* seven clicks on the logo, inside Brainstorm, opens the goals panel */
+let logoClicks = 0, logoTimer = null;
+document.querySelector("header .logo").addEventListener("click", () => {
+  if (!$("p-brainstorm").classList.contains("active")) return;
+  logoClicks += 1;
+  clearTimeout(logoTimer);
+  logoTimer = setTimeout(() => { logoClicks = 0; }, 1600);
+  if (logoClicks >= 7) {
+    logoClicks = 0;
+    const p = $("goalsPanel");
+    p.style.display = p.style.display === "none" ? "" : "none";
+  }
+});
+
+function renderSignal() {
+  const liked = bs.ideas.filter(i => i.status === "liked").length;
+  const disliked = bs.ideas.filter(i => i.status === "disliked").length;
+  $("bsSignal").textContent =
+    `taste signal: ${liked} liked · ${disliked} disliked — each batch optimises toward it` +
+    (bs.goals.length ? ` · ${bs.goals.length} standing goal(s) active` : "");
+}
+
+function renderBs() {
+  const counts = { all: bs.ideas.length };
+  for (const i of bs.ideas) counts[i.status] = (counts[i.status] || 0) + 1;
+  $("n-brainstorm").textContent = counts.new || "";
+  $("bsChips").innerHTML = ["new", "liked", "disliked", "all"].map(v =>
+    `<button data-f="${v}" class="${bs.filter === v ? "on" : ""}">${v} · ${counts[v] || 0}</button>`).join("");
+  document.querySelectorAll("#bsChips button").forEach(b =>
+    b.onclick = () => { bs.filter = b.dataset.f; renderBs(); });
+  const shown = bs.ideas.filter(i => bs.filter === "all" ? true : i.status === bs.filter);
+  $("bsIdeas").innerHTML = shown.length ? shown.map(i => `
+    <div class="card srow" data-iid="${esc(i.id)}">
+      <div class="body">
+        <div class="title ${i.status === "disliked" ? "status-ignored" :
+                            i.status === "liked" ? "status-accepted" : ""}">${esc(i.text)}</div>
+        <div class="meta">${esc(i.created_at)} · temp ${i.temperature}` +
+          `${i.project ? " · from " + esc(i.project) : " · pure-new"} · ${esc(i.model || i.provider)}</div>
+      </div>
+      <div class="verdicts">
+        <button data-v="liked" title="More like this">👍</button>
+        <button data-v="disliked" title="Never like this">👎</button>
+      </div>
+    </div>`).join("")
+    : `<div class="empty">No ${bs.filter === "all" ? "" : bs.filter + " "}ideas` +
+      (bs.ideas.length ? "." : " yet — set the dial and hit Generate.") + `</div>`;
+  document.querySelectorAll("#bsIdeas .verdicts button").forEach(b => b.onclick = async () => {
+    const iid = b.closest("[data-iid]").dataset.iid;
+    await fetch("/api/brainstorm/rate", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: iid, verdict: b.dataset.v }) });
+    loadBrainstorm();
+  });
+  renderSignal();
+}
+
+$("bsGen").onclick = async () => {
+  $("bsGen").disabled = true; $("bsBusy").style.display = "";
+  try {
+    const r = await fetch("/api/brainstorm/generate", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ temperature: +$("bsTemp").value,
+                             project_root: $("bsProject").value || null }) })
+      .then(r => r.json());
+    if (r.error) $("bsIdeas").insertAdjacentHTML("afterbegin",
+      `<div class="card"><span class="badge b-stale">failed</span>
+       <span class="desc">${esc(r.error)}</span></div>`);
+    else { bs.filter = "new"; await loadBrainstorm(); }
+  } finally { $("bsGen").disabled = false; $("bsBusy").style.display = "none"; }
+};
+
+async function loadBrainstorm() {
+  const data = await fetch("/api/brainstorm").then(r => r.json()).catch(() => null);
+  if (!data) return;
+  bs.ideas = data.ideas || []; bs.goals = data.goals || []; bs.projects = data.projects || [];
+  const sel = $("bsProject");
+  const keep = sel.value;
+  sel.length = 1;
+  for (const p of bs.projects) {
+    const o = document.createElement("option");
+    o.value = p.root; o.textContent = "related to " + p.name;
+    sel.appendChild(o);
+  }
+  sel.value = keep && [...sel.options].some(o => o.value === keep) ? keep : "";
+  renderGoals(); renderBs();
+}
+
 const initial = (location.hash || "#integrations").slice(1);
-showTab(["integrations", "emergent", "conflicts", "ideas", "plans", "history"]
+showTab(["integrations", "emergent", "conflicts", "ideas", "plans", "history", "brainstorm"]
   .includes(initial) ? initial : "integrations");
-loadFusion(); loadScout();
+loadFusion(); loadScout(); loadBrainstorm();
 </script>
 </body>
 </html>

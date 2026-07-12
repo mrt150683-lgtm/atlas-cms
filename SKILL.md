@@ -187,6 +187,16 @@ the CLI. `--root PATH` targets a project; the API key is read from
   back as do-not-repropose and stay dismissed.**
 - `cms scout list [--ideas]` / `cms scout status <id> <verdict>`.
 
+**Brainstorm (Discovery UI tab)** — temperature-adjusted generation of ten
+single-sentence NEW concepts per batch: unconstrained mode deliberately
+avoids everything the builder already works on (projects, plans, fusion
+items, past batches); project mode grounds the batch in one chosen
+project's card instead. Like/dislike verdicts persist and steer every
+following batch (liked = more such directions, disliked = never again).
+Standing goals (revealed by clicking the Atlas logo 7× inside the tab)
+are injected into every generation. State at `~/.cms/brainstorm/`; real
+provider only; all output is LLM plan material.
+
 **Scope / share**
 - `cms scope show|set <paths…>|clear` — limit which subdirs/files get processed
   (persisted as `.cmsscope.json`); only selected paths are scanned + AI-summarised,

@@ -327,3 +327,58 @@ def test_discovery_page_has_subtabs() -> None:
     assert 'id="ideaChips"' in html          # status filter chips
     assert 'id="cardFilter"' in html         # plan-card text filter
     assert "location.hash" in html           # deep-linkable tabs
+
+
+def test_brainstorm_apis(tmp_path, monkeypatch) -> None:
+    """/api/brainstorm state + rate + goals over HTTP (generate is covered in
+    test_brainstorm; here the transport + error surface)."""
+    import cms.brainstorm as bmod
+    import cms.fuse as fuse
+
+    monkeypatch.setattr(bmod, "BRAINSTORM_DIR", tmp_path / "bs")
+    monkeypatch.setattr(fuse, "REGISTRY_PATH", tmp_path / "reg" / "projects.json")
+
+    bmod._write("ideas.json", {"i1": {
+        "id": "i1", "text": "A test idea.", "status": "new", "batch": "b",
+        "temperature": 1.0, "project": None, "provider": "t", "model": "m",
+        "created_at": "2026-01-01T00:00:00Z", "provenance": "llm"}})
+
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "app.py").write_text(SOURCE, encoding="utf-8")
+    records = scan(root)
+    export_tree(root, records, root / ".memory")
+    export_graph(build_graph(records), root / ".memory")
+    cache = _MemoryCache(root / ".memory" / "graph.json")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(root, cache))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    client = _Client(httpd.server_address[1])
+    try:
+        status, body = client.get("/api/brainstorm")
+        data = json.loads(body)
+        assert status == 200 and data["ideas"][0]["id"] == "i1"
+        assert data["goals"] == [] and isinstance(data["projects"], list)
+
+        status, body = client.post("/api/brainstorm/rate", {"id": "i1", "verdict": "liked"})
+        assert status == 200 and json.loads(body)["idea"]["status"] == "liked"
+        status, _ = client.post("/api/brainstorm/rate", {"id": "i1", "verdict": "meh"})
+        assert status == 400
+
+        status, body = client.post("/api/brainstorm/goals", {"text": "solve big problems"})
+        goals = json.loads(body)["goals"]
+        assert status == 200 and goals[0]["text"] == "solve big problems"
+        status, body = client.post("/api/brainstorm/goals", {"remove": goals[0]["id"]})
+        assert json.loads(body)["goals"] == []
+    finally:
+        httpd.shutdown()
+
+
+def test_brainstorm_tab_markup() -> None:
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "constellation.html"
+            ).read_text(encoding="utf-8")
+    assert 'data-tab="brainstorm"' in html and 'id="p-brainstorm"' in html
+    for el in ("bsTemp", "bsProject", "bsGen", "bsChips", "goalsPanel", "goalInput"):
+        assert f'id="{el}"' in html, f"missing {el}"
+    # the goals panel starts hidden and is revealed by seven logo clicks
+    assert "logoClicks >= 7" in html
+    assert 'id="goalsPanel" class="card" style="display:none' in html
