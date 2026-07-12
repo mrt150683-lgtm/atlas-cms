@@ -68,6 +68,21 @@ class _Client:
                 resp = self.conn.getresponse()
                 return resp.status, resp.read()
 
+    def post(self, path: str, payload: dict):
+        body = json.dumps(payload)
+        headers = {"Content-Type": "application/json"}
+        with self.lock:
+            try:
+                self.conn.request("POST", path, body=body, headers=headers)
+                resp = self.conn.getresponse()
+                return resp.status, resp.read()
+            except Exception:
+                self.conn.close()
+                self._connect(deadline=30)
+                self.conn.request("POST", path, body=body, headers=headers)
+                resp = self.conn.getresponse()
+                return resp.status, resp.read()
+
 
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
@@ -255,3 +270,46 @@ def test_features_section_never_hidden_markup() -> None:
     assert 'id="providerChip"' in html and "meta.root" in html
     # invalid/stale judgment banners exist
     assert "not valid semantic output" in html and "valid but frozen" in html
+
+
+def test_discovery_page_and_apis(tmp_path, monkeypatch) -> None:
+    """/discovery page + /api/fusion + /api/scout + scout status POST."""
+    import cms.fuse as fuse
+    import cms.scout as scout_mod
+
+    monkeypatch.setattr(fuse, "FUSION_DIR", tmp_path / "fusion")
+    monkeypatch.setattr(scout_mod, "SCOUT_DIR", tmp_path / "scout")
+
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "app.py").write_text(SOURCE, encoding="utf-8")
+    records = scan(root)
+    graph = build_graph(records)
+    export_tree(root, records, root / ".memory")
+    export_graph(graph, root / ".memory")
+    cache = _MemoryCache(root / ".memory" / "graph.json")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(root, cache))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    client = _Client(httpd.server_address[1])
+    try:
+        status, body = client.get("/discovery")
+        assert status == 200 and b"Constellation" in body and b"Scout" in body
+
+        status, body = client.get("/api/fusion")
+        assert status == 200 and json.loads(body)["report"] is None
+
+        # seed a scout suggestion, then decide it over HTTP
+        scout_mod._save("suggestions.json", {"abc123": {
+            "id": "abc123", "kind": "concepts", "title": "T", "description": "d",
+            "builds_on": [], "status": "proposed", "provenance": "llm",
+            "first_seen": "x", "last_seen": "x"}})
+        status, body = client.get("/api/scout")
+        assert json.loads(body)["suggestions"][0]["status"] == "proposed"
+
+        status, body = client.post("/api/scout/status",
+                                   {"id": "abc123", "status": "rejected"})
+        assert status == 200 and json.loads(body)["suggestion"]["status"] == "rejected"
+        status, body = client.post("/api/scout/status", {"id": "abc123", "status": "meh"})
+        assert status == 400
+    finally:
+        httpd.shutdown()

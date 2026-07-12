@@ -103,6 +103,27 @@ def make_handler(root: Path, cache: _MemoryCache):
                 elif url.path in ("/setup", "/setup.html"):
                     page = (_ASSETS_DIR / "setup.html").read_bytes()
                     self._send(200, page, "text/html; charset=utf-8")
+                elif url.path in ("/discovery", "/constellation"):
+                    page = (_ASSETS_DIR / "constellation.html").read_bytes()
+                    self._send(200, page, "text/html; charset=utf-8")
+                elif url.path == "/api/fusion":
+                    from .fuse import fusion_history, fusion_staleness, load_fusion
+
+                    report = load_fusion()
+                    if report is None:
+                        self._json({"report": None,
+                                    "reason": "no fusion report yet — run `cms fuse`"})
+                    else:
+                        self._json({"report": report,
+                                    "stale_members": fusion_staleness(report),
+                                    "refinements": fusion_history()})
+                elif url.path == "/api/scout":
+                    from .scout import load_cards, load_suggestions
+
+                    self._json({"cards": sorted(load_cards().values(),
+                                                key=lambda c: c.get("project_dir", "")),
+                                "suggestions": sorted(load_suggestions().values(),
+                                                      key=lambda s: (s["status"], s["kind"]))})
                 elif url.path == "/api/dirtree":
                     self._dirtree()
                 elif url.path == "/api/scope":
@@ -173,6 +194,15 @@ def make_handler(root: Path, cache: _MemoryCache):
                     from .sources import add_ignore_pattern
                     ok = add_ignore_pattern(root, str(body.get("pattern") or ""))
                     self._json({"added": ok, "pattern": str(body.get("pattern") or "")})
+                elif url.path == "/api/scout/status":
+                    from .scout import ScoutError, set_suggestion_status
+
+                    try:
+                        s = set_suggestion_status(str(body.get("id") or ""),
+                                                  str(body.get("status") or ""))
+                        self._json({"updated": True, "suggestion": s})
+                    except ScoutError as exc:
+                        self._json({"updated": False, "error": str(exc)}, 400)
                 else:
                     self._error(404, "not found")
             except BrokenPipeError:

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Atlas · Discovery</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #101114; --panel: #17181c; --line: #26272c; --ink: #d7d9de;
+    --ink-2: #9a9da6; --ink-3: #6b6e78; --accent: #3987e5; --amber: #c98500;
+    --green: #199e70; --red: #e05252; --font: "Segoe UI", system-ui, sans-serif;
+    --mono: "Cascadia Code", Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 13.5px/1.55 var(--font); }
+  header { display: flex; align-items: center; gap: 14px; padding: 10px 20px;
+           border-bottom: 1px solid var(--line); background: var(--panel); }
+  header .mark { font-weight: 700; letter-spacing: .22em; }
+  header .logo { width: 22px; height: 22px; }
+  .lg-peak { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+  .lg-inner { fill: none; stroke: var(--accent); stroke-width: 1.2; opacity: .55; }
+  .lg-star { fill: var(--accent); }
+  header a { color: var(--ink-2); text-decoration: none; font-size: 12.5px;
+             border: 1px solid var(--line); border-radius: 14px; padding: 3px 12px; }
+  header a:hover { color: var(--ink); border-color: var(--accent); }
+  main { max-width: 1060px; margin: 0 auto; padding: 26px 20px 80px; }
+  h1 { font-size: 19px; margin: 4px 0 2px; }
+  .sub { color: var(--ink-3); font-size: 12px; margin-bottom: 22px; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .14em;
+       color: var(--ink-3); margin: 30px 0 10px; }
+  .card { background: var(--panel); border: 1px solid var(--line);
+          border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+  .badge { display: inline-block; font-size: 10.5px; border-radius: 9px;
+           padding: 1px 8px; margin-left: 8px; vertical-align: 1px; }
+  .b-llm { color: var(--amber); border: 1px solid var(--amber); }
+  .b-structural { color: var(--green); border: 1px solid var(--green); }
+  .b-stale { color: var(--red); border: 1px solid var(--red); }
+  .title { font-weight: 600; }
+  .projects { color: var(--accent); font-size: 12px; }
+  .desc { color: var(--ink-2); margin-top: 4px; }
+  .hint { color: #86b6ef; font-size: 12.5px; margin-top: 4px; }
+  .meta { color: var(--ink-3); font-size: 11.5px; margin-top: 6px; font-family: var(--mono); }
+  .empty { color: var(--ink-3); padding: 18px; border: 1px dashed var(--line);
+           border-radius: 10px; }
+  .empty code { color: var(--accent); font-family: var(--mono); }
+  .srow { display: flex; align-items: flex-start; gap: 10px; }
+  .srow .body { flex: 1; }
+  .verdicts button { background: none; border: 1px solid var(--line); color: var(--ink-2);
+           border-radius: 8px; padding: 2px 10px; font: 11.5px var(--font); cursor: pointer; }
+  .verdicts button:hover { border-color: var(--accent); color: var(--ink); }
+  .status-accepted { color: var(--green); }
+  .status-rejected, .status-ignored { color: var(--ink-3); text-decoration: line-through; }
+  .kind { font-size: 10.5px; color: var(--ink-3); text-transform: uppercase;
+          letter-spacing: .1em; }
+  .refine-tip { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+                padding: 12px 16px; color: var(--ink-2); font-size: 12.5px; margin-top: 14px; }
+  .refine-tip code { color: var(--accent); font-family: var(--mono); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <svg class="logo" viewBox="0 0 28 28" aria-hidden="true">
+    <path class="lg-peak" d="M14 4 L25 23 L3 23 Z"/>
+    <path class="lg-inner" d="M14 11.5 L19.5 21 L8.5 21 Z"/>
+    <circle class="lg-star" cx="14" cy="8" r="1.15"/>
+  </svg>
+  <span class="mark">ATLAS</span>
+  <span style="color:var(--ink-3)">· Discovery</span>
+  <span style="flex:1"></span>
+  <a href="/">Map</a>
+  <a href="/setup">Setup</a>
+  <a href="/sentinel">Sentinel</a>
+</header>
+<main>
+  <h1>Discovery — Constellation &amp; Scout</h1>
+  <div class="sub">Cross-project fusion (how your codebases could work together) and the plan-scout idea engine.
+    LLM output is plan material, not ground truth; structural signals are deterministic.</div>
+
+  <h2>Constellation — fusion report</h2>
+  <div id="fusionMeta" class="sub"></div>
+  <div id="fusion"></div>
+  <div class="refine-tip">Refine conversationally from your IDE agent (<code>get_fusion_report</code> →
+    <code>refine_fusion("direction")</code>) or <code>cms fuse --refine "…"</code>.
+    Rebuild from scratch: <code>cms fuse</code>.</div>
+
+  <h2>Scout — ideas from your plan documents</h2>
+  <div id="scoutMeta" class="sub"></div>
+  <div id="ideas"></div>
+
+  <h2>Scout — plan cards</h2>
+  <div id="cards"></div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function itemCard(i, extraBadge) {
+  return `<div class="card">
+    <span class="title">${esc(i.title)}</span>
+    <span class="badge b-${esc(i.provenance || "llm")}">${esc(i.provenance || "llm")}</span>${extraBadge || ""}
+    <span class="projects"> ${esc((i.projects || i.builds_on || []).join(" · "))}</span>
+    <div class="desc">${esc(i.description || "")}</div>
+    ${i.first_step ? `<div class="hint">first step: ${esc(i.first_step)}</div>` : ""}
+    ${i.resolution_hint ? `<div class="hint">resolution: ${esc(i.resolution_hint)}</div>` : ""}
+  </div>`;
+}
+
+async function loadFusion() {
+  const data = await fetch("/api/fusion").then(r => r.json()).catch(() => null);
+  if (!data || !data.report) {
+    $("fusion").innerHTML = `<div class="empty">No fusion report yet — run <code>cms fuse</code>
+      across two or more mapped projects.</div>`;
+    return;
+  }
+  const r = data.report;
+  const stale = data.stale_members || [];
+  $("fusionMeta").textContent =
+    `${Object.keys(r.projects).join(" · ")} — ${r.generated_at} · ${r.provider}` +
+    (r.model ? ` · ${r.model}` : "") +
+    (r.direction ? ` · refined: “${r.direction.slice(0, 70)}…”` : "");
+  let html = "";
+  if (stale.length)
+    html += `<div class="card"><span class="badge b-stale">stale</span>
+      feature sets changed since this report: ${esc(stale.join(", "))} — re-run <code>cms fuse</code>.</div>`;
+  const groups = [["integrations", "Integrations"], ["emergent", "Emergent features"], ["conflicts", "Conflicts"]];
+  for (const [key, label] of groups) {
+    const items = r[key] || [];
+    if (items.length) html += `<div class="kind" style="margin:12px 0 6px">${label} · ${items.length}</div>`
+      + items.map(i => itemCard(i)).join("");
+  }
+  html += `<div class="kind" style="margin:12px 0 6px">Structural overlaps · ${(r.structural_overlaps || []).length}</div>`
+    + (r.structural_overlaps || []).map(o =>
+      `<div class="card"><span class="badge b-structural">structural</span>
+       <span class="projects">${esc((o.projects || []).join(" · "))}</span>
+       <div class="desc">${esc(o.evidence)}</div></div>`).join("");
+  if ((data.refinements || []).length)
+    html += `<div class="kind" style="margin:12px 0 6px">Refinement history</div>` +
+      data.refinements.map(h => `<div class="card meta">${esc(h.generated_at)} — ${esc(h.direction)}</div>`).join("");
+  $("fusion").innerHTML = html;
+}
+
+async function loadScout() {
+  const data = await fetch("/api/scout").then(r => r.json()).catch(() => null);
+  const ideas = (data && data.suggestions) || [];
+  const cards = (data && data.cards) || [];
+  $("scoutMeta").textContent = `${cards.filter(c => c.status === "ok").length} plan card(s) · `
+    + `${ideas.filter(s => s.status === "proposed").length} open idea(s) · rejected/ignored are never re-proposed`;
+  $("ideas").innerHTML = ideas.length ? ideas.map(s => `
+    <div class="card srow" data-sid="${esc(s.id)}">
+      <div class="body">
+        <span class="kind">${esc(s.kind)}</span>
+        <div class="title status-${esc(s.status)}">${esc(s.title)}
+          <span class="badge b-llm">${esc(s.status)}</span></div>
+        <div class="desc">${esc(s.description)}</div>
+        <div class="meta">${esc((s.builds_on || []).join(" · "))}</div>
+      </div>
+      <div class="verdicts">
+        ${["accepted", "rejected", "ignored"].map(v =>
+          `<button data-v="${v}">${v}</button>`).join(" ")}
+      </div>
+    </div>`).join("")
+    : `<div class="empty">No ideas yet — run <code>cms scout scan &lt;dir&gt;</code> then
+       <code>cms scout review</code>.</div>`;
+  document.querySelectorAll(".verdicts button").forEach(b => b.onclick = async () => {
+    const sid = b.closest("[data-sid]").dataset.sid;
+    await fetch("/api/scout/status", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: sid, status: b.dataset.v }) });
+    loadScout();
+  });
+  $("cards").innerHTML = cards.length ? cards.map(c => c.status === "ok" ? `
+    <div class="card">
+      <span class="title">${esc(c.project_dir)}/${esc(c.name)}</span>
+      ${c.atlas_candidate ? '<span class="badge b-structural">atlas candidate</span>' : ""}
+      <div class="desc">${esc(c.one_liner)}</div>
+      <div class="meta">${esc((c.tags || []).join(" · "))}</div>
+    </div>` : `
+    <div class="card"><span class="title status-ignored">${esc(c.project_dir)}/${esc(c.name)}</span>
+      <span class="badge b-stale">card failed — retried next scan</span></div>`).join("")
+    : `<div class="empty">No plan cards yet.</div>`;
+}
+
+loadFusion(); loadScout();
+</script>
+</body>
+</html>
