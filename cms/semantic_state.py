@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
+import uuid
 from pathlib import Path
 
 from . import config
@@ -61,10 +63,26 @@ def record_stage(memory_dir: Path, name: str, **fields) -> dict:
     record["schema_version"] = SCHEMA_VERSION
     stages[name] = record
     memory_dir.mkdir(parents=True, exist_ok=True)
-    tmp = state_path(memory_dir).with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(state, indent=1), encoding="utf-8")
-    tmp.replace(state_path(memory_dir))
+    atomic_write_json(state_path(memory_dir), state)
     return state
+
+
+def atomic_write_json(dest: Path, payload) -> None:
+    """Atomic replace safe under concurrent writers on Windows: a UNIQUE
+    temp name per writer (a shared '.tmp' name lets two threads truncate
+    each other mid-replace), plus a short retry for transient sharing
+    violations (readers/AV holding the destination)."""
+    tmp = dest.with_suffix(f".{uuid.uuid4().hex}.tmp")
+    tmp.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+    for attempt in range(5):
+        try:
+            os.replace(tmp, dest)
+            return
+        except PermissionError:
+            if attempt == 4:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(0.03 * (attempt + 1))
 
 
 def _sha(items) -> str:

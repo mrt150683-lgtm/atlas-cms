@@ -57,10 +57,12 @@ add it to `.gitignore` and regenerate locally with `cms run-all`.
 def export_graph(graph: nx.DiGraph, memory_dir: Path) -> Path:
     memory_dir.mkdir(parents=True, exist_ok=True)
     out = memory_dir / "graph.json"
-    # atomic replace: the UI server may be reading while the watcher writes
-    tmp = memory_dir / "graph.json.tmp"
-    tmp.write_text(json.dumps(graph_to_json(graph), indent=2), encoding="utf-8")
-    tmp.replace(out)
+    # atomic replace: the UI server may be reading while the watcher writes;
+    # unique temp name + retry so CONCURRENT writers can't truncate each
+    # other's temp file mid-replace (Windows PermissionError race)
+    from .semantic_state import atomic_write_json
+
+    atomic_write_json(out, graph_to_json(graph))
     return out
 
 

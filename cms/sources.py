@@ -24,6 +24,12 @@ _HARD_PRUNE = {"node_modules", ".git", ".hg", ".svn", "venv", ".venv", "env",
 _GENERATED_NAMES = {"generated", "__generated__", "vendor", "third_party", "third-party"}
 _LARGE_DATA_BYTES = 200_000
 _DATA_EXTS = {"json", "txt", "csv", "tsv", "xml"}
+# a directory that carries its own project manifest (or repo) is a standalone
+# embedded project — vendored reference code, not part of THIS codebase
+_PROJECT_MANIFESTS = {"package.json", "pyproject.toml", "setup.py", "go.mod",
+                      "Cargo.toml", "pom.xml", "build.gradle", "composer.json",
+                      "Gemfile", "mix.exs"}
+_EMBEDDED_MIN_FILES = 5
 
 
 def _mkspec(lines: list[str]) -> pathspec.PathSpec:
@@ -73,7 +79,30 @@ def _recommend(root: Path, included: list[str]) -> list[dict]:
                         "count": sum(1 for q in included if q.startswith(pat)),
                     })
 
-    # 3) large data files — expensive to summarise, almost always generated
+    # 3) embedded standalone projects — a top-level dir with its own project
+    # manifest or its own .git is a vendored/reference codebase living inside
+    # this repo (e.g. an extracted GitHub zip). Summarising it burns budget on
+    # someone else's code. Evidence: the manifest/repo marker + file count.
+    top_dirs = sorted({p.split("/")[0] for p in included if "/" in p})
+    for top in top_dirs:
+        dpath = root / top
+        markers = [m for m in _PROJECT_MANIFESTS if (dpath / m).is_file()]
+        if (dpath / ".git").exists():
+            markers.append(".git")
+        if not markers:
+            continue
+        count = sum(1 for q in included if q.startswith(top + "/"))
+        if count >= _EMBEDDED_MIN_FILES:
+            recs.append({
+                "pattern": top + "/",
+                "kind": "embedded-project",
+                "reason": f"'{top}/' has its own {' + '.join(sorted(markers))} — a standalone "
+                          f"project embedded in this repo ({count} of its files would be "
+                          "processed). Almost certainly vendored/reference code.",
+                "count": count,
+            })
+
+    # 4) large data files — expensive to summarise, almost always generated
     for p in included:
         if p.rsplit(".", 1)[-1].lower() in _DATA_EXTS:
             try:

@@ -68,3 +68,32 @@ def test_add_ignore_pattern_idempotent(tmp_path: Path):
     (tmp_path / "types" / "a.ts").write_text("export const a = 1;\n", encoding="utf-8")
     from cms.scanner import scan
     assert not any(rec.rel_path.startswith("types/") for rec in scan(tmp_path))
+
+
+def test_embedded_project_directories_are_flagged(tmp_path):
+    """A top-level dir carrying its own project manifest (or .git) is a
+    standalone embedded project — the Stash incident: vendored reference
+    repos made up 89% of a 4,686-file scan."""
+    # the real app
+    (tmp_path / "src").mkdir()
+    for i in range(3):
+        (tmp_path / "src" / f"app{i}.py").write_text("x = 1\n", encoding="utf-8")
+    # an extracted third-party repo with its own manifest
+    vendored = tmp_path / "cooltool-main"
+    vendored.mkdir()
+    (vendored / "package.json").write_text("{}", encoding="utf-8")
+    for i in range(6):
+        (vendored / f"mod{i}.js").write_text("module.exports = 1;\n", encoding="utf-8")
+    # small dir with a manifest but under the file threshold: not flagged
+    tiny = tmp_path / "tinyref"
+    tiny.mkdir()
+    (tiny / "package.json").write_text("{}", encoding="utf-8")
+    (tiny / "a.js").write_text("1;\n", encoding="utf-8")
+
+    recs = analyze_sources(tmp_path)["recommendations"]
+    embedded = [r for r in recs if r["kind"] == "embedded-project"]
+    assert [r["pattern"] for r in embedded] == ["cooltool-main/"]
+    assert embedded[0]["count"] >= 6
+    assert "package.json" in embedded[0]["reason"]
+    # the app itself is never flagged
+    assert not any(r["pattern"] == "src/" for r in recs)
