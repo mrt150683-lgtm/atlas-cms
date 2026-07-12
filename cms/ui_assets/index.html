@@ -1729,7 +1729,9 @@ function renderFeatureList() {
 
   // suggested-to-build: NOT features of the codebase — plans from cms suggest
   const sugg = S.byId.get("suggestions:app");
-  if (sugg && (sugg.items || []).length) {
+  const suggValidity = S.semantic && S.semantic.live && S.semantic.live.suggestions;
+  const suggestionsCurrent = !suggValidity || suggValidity.validity === "valid";
+  if (sugg && (sugg.items || []).length && suggestionsCurrent) {
     html += `<div class="fgroup"><span class="gdot" style="background:transparent;border:1.5px dashed var(--accent);border-radius:50%;transform:none"></span>Suggested to build · ${sugg.items.length}</div>` +
       sugg.items.map((s, i) =>
         `<div class="feat-row srow" data-sug="${i}">
@@ -1739,6 +1741,12 @@ function renderFeatureList() {
            <span class="roi">${s.roi}×</span>
          </div>
          <div class="feat-detail" data-sdetail="${i}"></div>`).join("");
+  } else if (sugg && (sugg.items || []).length) {
+    const state = suggValidity && suggValidity.validity || "invalid";
+    html += `<div class="fgroup"><span class="gdot" style="background:#c98500"></span>` +
+      `Suggestions unavailable · ${esc(state)}</div>` +
+      `<div class="fd-desc" style="padding:5px 10px 10px;color:#c98500">` +
+      `Historical suggestions are hidden until refreshed with <b>cms suggest</b>.</div>`;
   }
   $("featureList").innerHTML = html;
 
@@ -2315,18 +2323,26 @@ function reviewData() {
 
 function openReview() {
   const { app, feats } = reviewData();
+  const live = S.semantic && S.semantic.live;
+  const rv = live && live.review;
+  const reviewCurrent = !rv || rv.validity === "valid";
+  const historicalSnapshot = rv && rv.validity === "stale";
+  const visibleApp = reviewCurrent || historicalSnapshot ? app : null;
+  const visibleFeats = reviewCurrent || historicalSnapshot ? feats : [];
   const order = { drift: 0, partial: 1, unverified: 2, aligned: 3 };
-  feats.sort((a, b) => (order[a.review.verdict] - order[b.review.verdict]) || a.name.localeCompare(b.name));
+  visibleFeats.sort((a, b) => (order[a.review.verdict] - order[b.review.verdict]) || a.name.localeCompare(b.name));
 
-  let head = `<div class="rh-top"><h2>AI Review — built vs expected</h2><span class="rh-close" title="Close">×</span></div>`;
-  if (app) {
-    const counts = app.counts || {};
+  const reviewTitle = historicalSnapshot ? "Historical AI Review — not current" :
+    (!reviewCurrent ? "AI Review unavailable" : "AI Review — built vs expected");
+  let head = `<div class="rh-top"><h2>${reviewTitle}</h2><span class="rh-close" title="Close">×</span></div>`;
+  if (visibleApp) {
+    const counts = visibleApp.counts || {};
     head = `<div class="rh-top">
-        <span class="verdict ${esc(app.verdict)}">${esc(app.verdict)}</span>
-        <h2>AI Review — built vs expected</h2>
+        <span class="verdict ${esc(visibleApp.verdict)}">${esc(visibleApp.verdict)}</span>
+        <h2>${reviewTitle}</h2>
         <span class="rh-close" title="Close">×</span></div>
-      <div class="rh-line">${esc(app.headline || "")}</div>
-      <div class="rh-sum">${esc(app.summary || "")}</div>
+      <div class="rh-line">${esc(visibleApp.headline || "")}</div>
+      <div class="rh-sum">${esc(visibleApp.summary || "")}</div>
       <div class="rh-counts">` +
       ["aligned", "partial", "drift", "unverified"]
         .filter(v => counts[v])
@@ -2338,8 +2354,6 @@ function openReview() {
   // validity banner: an empty or pre-discovery review must never present
   // itself as a meaningful real-provider result
   let banner = "";
-  const live = S.semantic && S.semantic.live;
-  const rv = live && live.review;
   const rstage = (S.semantic && S.semantic.stages && S.semantic.stages.review) || {};
   if (rv && rv.validity !== "valid") {
     const msgs = {
@@ -2356,7 +2370,7 @@ function openReview() {
              `</div>`;
   }
 
-  $("reviewBody").innerHTML = banner + (feats.length ? feats.map(f => {
+  $("reviewBody").innerHTML = banner + (visibleFeats.length ? visibleFeats.map(f => {
     const r = f.review;
     return `<div class="rv-row" data-rv="${esc(f.name)}">
       <div class="rv-line">
@@ -2386,7 +2400,7 @@ function openReview() {
         : `not valid semantic output (${esc(sv.reason || "")}).`}</div>`);
   }
   const sugg = S.byId.get("suggestions:app");
-  if (sugg && (sugg.items || []).length) {
+  if (sugg && (sugg.items || []).length && (!sv || sv.validity === "valid")) {
     $("reviewBody").insertAdjacentHTML("beforeend",
       `<div style="padding:16px 22px 6px;border-top:1px solid var(--border-strong)">
          <h3 style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.14em;color:var(--ink-3)">
@@ -2406,6 +2420,10 @@ function openReview() {
             <p>value ${s.value}/5 · effort ${s.effort}/5${(s.builds_on || []).length ? " · builds on " + s.builds_on.map(esc).join(", ") : ""}</p>
           </div>
         </div>`).join(""));
+  } else if (sugg && (sugg.items || []).length) {
+    $("reviewBody").insertAdjacentHTML("beforeend",
+      `<div style="padding:14px 22px;color:#c98500;border-top:1px solid var(--border-strong)">` +
+      `Historical suggestions are hidden until refreshed; they are not current advice.</div>`);
   }
 
   $("reviewOverlay").classList.add("open");

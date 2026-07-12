@@ -580,6 +580,7 @@ def make_handler(root: Path, cache: _MemoryCache):
             if memory is not None:
                 payload["counts"] = sstate.feature_counts(memory.graph)
                 payload["live"] = sstate.derive_staleness(state, memory.graph)
+                payload["pipeline"] = sstate.live_pipeline_status(state, memory.graph)
             self._json(payload)
 
         def _query(self, query: dict) -> None:

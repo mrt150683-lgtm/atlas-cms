@@ -232,6 +232,10 @@ def test_stale_valid_judgment_is_frozen_not_rebuilt(tmp_path: Path) -> None:
     assert ensure_judgment(root, p2, echo=lambda *a: None)["review"] is False
     assert p2.review_calls == 0
     assert ss.judgment_validity(state, g, "review:app", "review")[0] == "stale"
+    live_pipe = ss.live_pipeline_status(state, g)
+    assert live_pipe["status"] == "in_progress"
+    assert set(live_pipe["remaining"]) == {"review", "suggestions"}
+    assert "explicit refresh" in live_pipe["reason"]
 
 
 def test_concurrent_updates_charge_discovery_once(tmp_path: Path) -> None:
@@ -330,8 +334,10 @@ def test_pipeline_status_contract(tmp_path: Path) -> None:
     assert set(pipe["remaining"]) == {"review", "suggestions"}
 
     ensure_judgment(root, p, echo=lambda *a: None)
-    pipe = ss.pipeline_status(ss.load_state(root / ".memory"))
+    state = ss.load_state(root / ".memory")
+    pipe = ss.pipeline_status(state)
     assert pipe == {"status": "finished", "remaining": []}
+    assert ss.live_pipeline_status(state, _graph(root)) == pipe
 
     # a failed stage -> attention, with the failure named
     ss.record_stage(root / ".memory", "features", status="failed", error="x")

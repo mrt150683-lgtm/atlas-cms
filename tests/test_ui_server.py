@@ -270,6 +270,8 @@ def test_features_section_never_hidden_markup() -> None:
     assert 'id="providerChip"' in html and "meta.root" in html
     # invalid/stale judgment banners exist
     assert "not valid semantic output" in html and "valid but frozen" in html
+    assert "Historical AI Review — not current" in html
+    assert "Historical suggestions are hidden until refreshed" in html
     # feature inspection exposes coverage evidence without overstating it
     assert "Test execution evidence" in html
     assert "Coverage shows which tests executed" in html

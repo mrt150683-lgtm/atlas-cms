@@ -212,3 +212,26 @@ def derive_staleness(state: dict, graph) -> dict:
         out[name] = {"validity": verdict, "reason": reason,
                      "current_feature_set_hash": cur_fsh}
     return out
+
+
+def live_pipeline_status(state: dict, graph) -> dict:
+    """Combine durable completion with the currency of judgment artifacts.
+
+    Stale paid judgments remain frozen for inspection, but Atlas must not call
+    the overall pipeline finished while they require an explicit refresh.
+    """
+    status = pipeline_status(state)
+    if status["status"] != "finished":
+        return status
+    live = derive_staleness(state, graph)
+    remaining = [
+        name for name in ("review", "suggestions")
+        if live[name]["validity"] != "valid"
+    ]
+    if remaining:
+        return {
+            "status": "in_progress",
+            "remaining": remaining,
+            "reason": "judgment artifacts require an explicit refresh",
+        }
+    return status
