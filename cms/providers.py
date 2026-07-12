@@ -35,7 +35,9 @@ class AnthropicProvider:
     def summarize(self, prompt: str, context: dict) -> str:
         response = self._client.messages.create(
             model=self.model,
-            max_tokens=config.MAX_TOKENS,
+            # callers with structured output (e.g. feature discovery over a
+            # large repo) can raise the ceiling so JSON doesn't truncate
+            max_tokens=int(context.get("max_tokens") or config.MAX_TOKENS),
             messages=[{"role": "user", "content": prompt}],
         )
         return "".join(b.text for b in response.content if b.type == "text").strip()
@@ -55,7 +57,7 @@ class OpenAICompatProvider:
         payload = json.dumps(
             {
                 "model": self.model,
-                "max_tokens": config.MAX_TOKENS,
+                "max_tokens": int(context.get("max_tokens") or config.MAX_TOKENS),
                 "messages": [{"role": "user", "content": prompt}],
             }
         ).encode("utf-8")

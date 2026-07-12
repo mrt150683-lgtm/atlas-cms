@@ -294,3 +294,26 @@ def test_mock_never_creates_completion_markers(tmp_path: Path) -> None:
     incremental_update(root, p, echo=lambda *a: None)
     incremental_update(root, MockProvider(), echo=lambda *a: None)
     assert ss.stage(ss.load_state(root / ".memory"), "features")["status"] == "complete"
+
+
+def test_failed_discovery_retries_after_cooldown(tmp_path: Path) -> None:
+    """A transient provider failure must self-heal: same input retries after
+    the cooldown window, but never hammers in quick succession."""
+    root = _project(tmp_path)
+    incremental_update(root, SemanticProvider(discovery=RuntimeError("blip")),
+                       echo=lambda *a: None)
+    assert ss.stage(ss.load_state(root / ".memory"), "features")["status"] == "failed"
+
+    # fresh failure, unchanged input: no retry (no hammering)
+    p2 = SemanticProvider()
+    incremental_update(root, p2, echo=lambda *a: None)
+    assert p2.discovery_calls == 0
+
+    # age the failure past the cooldown -> next build retries and succeeds
+    mem_dir = root / ".memory"
+    rec = ss.stage(ss.load_state(mem_dir), "features")
+    ss.record_stage(mem_dir, "features", **{**rec, "generated_at": "2020-01-01T00:00:00Z"})
+    p3 = SemanticProvider()
+    incremental_update(root, p3, echo=lambda *a: None)
+    assert p3.discovery_calls == 1
+    assert ss.stage(ss.load_state(mem_dir), "features")["status"] == "complete"

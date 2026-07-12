@@ -216,6 +216,21 @@ def incremental_update(
 
 
 _discovery_lock = threading.Lock()
+DISCOVERY_RETRY_COOLDOWN_S = 600  # failed discovery retries after 10 minutes
+
+
+def _older_than(iso_ts, seconds: float) -> bool:
+    if not iso_ts:
+        return True
+    try:
+        # timegm, not mktime: the timestamp is UTC; mktime assumes local time
+        # and mis-ages records by the DST offset (found the hard way)
+        import calendar
+
+        then = calendar.timegm(time.strptime(str(iso_ts), "%Y-%m-%dT%H:%M:%SZ"))
+        return (time.time() - then) > seconds
+    except (ValueError, OverflowError):
+        return True
 
 
 def _features_from_state(rec: dict, extras: list, graph) -> list:
@@ -269,8 +284,12 @@ def _run_discovery(memory_dir: Path, graph, provider, extras: list,
         state = ss.load_state(memory_dir)
         rec = ss.stage(state, "features")
         rerun = force or rec.get("status") in ("never_run", "skipped")
-        if rec.get("status") == "failed" and rec.get("input_hash") != input_hash:
-            rerun = True  # retry a recorded failure once something changed
+        if rec.get("status") == "failed":
+            if rec.get("input_hash") != input_hash:
+                rerun = True  # retry a recorded failure once something changed
+            elif _older_than(rec.get("generated_at"), DISCOVERY_RETRY_COOLDOWN_S):
+                rerun = True  # transient provider failures self-heal on the
+                # next build after a cooldown (no hammering in quick succession)
         if rec.get("status") == "complete" and rec.get("input_hash") == input_hash:
             rerun = False  # positively recorded success over identical input: never re-charge
         if not rerun:

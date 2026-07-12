@@ -109,7 +109,9 @@ def discover_features_llm(
         max_new=max_new, file_lines="\n".join(file_lines), known=known_desc
     )
     try:
-        raw = provider.summarize(prompt, {})
+        # discovery emits a JSON array for up to max_new features over the
+        # whole repo — give it headroom so the JSON never truncates mid-array
+        raw = provider.summarize(prompt, {"max_tokens": 3000})
     except Exception as exc:
         raise DiscoveryError(f"provider call failed: {type(exc).__name__}: {exc}") from exc
     match = re.search(r"\[[\s\S]*\]", raw)
