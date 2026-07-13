@@ -21,6 +21,8 @@ only; failures raise, they are never converted into confident prose.
 from __future__ import annotations
 
 import json
+import re
+import shlex
 import time
 from pathlib import Path
 
@@ -32,6 +34,9 @@ from .providers import SummaryProvider
 CHAT_MAX_TOKENS = 1600
 HISTORY_TURNS = 6
 TRANSCRIPT = "chat.jsonl"
+_CMS_COMMAND_RE = re.compile(
+    r"(?m)(?:`(?P<inline>cms\s+[^`\r\n]+)`|^[ \t]*(?:[$>]\s*)?(?P<line>cms\s+[^\r\n]+)$)"
+)
 
 CHAT_PROMPT = """You are Atlas, the memory layer of the codebase "{project}", talking to its OWNER.
 Answer their question in SIMPLE, plain language — short sentences, no jargon walls, explain like a sharp colleague, not a compiler. Max ~300 words.
@@ -41,7 +46,11 @@ Hard rules:
 - If the question is about whether something does what it's SUPPOSED to do: compare its DECLARED intent (description / review "expected") against what is BUILT (members, flows, review "built", gaps). State clearly where they match and where they don't.
 - If the declared intent is missing or too thin to judge, say what the thing ACTUALLY does and ASK the owner what they expect it to do — do not guess their intent.
 - If the evidence is insufficient, say exactly what to run (e.g. `cms review`, `cms update`) instead of padding.
+- Only recommend commands present in the LIVE CLI CONTRACT below. Do not invent flags or positional arguments.
 - Honest verdicts only: reviews/summaries below are AI-generated evidence, not gospel — say so when leaning on them.
+
+LIVE CLI CONTRACT:
+{cli_contract}
 
 {history_block}EVIDENCE PACK:
 {evidence}
@@ -52,6 +61,80 @@ OWNER'S QUESTION: {question}
 
 class ChatError(RuntimeError):
     """Real-provider chat failed; never replaced by confident guesswork."""
+
+
+def _cli_surface():
+    """Return Click's live command tree without invoking a command callback."""
+    import typer
+
+    from .cli import app
+
+    return typer.main.get_command(app)
+
+
+def cli_contract() -> str:
+    """Compact, live syntax guide injected into Ask Atlas prompts."""
+    root = _cli_surface()
+    lines = []
+    for name, command in sorted(root.commands.items()):
+        try:
+            ctx = command.make_context(name, [], resilient_parsing=True)
+            usage = command.get_usage(ctx).replace("Usage: ", "").strip()
+        except Exception:
+            usage = f"{name} --help"
+        lines.append(f"cms {usage}")
+    return "\n".join(lines)
+
+
+def _command_error(command_text: str) -> str | None:
+    """Validate one generated ``cms ...`` command against the live Click tree."""
+    try:
+        tokens = shlex.split(command_text, posix=True)
+    except ValueError as exc:
+        return str(exc)
+    if len(tokens) < 2 or tokens[0].lower() != "cms":
+        return "not a cms command"
+    current = _cli_surface()
+    args = tokens[1:]
+    try:
+        while hasattr(current, "commands"):
+            if not args:
+                current.make_context(current.name or "cms", [], resilient_parsing=False)
+                return None
+            if args[0].startswith("-"):
+                current.make_context(current.name or "cms", args, resilient_parsing=False)
+                return None
+            name = args.pop(0)
+            child = current.commands.get(name)
+            if child is None:
+                return f"unknown command '{name}'"
+            current = child
+        current.make_context(current.name or tokens[1], args, resilient_parsing=False)
+    except SystemExit as exc:
+        return None if exc.code == 0 else f"command parser exited {exc.code}"
+    except Exception as exc:
+        if getattr(exc, "exit_code", None) == 0:
+            return None
+        return str(exc)
+    return None
+
+
+def validate_answer_commands(answer: str) -> tuple[str, list[dict]]:
+    """Block invalid generated commands before they reach UI, MCP, or transcript."""
+    invalid = []
+
+    def replace(match: re.Match) -> str:
+        command = (match.group("inline") or match.group("line")).strip()
+        error = _command_error(command)
+        if error is None:
+            return match.group(0)
+        invalid.append({"command": command, "error": error})
+        parts = shlex.split(command, posix=True)
+        help_command = f"cms {parts[1]} --help" if len(parts) > 1 and not error.startswith("unknown command") else "cms --help"
+        return (f"Atlas blocked an invalid generated command (`{command}`: {error}). "
+                f"Use `{help_command}` for the live syntax.")
+
+    return _CMS_COMMAND_RE.sub(replace, answer), invalid
 
 
 def _trim(text, n=400):
@@ -153,7 +236,8 @@ def ask(root: Path, question: str, provider: SummaryProvider,
     evidence, nodes = build_evidence(root, question)
     prompt = CHAT_PROMPT.format(
         project=root.name, history_block=_history_block(history),
-        evidence=json.dumps(evidence, indent=1)[:14000], question=question[:600],
+        cli_contract=cli_contract(), evidence=json.dumps(evidence, indent=1)[:14000],
+        question=question[:600],
     )
     try:
         answer = provider.summarize(prompt, {"max_tokens": CHAT_MAX_TOKENS})
@@ -161,14 +245,16 @@ def ask(root: Path, question: str, provider: SummaryProvider,
         raise ChatError(f"provider call failed: {type(exc).__name__}: {exc}") from exc
     if not answer.strip():
         raise ChatError("provider returned an empty answer")
+    answer, invalid_commands = validate_answer_commands(answer.strip())
 
     entry = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "session": session or "default",
-        "q": question, "a": answer.strip(),
+        "q": question, "a": answer,
         "provider": provider.name, "model": getattr(provider, "model", None),
         "evidence_nodes": nodes[:20],
         "matched_features": [m["feature"] for m in evidence["matched_features"]],
+        "command_validation": {"checked": True, "blocked": invalid_commands},
     }
     try:
         path = root / config.MEMORY_DIR_NAME / TRANSCRIPT

@@ -6,7 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from cms.chat import ChatError, ask, build_evidence, load_transcript
+from cms.chat import (ChatError, ask, build_evidence, load_transcript,
+                      validate_answer_commands)
 from cms.providers import MockProvider
 from cms.update import incremental_update
 
@@ -71,6 +72,7 @@ def test_ask_grounds_prompt_and_appends_transcript(tmp_path):
     prompt = p.prompts[-1]
     # intent-vs-reality contract present in the instruction
     assert "SUPPOSED to do" in prompt and "ASK the owner" in prompt
+    assert "LIVE CLI CONTRACT" in prompt and "cms review" in prompt
     assert '"Constellation"' in prompt        # matched feature in evidence
     assert entry["matched_features"] == ["Constellation"]
     assert entry["a"].startswith("Constellation matches")
@@ -83,6 +85,29 @@ def test_ask_grounds_prompt_and_appends_transcript(tmp_path):
     assert "RECENT CONVERSATION" in p2.prompts[-1]
     assert "Is Constellation doing" in p2.prompts[-1]
     assert len(load_transcript(root)) == 2
+
+
+def test_generated_cli_commands_are_checked_against_live_surface(tmp_path):
+    valid, findings = validate_answer_commands("Run `cms review Constellation` next.")
+    assert valid == "Run `cms review Constellation` next."
+    assert findings == []
+    assert validate_answer_commands("Run `cms sentinel run --help`.")[1] == []
+    assert validate_answer_commands("Run `cms --help`.")[1] == []
+
+    invalid, findings = validate_answer_commands(
+        "Run `cms review --feature Constellation` next."
+    )
+    assert "blocked an invalid generated command" in invalid
+    assert "cms review --help" in invalid
+    assert findings[0]["command"] == "cms review --feature Constellation"
+
+    root = _project(tmp_path)
+    entry = ask(root, "how do I review it?", ChatProvider(
+        "Run `cms review --feature Constellation` next."
+    ))
+    assert entry["command_validation"]["checked"] is True
+    assert len(entry["command_validation"]["blocked"]) == 1
+    assert "--feature" not in entry["a"].split("Use `", 1)[-1]
 
 
 def test_honesty_guards(tmp_path):
