@@ -282,6 +282,17 @@ def test_feature_evidence_map_has_bounded_deterministic_overview() -> None:
     assert "focus reveals all incident evidence" in html
     assert "if (S.featMode) return" in html
     assert "now - lastDraw >= 100" in html
+
+
+def test_primary_ui_exposes_actionable_trust_loop() -> None:
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+
+    assert 'id="trustLoop" aria-label="Atlas trust loop"' in html
+    for stage in ("query", "trace", "impact", "verify", "align"):
+        assert f'data-stage="{stage}"' in html
+    assert "function showTrustStage(stage)" in html
+    assert 'href="/discovery"' in html  # strategic discovery remains separate
     assert "chat unavailable" in html
     # invalid/stale judgment banners exist
     assert "not valid semantic output" in html and "valid but frozen" in html

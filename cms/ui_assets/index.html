@@ -35,9 +35,9 @@
 
   #app {
     display: grid; height: 100vh;
-    grid-template-rows: 52px 1fr;
+    grid-template-rows: 52px 38px 1fr;
     grid-template-columns: 248px 1fr 372px;
-    grid-template-areas: "top top top" "tree canvas inspect";
+    grid-template-areas: "top top top" "loop loop loop" "tree canvas inspect";
   }
 
   /* ── Top bar ─────────────────────────────────────────── */
@@ -64,6 +64,18 @@
   #sentinelLink:hover { color: #c98500; border-color: rgba(201,133,0,0.5); }
   #setupLink:hover { color: var(--accent); border-color: rgba(57,135,229,0.5); }
   #discoveryLink:hover { color: #199e70; border-color: rgba(25,158,112,0.5); }
+
+  #trustLoop {
+    grid-area: loop; display: flex; align-items: center; justify-content: center;
+    gap: 0; border-bottom: 1px solid var(--border); background: var(--surface-2);
+    overflow-x: auto; padding: 0 16px;
+  }
+  #trustLoop .loop-label { color: var(--ink-3); font: 10px var(--mono); letter-spacing: .12em;
+    text-transform: uppercase; margin-right: 14px; white-space: nowrap; }
+  #trustLoop button { color: var(--ink-2); background: none; border: 0; cursor: pointer;
+    font: 11.5px var(--font); padding: 7px 10px; white-space: nowrap; }
+  #trustLoop button:hover, #trustLoop button.on { color: var(--accent); }
+  #trustLoop .arrow { color: #52514e; font-size: 11px; }
 
   /* fast project switcher */
   #projectSwitch { position: relative; }
@@ -732,6 +744,15 @@
       <div id="results"></div>
     </div>
   </header>
+
+  <nav id="trustLoop" aria-label="Atlas trust loop">
+    <span class="loop-label">Trust loop</span>
+    <button data-stage="query" title="Ground a question in mapped code evidence">1 Query</button><span class="arrow">→</span>
+    <button data-stage="trace" title="Trace a feature through its members and relationships">2 Trace</button><span class="arrow">→</span>
+    <button data-stage="impact" title="Inspect the blast radius before changing code">3 Impact</button><span class="arrow">→</span>
+    <button data-stage="verify" title="Map executing tests to the affected feature">4 Verify</button><span class="arrow">→</span>
+    <button data-stage="align" title="Compare the completed change with declared intent">5 Align</button>
+  </nav>
 
   <nav id="tree">
     <div id="featuresWrap">
@@ -2062,6 +2083,29 @@ function renderInspectorPlaceholder() {
   $("inspector").innerHTML = `<div class="placeholder">Select a file in the graph or the explorer.</div>`;
 }
 
+function showTrustStage(stage) {
+  document.querySelectorAll("#trustLoop button").forEach(b =>
+    b.classList.toggle("on", b.dataset.stage === stage));
+  if (stage === "query") {
+    $("searchInput").focus();
+    $("searchInput").placeholder = "Query the mapped codebase evidence…";
+    return;
+  }
+  if (stage === "trace") {
+    if (!S.featMode) setFeatMode(true);
+    $("inspector").innerHTML = `<div class="i-kind">Trust loop · Trace</div><div class="i-name">Follow a feature end to end</div><div class="summary">Select a feature node to see its declared intent, members, connections, and mapped test evidence.</div>`;
+    return;
+  }
+  const selected = S.selected || null;
+  const selectedFeature = selected && selected.startsWith("feature:") ? selected.slice(8) : null;
+  const details = {
+    impact: ["Impact", "Check the blast radius before editing", selected ? `cms impact "${selected}"` : "Select a file or feature, then run cms impact <target>"],
+    verify: ["Verify", "Collect execution evidence after the change", selectedFeature ? `cms verify "${selectedFeature}" --refresh` : "cms verify --refresh"],
+    align: ["Align", "Compare the final diff with declared intent", "cms align run"],
+  }[stage];
+  $("inspector").innerHTML = `<div class="i-kind">Trust loop · ${details[0]}</div><div class="i-name">${details[1]}</div><div class="summary">Next evidence action:<br><br><code>${esc(details[2])}</code></div>`;
+}
+
 function mdLite(text) {
   return esc(text)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
@@ -2573,6 +2617,9 @@ $("btnExt").onclick = () => {
   $("btnExt").classList.toggle("on", S.showExt);
   buildGraphView();
 };
+document.querySelectorAll("#trustLoop button").forEach(button => {
+  button.onclick = () => showTrustStage(button.dataset.stage);
+});
 function zoomBy(f) {
   const k2 = Math.min(Math.max(S.view.k * f, 0.15), 4);
   const cx = W / 2, cy = H / 2;
