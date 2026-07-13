@@ -444,12 +444,13 @@ class MCPServer:
     # @memory:feature:CodebaseChat
     # @memory:summary:ask_codebase over MCP — external agents get the same grounded plain-language Q&A as the UI popup, including intent-vs-reality judgment.
     def ask_codebase(self, question: str) -> dict:
-        from .chat import ChatError, ask, load_transcript
+        from .chat import ChatError, ask, session_history
         from .providers import get_provider
 
         try:
             entry = ask(self.root, question, get_provider(None),
-                        history=load_transcript(self.root, limit=HISTORY_FOR_MCP))
+                        history=session_history(self.root, "agent", HISTORY_FOR_MCP),
+                        session="agent")
         except ChatError as exc:
             return {"error": str(exc)}
         return {"answer": entry["a"], "evidence_nodes": entry["evidence_nodes"],

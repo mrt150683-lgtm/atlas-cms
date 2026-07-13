@@ -121,3 +121,23 @@ def test_ask_codebase_over_mcp(tmp_path, monkeypatch):
     resp = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                           "params": {"name": "ask_codebase", "arguments": {"question": "x"}}})
     assert "real provider" in json.loads(resp["result"]["content"][0]["text"])["error"]
+
+
+def test_sessions_isolate_history_and_list_logically(tmp_path):
+    root = _project(tmp_path)
+    from cms.chat import list_sessions, session_history
+
+    ask(root, "first question about fusion", ChatProvider("A1"), session="s-one")
+    ask(root, "follow up", ChatProvider("A2"), session="s-one")
+    ask(root, "unrelated new topic", ChatProvider("B1"), session="s-two")
+
+    # continuity is per-session: s-two must NOT see s-one's turns
+    assert [t["q"] for t in session_history(root, "s-one")] == \
+        ["first question about fusion", "follow up"]
+    assert [t["q"] for t in session_history(root, "s-two")] == ["unrelated new topic"]
+
+    sessions = list_sessions(root)
+    assert [s["id"] for s in sessions] == ["s-two", "s-one"]  # newest first
+    named = {s["id"]: s for s in sessions}
+    assert named["s-one"]["name"] == "first question about fusion"  # logical name
+    assert named["s-one"]["turns"] == 2

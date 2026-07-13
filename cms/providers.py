@@ -121,6 +121,18 @@ class MockProvider:
         return "\n".join(lines)
 
 
+def provider_identity(name: str | None = None) -> dict:
+    """Which provider WOULD be used — name/model/real — resolved from config
+    and env only. Never imports provider SDKs (a cold `import anthropic` can
+    take minutes under AV/disk load), so status endpoints stay instant."""
+    name = (name or os.environ.get(config.ENV_PROVIDER) or "").lower()
+    if not name:
+        name = "anthropic" if os.environ.get("ANTHROPIC_API_KEY") else "mock"
+    model = {"anthropic": config.ANTHROPIC_MODEL,
+             "openai": config.OPENAI_MODEL}.get(name)
+    return {"name": name, "model": model, "real": name != "mock"}
+
+
 def get_provider(name: str | None = None) -> SummaryProvider:
     """Resolve a provider by explicit name, env var, or availability fallback."""
     name = name or os.environ.get(config.ENV_PROVIDER)

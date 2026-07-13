@@ -569,7 +569,7 @@ def make_handler(root: Path, cache: _MemoryCache):
             plus live staleness/validity, so the frontend never reconstructs
             semantic completion from node existence. No secrets."""
             from . import semantic_state as sstate
-            from .providers import get_provider
+            from .providers import provider_identity
 
             state = sstate.load_state(memory_dir)
             payload = {
@@ -582,10 +582,7 @@ def make_handler(root: Path, cache: _MemoryCache):
                 "build_message": build_state.get("message", ""),
             }
             try:
-                prov = get_provider(None)
-                payload["provider"] = {"name": prov.name,
-                                       "model": getattr(prov, "model", None),
-                                       "real": prov.name != "mock"}
+                payload["provider"] = provider_identity(None)
             except Exception:
                 payload["provider"] = {"name": "unavailable", "model": None, "real": False}
             memory = cache.get()

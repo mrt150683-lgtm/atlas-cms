@@ -138,7 +138,7 @@ def _history_block(history) -> str:
 
 
 def ask(root: Path, question: str, provider: SummaryProvider,
-        history: list[dict] | None = None) -> dict:
+        history: list[dict] | None = None, session: str | None = None) -> dict:
     """Answer one question; returns {answer, evidence_nodes, …} and appends
     to the project transcript. Raises ChatError on mock/failure."""
     question = (question or "").strip()
@@ -164,6 +164,7 @@ def ask(root: Path, question: str, provider: SummaryProvider,
 
     entry = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "session": session or "default",
         "q": question, "a": answer.strip(),
         "provider": provider.name, "model": getattr(provider, "model", None),
         "evidence_nodes": nodes[:20],
@@ -176,6 +177,30 @@ def ask(root: Path, question: str, provider: SummaryProvider,
     except OSError:
         pass  # the transcript is convenience, never load-bearing
     return entry
+
+
+def session_history(root: Path, session: str, limit: int = 6) -> list[dict]:
+    """Continuity comes from the SAME session only — a fresh chat starts clean."""
+    return [t for t in load_transcript(root, limit=400)
+            if t.get("session") == session][-limit:]
+
+
+def list_sessions(root: Path) -> list[dict]:
+    """History index, newest first: id, name (first question), when, turns."""
+    groups: dict[str, dict] = {}
+    for seq, t in enumerate(load_transcript(root, limit=400)):
+        sid = t.get("session") or "default"
+        g = groups.setdefault(sid, {"id": sid, "turns": 0,
+                                    "name": _trim(t.get("q"), 70),
+                                    "started": t.get("ts")})
+        g["turns"] += 1
+        g["last"] = t.get("ts")
+        g["_seq"] = seq  # tiebreak: ts has 1s resolution
+    out = sorted(groups.values(),
+                 key=lambda g: (g.get("last") or "", g["_seq"]), reverse=True)
+    for g in out:
+        g.pop("_seq", None)
+    return out
 
 
 def load_transcript(root: Path, limit: int = 20) -> list[dict]:

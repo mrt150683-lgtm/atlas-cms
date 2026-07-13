@@ -824,12 +824,20 @@
       <circle cx="14" cy="8" r="1.15" fill="var(--accent)"/>
     </svg>
     <b>Ask Atlas</b><span id="chatProject" style="color:var(--ink-3)"></span>
+    <span class="spacer"></span>
+    <button class="hbtn" id="chatNew" title="Start a fresh conversation">+ New chat</button>
+    <button class="hbtn" id="chatHistBtn" title="Past conversations">History</button>
     <button class="x" title="Close">×</button>
   </div>
-  <div id="chatMsgs"></div>
-  <div id="chatInputRow">
-    <textarea id="chatInput" placeholder="e.g. Is the Constellation feature fully aligned with the core idea behind it?"></textarea>
-    <button id="chatSend">Ask</button>
+  <div id="chatBody">
+    <div id="chatHistory"></div>
+    <div id="chatMain">
+      <div id="chatMsgs"></div>
+      <div id="chatInputRow">
+        <textarea id="chatInput" placeholder="e.g. Is the Constellation feature fully aligned with the core idea behind it?"></textarea>
+        <button id="chatSend">Ask</button>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -892,36 +900,81 @@ function chatMsg(cls, text, feats) {
   return el;
 }
 
-async function initChat() {
-  $("chatProject").textContent = " · " + ((S.meta && S.meta.project) || "");
+/* every popup open starts FRESH; past conversations live in History */
+const chat = { session: crypto.randomUUID().slice(0, 12), viewing: null };
+
+function freshChat() {
+  chat.session = crypto.randomUUID().slice(0, 12);
+  chat.viewing = null;
+  $("chatMsgs").innerHTML = "";
+  chatMsg("hello", "Fresh chat — ask about flows, features, connections, or " +
+    "whether something does what it's supposed to. Answers are grounded in " +
+    "the memory layer with the evidence named.");
+  document.querySelectorAll("#chatHistory .hs-row").forEach(r => r.classList.remove("on"));
+  $("chatInput").focus();
+}
+
+function sessionName(s) {
+  return (s.name || "untitled") + "";
+}
+
+async function loadHistory() {
   const data = await fetch("/api/chat").then(r => r.json()).catch(() => null);
-  for (const t of (data && data.transcript || []).slice(-6)) {
-    chatMsg("me", t.q);
-    chatMsg("atlas", t.a, t.matched_features);
-  }
-  if (!$("chatMsgs").children.length)
-    chatMsg("atlas", "Ask me anything about this codebase — flows, features, " +
-      "connections, or whether something actually does what it's supposed to do. " +
-      "Every answer is grounded in the memory layer, with the evidence named.");
+  const sessions = (data && data.sessions) || [];
+  $("chatHistory").innerHTML = `<div class="hs-title">Past conversations</div>` +
+    (sessions.length ? sessions.map(s => `
+      <div class="hs-row ${s.id === chat.viewing ? "on" : ""}" data-sid="${esc(s.id)}">
+        <div class="hs-name">${esc(sessionName(s))}</div>
+        <div class="hs-meta">${esc((s.last || "").slice(0, 10))} · ${s.turns} turn${s.turns === 1 ? "" : "s"}</div>
+      </div>`).join("")
+      : `<div class="hs-empty">No past conversations yet.</div>`);
+  document.querySelectorAll("#chatHistory .hs-row").forEach(row => row.onclick = async () => {
+    const sid = row.dataset.sid;
+    const d = await fetch("/api/chat?session=" + encodeURIComponent(sid))
+      .then(r => r.json()).catch(() => null);
+    chat.session = sid;      // continuing this conversation
+    chat.viewing = sid;
+    $("chatMsgs").innerHTML = "";
+    for (const t of (d && d.transcript) || []) {
+      chatMsg("me", t.q);
+      chatMsg("atlas", t.a, t.matched_features);
+    }
+    document.querySelectorAll("#chatHistory .hs-row").forEach(r =>
+      r.classList.toggle("on", r.dataset.sid === sid));
+  });
+}
+
+function initChat() {
+  $("chatProject").textContent = " · " + ((S.meta && S.meta.project) || "");
+  freshChat();
 }
 
 $("chatFab").onclick = () => {
+  const opening = !$("chatBox").classList.contains("open");
   $("chatBox").classList.toggle("open");
-  if ($("chatBox").classList.contains("open")) $("chatInput").focus();
+  if (opening) freshChat();          // ALWAYS opens ready for a new question
 };
 document.querySelector("#chatHead .x").onclick = () => $("chatBox").classList.remove("open");
+$("chatNew").onclick = freshChat;
+$("chatHistBtn").onclick = async () => {
+  $("chatBox").classList.toggle("hist");
+  $("chatHistBtn").classList.toggle("on");
+  if ($("chatBox").classList.contains("hist")) await loadHistory();
+};
 
 async function sendChat() {
   const q = $("chatInput").value.trim();
   if (!q || $("chatSend").disabled) return;
   $("chatInput").value = "";
+  const hello = document.querySelector("#chatMsgs .cmsg.hello");
+  if (hello) hello.remove();
   chatMsg("me", q);
   const thinking = chatMsg("atlas", "thinking — assembling evidence…");
   $("chatSend").disabled = true;
   try {
     const r = await fetch("/api/chat", { method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: q }) }).then(r => r.json());
+      body: JSON.stringify({ question: q, session: chat.session }) }).then(r => r.json());
     thinking.remove();
     if (r.error) chatMsg("atlas err", r.error);
     else chatMsg("atlas", r.answer, r.matched_features);
