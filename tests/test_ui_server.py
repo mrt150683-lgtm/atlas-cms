@@ -305,6 +305,16 @@ def test_main_ui_exposes_auditable_mcp_activity_history() -> None:
     assert 'fetch("/api/activity?since=0")' in html
     assert "function renderActivityAudit()" in html
     assert "event.nodes" in html and "activity-nodes" in html
+
+
+def test_notes_update_route_is_reachable_and_trust_commands_are_live() -> None:
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+
+    assert 'fetch("/api/notes/update"' in html
+    assert "function editNote(id)" in html
+    assert '"cms align --scan"' in html
+    assert "cms align run" not in html
     assert "chat unavailable" in html
     # invalid/stale judgment banners exist
     assert "not valid semantic output" in html and "valid but frozen" in html

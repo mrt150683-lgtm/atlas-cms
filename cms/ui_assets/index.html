@@ -560,9 +560,12 @@
   .note-card .nt { color: var(--ink); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; }
   .note-card .nfoot { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
   .note-card .ndate { color: var(--ink-3); font: 10px var(--mono); }
-  .note-card .ndel { margin-left: auto; color: var(--ink-3); font-size: 14px; cursor: pointer;
+  .note-card .nedit { margin-left: auto; color: var(--ink-3); font-size: 11px; cursor: pointer;
+    opacity: 0; transition: opacity 120ms; }
+  .note-card .ndel { color: var(--ink-3); font-size: 14px; cursor: pointer;
     opacity: 0; transition: opacity 120ms; line-height: 1; }
-  .note-card:hover .ndel { opacity: 1; } .note-card .ndel:hover { color: #e66767; }
+  .note-card:hover .nedit, .note-card:hover .ndel { opacity: 1; }
+  .note-card .nedit:hover { color: var(--accent); } .note-card .ndel:hover { color: #e66767; }
   .note-detached { opacity: 0.6; } .note-detached .nq::after { content: " (not found in current file)"; color: #d55181; }
 
   /* floating selection toolbar */
@@ -2126,7 +2129,7 @@ function showTrustStage(stage) {
   const details = {
     impact: ["Impact", "Check the blast radius before editing", selected ? `cms impact "${selected}"` : "Select a file or feature, then run cms impact <target>"],
     verify: ["Verify", "Collect execution evidence after the change", selectedFeature ? `cms verify "${selectedFeature}" --refresh` : "cms verify --refresh"],
-    align: ["Align", "Compare the final diff with declared intent", "cms align run"],
+    align: ["Align", "Compare the final diff with declared intent", "cms align --scan"],
   }[stage];
   $("inspector").innerHTML = `<div class="i-kind">Trust loop · ${details[0]}</div><div class="i-name">${details[1]}</div><div class="summary">Next evidence action:<br><br><code>${esc(details[2])}</code></div>`;
 }
@@ -2906,10 +2909,11 @@ function renderNoteRail() {
       <div class="nq">${esc(nt.quote.slice(0, 160))}</div>
       ${nt.note ? `<div class="nt">${esc(nt.note)}</div>` : ""}
       <div class="nfoot"><span class="ndate">${esc((nt.created_at || "").slice(0, 10))}</span>
-        <span class="ndel" title="Delete note">×</span></div>
+        <span class="nedit" title="Edit note">edit</span><span class="ndel" title="Delete note">×</span></div>
     </div>`).join("");
   list.querySelectorAll(".note-card").forEach(card => {
-    card.onclick = e => { if (!e.target.classList.contains("ndel")) flashNote(card.dataset.note); };
+    card.onclick = e => { if (!e.target.classList.contains("ndel") && !e.target.classList.contains("nedit")) flashNote(card.dataset.note); };
+    card.querySelector(".nedit").onclick = e => { e.stopPropagation(); editNote(card.dataset.note); };
     card.querySelector(".ndel").onclick = e => { e.stopPropagation(); deleteNote(card.dataset.note); };
   });
 }
@@ -3005,6 +3009,19 @@ async function deleteNote(id) {
     VW.notes = VW.notes.filter(n => n.id !== id);
     renderViewer(); toast("Note deleted"); loadNoteCounts();
   }
+}
+
+async function editNote(id) {
+  const current = VW.notes.find(note => note.id === id);
+  if (!current) return;
+  const text = window.prompt("Edit note", current.note || "");
+  if (text === null) return;
+  const r = await fetch("/api/notes/update", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, note: text }) });
+  if (r.ok) {
+    const updated = (await r.json()).note;
+    VW.notes = VW.notes.map(note => note.id === id ? updated : note);
+    renderViewer(); toast("Note updated");
+  } else { toast("Could not update note"); }
 }
 
 /* ── chrome: modes, copy-all, close, toast ─────────────────── */

@@ -55,6 +55,9 @@ cms scan                    # just the clean tree (subset of run-all)
 cms build-graph             # scan + knowledge graph only
 cms summarize               # (re)generate AI summaries only
 cms prompt "add rate limiting"    # export a memory-grounded task brief
+cms align --scan             # compare the current diff with captured/inferred intent and refresh Sentinel
+cms scope show               # show which paths Atlas is currently processing
+cms bundle export --out atlas.cmsbundle  # share the generated memory without re-processing
 ```
 
 ## App mode (`cms app` / CMS.exe)
