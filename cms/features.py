@@ -36,6 +36,7 @@ class Feature:
     entry_points: list[str] = field(default_factory=list)  # node ids
     flows: list[list[dict]] = field(default_factory=list)  # step dicts
     connects: list[str] = field(default_factory=list)      # feature names
+    aliases: list[str] = field(default_factory=list)      # merged discovery synonyms
     narrative: str = ""
     narrative_provider: str = ""
 
@@ -341,23 +342,32 @@ def prepare_known(graph: nx.DiGraph, extra_features: list[Feature] | None = None
             if graph.nodes[m].get("path")
         }
 
-    declared_files = [file_set(f) for f in features.values()]
-
-    def is_duplicate(feat: Feature) -> bool:
+    def duplicate_target(feat: Feature) -> Feature | None:
         """Discovered features are noise when they substantially re-cover files
-        that already belong to a declared feature (LLM synonym of an existing
-        one). Multi-file synonym lists dodge high thresholds, so: a third of my
-        files overlapping one feature, or any 2-file intersection, is a dup."""
+        that already belong to any accepted feature. Declared features win;
+        discovered synonyms collapse into the stable first canonical name."""
         mine = file_set(feat)
         if not mine:
-            return True
-        for existing in declared_files:
+            return feat
+        for name in sorted(features):
+            existing_feat = features[name]
+            existing = file_set(existing_feat)
             shared = len(mine & existing)
             if shared and (shared / len(mine) >= 0.34 or shared >= 2):
-                return True
-        return False
+                return existing_feat
+        return None
 
-    for feat in extra_features or []:
+    def is_duplicate(feat: Feature) -> bool:
+        target = duplicate_target(feat)
+        if target is None:
+            return False
+        if target is not feat and feat.name != target.name:
+            target.aliases = sorted(set(target.aliases + [feat.name] + feat.aliases))
+            if target.source == "discovered":
+                target.members = sorted(set(target.members + feat.members))
+        return True
+
+    for feat in sorted(extra_features or [], key=lambda item: item.name):
         feat.members = [m for m in feat.members if graph.has_node(m)]
         if feat.members and feat.name not in features and not is_duplicate(feat):
             features[feat.name] = feat
@@ -481,6 +491,7 @@ def _write_to_graph(graph: nx.DiGraph, feat: Feature) -> None:
         entry_points=list(feat.entry_points),
         flows=feat.flows,
         connects=list(feat.connects),
+        aliases=list(feat.aliases),
     )
     for m in feat.members:
         if graph.has_node(m):

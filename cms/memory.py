@@ -96,6 +96,9 @@ class CodebaseMemory:
             if attrs.get("type") == "external":
                 continue
             name_toks = _name_tokens(attrs.get("name", ""))
+            alias_toks = set().union(*(
+                _name_tokens(alias) for alias in (attrs.get("aliases") or [])
+            )) if attrs.get("aliases") else set()
             summary = (attrs.get("summary") or "").lower()
             docstring = (attrs.get("docstring") or "").lower()
             path = (attrs.get("path") or "").lower()
@@ -106,6 +109,8 @@ class CodebaseMemory:
                     score += 3.0
                 elif any(tok in nt for nt in name_toks):
                     score += 1.5
+                if tok in alias_toks:
+                    score += 2.5
                 if tok in anchor_text:
                     score += 2.5  # developer-curated intent outranks generated text
                 if tok in summary:

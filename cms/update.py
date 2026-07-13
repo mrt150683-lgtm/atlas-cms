@@ -100,6 +100,7 @@ def _prior_discovered(old: nx.DiGraph) -> list:
             name=a["name"], description=a.get("description", ""),
             source="discovered", members=list(a.get("members", [])),
             connects=list(a.get("connects", [])),
+            aliases=list(a.get("aliases", [])),
         )
         for _, a in old.nodes(data=True)
         if a.get("type") == "feature" and a.get("source") == "discovered"
@@ -248,7 +249,7 @@ def _features_from_state(rec: dict, extras: list, graph) -> list:
         if item.get("name") and item["name"] not in have and members:
             out.append(Feature(
                 name=item["name"], description=item.get("description", ""),
-                source="discovered", members=members,
+                source="discovered", members=members, aliases=list(item.get("aliases", [])),
             ))
     return out
 
@@ -302,11 +303,13 @@ def _run_discovery(memory_dir: Path, graph, provider, extras: list,
         feats_map, known_files, is_dup = prepare_known(graph, extras)
         echo("  discover: mapping features (LLM)")
         try:
-            found = [
-                f for f in discover_features_llm(
-                    graph, provider, known=list(feats_map), known_files=known_files)
-                if not is_dup(f)
-            ]
+            found = []
+            for feature in discover_features_llm(
+                graph, provider, known=list(feats_map), known_files=known_files
+            ):
+                if not is_dup(feature):
+                    feats_map[feature.name] = feature
+                    found.append(feature)
         except DiscoveryError as exc:
             keep = {"last_success": rec} if rec.get("status") == "complete" else {}
             ss.record_stage(
@@ -318,19 +321,23 @@ def _run_discovery(memory_dir: Path, graph, provider, extras: list,
             echo(f"  discover: FAILED — {exc} (recorded; a later update will retry)")
             return extras + _features_from_state(rec, extras, graph), False
 
-        all_discovered = [f for f in extras if f.source == "discovered"] + found
+        all_discovered = sorted(
+            (feature for feature in feats_map.values() if feature.source == "discovered"),
+            key=lambda feature: feature.name,
+        )
         ss.record_stage(
             memory_dir, "features", status="complete",
             provider=provider.name, model=getattr(provider, "model", None),
             real_provider=True, input_hash=input_hash,
             discovered_features=[
-                {"name": f.name, "description": f.description, "members": list(f.members)}
+                {"name": f.name, "description": f.description, "members": list(f.members),
+                 "aliases": list(f.aliases)}
                 for f in all_discovered
             ],
         )
         echo(f"  discover: {len(found)} new feature(s) found"
              if found else "  discover: complete — no new features (recorded)")
-        return extras + found, True
+        return all_discovered, True
 
 
 # @memory:feature:IncrementalUpdates

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from cms.features import build_features, collect_declared_features, get_features, trace_flows
+from cms.features import Feature, build_features, collect_declared_features, get_features, prepare_known, trace_flows
 from cms.graph_builder import build_graph
 from cms.memory import CodebaseMemory
 from cms.providers import MockProvider
@@ -106,3 +106,33 @@ def test_features_queryable(tmp_path: Path) -> None:
     mem = CodebaseMemory(graph)
     results = mem.query_intent("DataPipeline feature trace", top_k=3)
     assert any(r.node_id == "feature:DataPipeline" for r in results)
+
+
+def test_discovered_synonyms_collapse_to_canonical_feature_with_aliases(tmp_path: Path) -> None:
+    (tmp_path / "tree_export.py").write_text("def export():\n    pass\n", encoding="utf-8")
+    (tmp_path / "other.py").write_text("def separate():\n    pass\n", encoding="utf-8")
+    graph = build_graph(scan(tmp_path))
+    extras = [
+        Feature(name="NestedTreeStructureExport", source="discovered",
+                members=["file:tree_export.py"]),
+        Feature(name="CodebaseDocumentationExport", source="discovered",
+                members=["file:tree_export.py"]),
+        Feature(name="CodebaseTreeExport", source="discovered",
+                members=["file:tree_export.py"]),
+        Feature(name="SeparateCapability", source="discovered",
+                members=["file:other.py"]),
+    ]
+
+    features, _, _ = prepare_known(graph, extras)
+
+    assert set(features) == {"CodebaseDocumentationExport", "SeparateCapability"}
+    canonical = features["CodebaseDocumentationExport"]
+    assert canonical.aliases == ["CodebaseTreeExport", "NestedTreeStructureExport"]
+
+    build_features(graph, MockProvider(), extra_features=extras, discover=False)
+    node = graph.nodes["feature:CodebaseDocumentationExport"]
+    assert node["aliases"] == ["CodebaseTreeExport", "NestedTreeStructureExport"]
+    assert any(
+        result.node_id == "feature:CodebaseDocumentationExport"
+        for result in CodebaseMemory(graph).query_intent("NestedTreeStructureExport")
+    )

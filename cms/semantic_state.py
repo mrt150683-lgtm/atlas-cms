@@ -108,7 +108,7 @@ def discovery_input_hash(graph) -> str:
 
 def feature_set_hash(graph) -> str:
     """Deterministic hash of the semantic feature set a judgment evaluates:
-    names, declared/discovered source, members, entry points, connections
+    names, aliases, declared/discovered source, members, entry points, connections
     and descriptions. No unstable ordering, no timestamps."""
     feats = sorted(
         [
@@ -116,6 +116,7 @@ def feature_set_hash(graph) -> str:
             sorted(a.get("members") or []),
             sorted(a.get("entry_points") or []),
             sorted(a.get("connects") or []),
+            sorted(a.get("aliases") or []),
             (a.get("description") or "").strip(),
         ]
         for _, a in graph.nodes(data=True) if a.get("type") == "feature"
