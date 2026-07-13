@@ -271,6 +271,17 @@ def test_features_section_never_hidden_markup() -> None:
     assert 'id="providerChip"' in html and "meta.root" in html
     assert "Current runtime provider" in html
     assert "Loaded artifact provenance" in html
+
+
+def test_feature_evidence_map_has_bounded_deterministic_overview() -> None:
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+
+    assert "const ringSize = Math.max(24" in html
+    assert "inferredOverview++ < 120" in html
+    assert "focus reveals all incident evidence" in html
+    assert "if (S.featMode) return" in html
+    assert "now - lastDraw >= 100" in html
     assert "chat unavailable" in html
     # invalid/stale judgment banners exist
     assert "not valid semantic output" in html and "valid but frozen" in html

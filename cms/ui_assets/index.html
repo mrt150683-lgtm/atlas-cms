@@ -1212,25 +1212,36 @@ function buildGraphView() {
 /* ── feature-level graph view ─────────────────────────────── */
 function buildFeatureView() {
   const keep = new Map();
-  S.features.forEach((f, i) => {
-    const angle = (i / S.features.length) * Math.PI * 2;
+  const ordered = [...S.features].sort((a, b) =>
+    (a.source === b.source ? a.name.localeCompare(b.name) : a.source === "declared" ? -1 : 1));
+  const ringSize = Math.max(24, Math.ceil(Math.sqrt(ordered.length) * 4));
+  ordered.forEach((f, i) => {
+    const ring = Math.floor(i / ringSize);
+    const ringStart = ring * ringSize;
+    const ringCount = Math.min(ringSize, ordered.length - ringStart);
+    const angle = ((i - ringStart) / ringCount) * Math.PI * 2 - Math.PI / 2;
+    const radius = 135 + ring * 125;
     keep.set(f.id, {
       id: f.id, attrs: f, ext: false, feature: true,
       label: f.name,
       color: f.source === "discovered" ? "#199e70" : "#c98500",
       r: Math.max(8, Math.min(20, 6 + (f.members || []).length * 2.5)),
-      x: Math.cos(angle) * 150 + (Math.random() - 0.5) * 30,
-      y: Math.sin(angle) * 150 + (Math.random() - 0.5) * 30,
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius,
       vx: 0, vy: 0,
     });
   });
   for (const old of S.nodes) { const n = keep.get(old.id); if (n) { n.x = old.x; n.y = old.y; } }
   S.nodes = [...keep.values()];
-  S.edges = (S.graph.links || S.graph.edges || [])
+  const featureEdges = (S.graph.links || S.graph.edges || [])
     .filter(e => (e.type === "CONNECTS" || e.type === "RELATES") && keep.has(e.source) && keep.has(e.target))
+    .sort((a, b) => (a.type === b.type ? `${a.source}:${a.target}`.localeCompare(`${b.source}:${b.target}`) : a.type === "CONNECTS" ? -1 : 1));
+  let inferredOverview = 0;
+  S.edges = featureEdges
     .map(e => ({
       s: keep.get(e.source), t: keep.get(e.target),
       derived: e.type === "RELATES",
+      overview: e.type === "CONNECTS" || inferredOverview++ < 120,
       via: e.via || "declared via @memory:connects anchor",
     }));
   S.cochanges = [];
@@ -1293,7 +1304,7 @@ function renderLegend() {
        <div class="li"><span class="sw" style="background:#199e70"></span>discovered feature</div>
        <div class="li"><span class="sw" style="background:transparent;border-top:2px solid rgba(201,133,0,0.7);height:0;border-radius:0"></span>declared connection</div>
        <div class="li"><span class="sw" style="background:transparent;border-top:2px dashed rgba(255,255,255,0.45);height:0;border-radius:0"></span>inferred from code</div>
-       <div class="note">node size = member count · click for the feature trace</div>`);
+       <div class="note">node size = member count · click for the full feature trace<br>overview shows every declared connection and a stable inferred sample; focus reveals all incident evidence</div>`);
     return;
   }
   if (S.heat) {
@@ -1319,6 +1330,7 @@ function renderLegend() {
 /* ── force simulation ─────────────────────────────────────── */
 function physics() {
   const N = S.nodes;
+  if (S.featMode) return;  // feature evidence has a deterministic, immediately usable ring layout
   for (let i = 0; i < N.length; i++) {
     for (let j = i + 1; j < N.length; j++) {
       const a = N[i], b = N[j];
@@ -1406,6 +1418,8 @@ function draw() {
   }
 
   for (const e of S.edges) {
+    if (S.featMode && e.derived && !e.overview &&
+        (!focus || (e.s.id !== focus && e.t.id !== focus))) continue;
     const [x1, y1] = toScreen(e.s.x, e.s.y), [x2, y2] = toScreen(e.t.x, e.t.y);
     const lit = hood && (e.s.id === focus || e.t.id === focus);
     if (S.featMode) {
@@ -1493,9 +1507,11 @@ function draw() {
   drawPulses(performance.now());
 }
 
-function loop() {
-  if (S.alpha > 0.006 || S.dragging) physics();
-  draw();
+let lastDraw = 0;
+function loop(now) {
+  const active = (!S.featMode && S.alpha > 0.006) || S.dragging || S.pulses.size;
+  if (active) physics();
+  if (active || now - lastDraw >= 100) { draw(); lastDraw = now; }
   requestAnimationFrame(loop);
 }
 
