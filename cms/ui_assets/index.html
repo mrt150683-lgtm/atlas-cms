@@ -186,9 +186,9 @@
     padding: 4px 11px; border-radius: 999px;
     border: 1px solid rgba(57,135,229,0.35); background: rgba(57,135,229,0.07);
     font: 11px var(--mono); color: #86b6ef;
-    opacity: 0; transition: opacity 600ms ease; pointer-events: none;
+    opacity: .72; transition: opacity 180ms ease; cursor: pointer; user-select: none;
   }
-  #mcpBadge.live { opacity: 1; }
+  #mcpBadge:hover, #mcpBadge.live { opacity: 1; }
   #mcpBadge.connected {
     border-color: rgba(12,163,12,0.45); background: rgba(12,163,12,0.08); color: #4fc26b;
   }
@@ -201,6 +201,27 @@
     0%, 100% { box-shadow: 0 0 0 0 rgba(57,135,229,0.5); }
     50% { box-shadow: 0 0 0 5px rgba(57,135,229,0); }
   }
+  #activityPanel { display: none; position: fixed; z-index: 80; top: 58px; right: 18px;
+    width: min(520px, calc(100vw - 36px)); max-height: min(650px, calc(100vh - 76px));
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 12px;
+    box-shadow: 0 18px 56px rgba(0,0,0,.62); overflow: hidden; }
+  #activityPanel.open { display: flex; flex-direction: column; }
+  #activityHead { display: flex; align-items: center; gap: 10px; padding: 12px 14px;
+    border-bottom: 1px solid var(--border); }
+  #activityHead b { color: var(--ink); } #activityHead span { color: var(--ink-3); font-size: 11px; }
+  #activityHead button { margin-left: auto; border: 0; background: none; color: var(--ink-3);
+    cursor: pointer; font-size: 18px; }
+  #activityRows { overflow: auto; padding: 6px; }
+  .activity-row { padding: 9px 10px; border-radius: 7px; border-bottom: 1px solid var(--border);
+    cursor: pointer; }
+  .activity-row:hover { background: rgba(57,135,229,.08); }
+  .activity-row .activity-meta { display: flex; gap: 8px; align-items: baseline; }
+  .activity-row time { color: var(--ink-3); font: 10px var(--mono); }
+  .activity-row .activity-tool { color: #86b6ef; font: 11px var(--mono); }
+  .activity-row .activity-label { color: var(--ink-2); font-size: 11.5px; }
+  .activity-row .activity-nodes { color: var(--ink-3); font: 10px/1.45 var(--mono);
+    margin-top: 5px; overflow-wrap: anywhere; }
+  #activityEmpty { color: var(--ink-3); padding: 20px; text-align: center; font-size: 12px; }
 
   .search { position: relative; margin-left: auto; width: 380px; }
   .search input {
@@ -734,7 +755,7 @@
       </span>
       <span id="providerChip" style="display:none;margin-left:10px;font:11px var(--font);color:var(--muted);border:1px solid var(--line);border-radius:9px;padding:1.5px 8px;white-space:nowrap"></span>
     </div>
-    <div id="mcpBadge"><span class="pulse-dot"></span><span id="mcpBadgeText">MCP</span></div>
+    <div id="mcpBadge" role="button" tabindex="0" title="Open the auditable MCP activity log"><span class="pulse-dot"></span><span id="mcpBadgeText">MCP activity</span></div>
     <a id="discoveryLink" class="navlink" href="/discovery" title="Constellation &amp; Scout — cross-project fusion and the plan-idea engine">Discovery</a>
     <a id="setupLink" class="navlink" href="/setup" title="Scope &amp; share — choose what's processed, export a bundle">Setup</a>
     <a id="sentinelLink" class="navlink" href="/sentinel" title="Hermes Sentinel — bug finding &amp; completion audit">Sentinel</a>
@@ -744,6 +765,10 @@
       <div id="results"></div>
     </div>
   </header>
+  <section id="activityPanel" aria-label="MCP activity evidence">
+    <div id="activityHead"><b>MCP activity evidence</b><span>persistent .memory/activity.jsonl</span><button id="activityClose" title="Close">×</button></div>
+    <div id="activityRows"><div id="activityEmpty">No recorded MCP access yet.</div></div>
+  </section>
 
   <nav id="trustLoop" aria-label="Atlas trust loop">
     <span class="loop-label">Trust loop</span>
@@ -2310,6 +2335,7 @@ async function runSearch(q) {
 /* ── MCP activity pulses ──────────────────────────────────── */
 const PULSE_MS = 5000;
 let activitySince = null, badgeTimer = null;
+const activityAudit = { events: [] };
 
 /* memory level per tool: how deep the AI is reading */
 const TOOL_LEVEL = {
@@ -2353,7 +2379,10 @@ function addPulses(event) {
     $("mcpBadgeText").textContent = `${event.label || "AI model"} connected`;
     badge.classList.add("live", "connected");
     clearTimeout(badgeTimer);
-    badgeTimer = setTimeout(() => badge.classList.remove("live", "connected"), 6000);
+    badgeTimer = setTimeout(() => {
+      badge.classList.remove("live", "connected");
+      $("mcpBadgeText").textContent = "MCP activity";
+    }, 6000);
     S.ripples = S.ripples || [];
     S.ripples.push({ t0: now });
     pushTrail({ tool: "connected", label: event.label }, "session", "#0ca30c");
@@ -2376,9 +2405,56 @@ function addPulses(event) {
   $("mcpBadgeText").textContent = "MCP · " + event.tool + (event.label ? ` — ${event.label.slice(0, 42)}` : "");
   badge.classList.add("live");
   clearTimeout(badgeTimer);
-  badgeTimer = setTimeout(() => badge.classList.remove("live"), 4000);
+  badgeTimer = setTimeout(() => {
+    badge.classList.remove("live");
+    $("mcpBadgeText").textContent = "MCP activity";
+  }, 4000);
   pushTrail(event, level, color);
 }
+
+function rememberActivity(event) {
+  const key = `${event.ts}:${event.tool}:${(event.nodes || []).join(",")}`;
+  if (!activityAudit.events.some(e => e._key === key))
+    activityAudit.events.push({ ...event, _key: key });
+  activityAudit.events.sort((a, b) => b.ts - a.ts);
+  activityAudit.events = activityAudit.events.slice(0, 120);
+}
+
+function renderActivityAudit() {
+  const host = $("activityRows");
+  if (!activityAudit.events.length) {
+    host.innerHTML = `<div id="activityEmpty">No recorded MCP access yet.</div>`;
+    return;
+  }
+  host.innerHTML = activityAudit.events.slice(0, 40).map((event, index) => {
+    const [level] = TOOL_LEVEL[event.tool] || [event.tool === "connected" ? "session" : "graph"];
+    const nodes = event.nodes || [];
+    return `<div class="activity-row" data-event="${index}">
+      <div class="activity-meta"><time>${esc(new Date(event.ts * 1000).toLocaleString())}</time><span class="activity-tool">${esc(event.tool)}</span><span class="activity-label">${esc(level + (event.label ? " · " + event.label : ""))}</span></div>
+      <div class="activity-nodes">${nodes.length ? esc(nodes.join(" · ")) : "session event · no graph nodes touched"}</div>
+    </div>`;
+  }).join("");
+  host.querySelectorAll(".activity-row").forEach(row => row.onclick = () => {
+    const event = activityAudit.events[Number(row.dataset.event)];
+    const raw = (event.nodes || [])[0];
+    if (!raw) return;
+    if (raw.startsWith("feature:")) selectFeature(raw);
+    else { const fileId = toFileId(raw); if (fileId) selectFile(fileId, true); }
+  });
+}
+
+async function openActivityAudit() {
+  $("activityPanel").classList.add("open");
+  try {
+    const data = await fetch("/api/activity?since=0").then(r => r.json());
+    for (const event of data.events || []) rememberActivity(event);
+  } catch (err) { /* the panel still shows any live events already observed */ }
+  renderActivityAudit();
+}
+
+$("mcpBadge").onclick = openActivityAudit;
+$("mcpBadge").onkeydown = event => { if (event.key === "Enter" || event.key === " ") openActivityAudit(); };
+$("activityClose").onclick = () => $("activityPanel").classList.remove("open");
 
 /* activity trail: last few MCP reads with their memory level */
 function pushTrail(event, level, color) {
@@ -2406,8 +2482,10 @@ async function pollActivity() {
     if (activitySince === null) { activitySince = data.now - 8; return; }  // pick up very recent on open
     for (const e of data.events) {
       activitySince = Math.max(activitySince, e.ts);
+      rememberActivity(e);
       addPulses(e);
     }
+    if ($("activityPanel").classList.contains("open")) renderActivityAudit();
   } catch (err) { /* feed is cosmetic */ }
 }
 setInterval(pollActivity, 1000);

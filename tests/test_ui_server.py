@@ -293,6 +293,18 @@ def test_primary_ui_exposes_actionable_trust_loop() -> None:
         assert f'data-stage="{stage}"' in html
     assert "function showTrustStage(stage)" in html
     assert 'href="/discovery"' in html  # strategic discovery remains separate
+
+
+def test_main_ui_exposes_auditable_mcp_activity_history() -> None:
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+
+    assert 'id="mcpBadge" role="button" tabindex="0"' in html
+    assert 'id="activityPanel" aria-label="MCP activity evidence"' in html
+    assert "persistent .memory/activity.jsonl" in html
+    assert 'fetch("/api/activity?since=0")' in html
+    assert "function renderActivityAudit()" in html
+    assert "event.nodes" in html and "activity-nodes" in html
     assert "chat unavailable" in html
     # invalid/stale judgment banners exist
     assert "not valid semantic output" in html and "valid but frozen" in html

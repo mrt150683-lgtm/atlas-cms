@@ -17,7 +17,7 @@ commit. Items that have not met that bar remain **open**.
 | AR-009 | complete | Validate CLI commands emitted by Ask Atlas against the live command surface. | Ask Atlas receives a live Click-derived CLI contract; every inline or shell-line `cms` command is parsed against that command tree before display or persistence, invalid suggestions are blocked with the correct help route, and chat tests cover valid and invented syntax. |
 | AR-010 | complete | Reduce Sentinel information noise from detector definitions, documentation examples, and test fixtures. | Lexical risks now scan executable project source rather than reference text; docs, fixtures, and detector definitions no longer create active information findings, while Sentinel's own AST security checks remain active; focused tests cover all exclusions. |
 | AR-011 | complete | Make the Query → Trace → Impact → Verify → Align trust loop the primary product hierarchy while keeping Discovery a separate strategic workspace. | The main workspace now has a persistent five-stage trust-loop bar with actionable query, trace, impact, verification, and alignment guidance; Discovery remains a distinct top-level strategic route; the UI contract test covers hierarchy and actions. |
-| AR-012 | open | Make MCP/activity access evidence explicit and auditable in the main UI. | — |
+| AR-012 | complete | Make MCP/activity access evidence explicit and auditable in the main UI. | The always-visible MCP activity control opens persistent history from `.memory/activity.jsonl`, showing exact timestamp, tool, memory level, label, and touched node IDs; entries navigate back to mapped evidence and live events update the panel; the UI contract test covers the audit surface. |
 
 ## Status rules
 
