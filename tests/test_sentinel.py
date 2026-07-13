@@ -57,15 +57,28 @@ def test_static_risk_detects_and_classifies(tmp_path):
     assert trivial[0]["file"] == "cms/core.py" and trivial[0]["line"] == 2
 
     todos = {f["file"]: f["severity"] for f in findings if f["pattern"] == r"\bTODO\b"}
-    assert todos["cms/core.py"] == "low"          # production code
-    assert todos["tests/test_core.py"] == "info"  # test context
+    assert todos == {"cms/core.py": "low"}  # fixtures do not become active findings
 
 
 def test_static_risk_ignores_own_pattern_registry():
     findings = scan_static_risks(REPO_ROOT)
     own = [f for f in findings if f["file"].startswith("cms/sentinel/")]
-    assert all(f["severity"] == "info"
-               for f in own if f["pattern"] not in ("trivial-validator", "substring-traversal-guard"))
+    assert all(f["pattern"] in ("trivial-validator", "substring-traversal-guard")
+               for f in own)
+
+
+def test_static_risk_excludes_documentation_and_fixture_markers(tmp_path):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "risks.md").write_text(
+        "Examples: FIXME, fake success, bypass validation, placeholder.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_fixture.py").write_text(
+        "# TODO fixture\ndef validate_fixture():\n    return True\n",
+        encoding="utf-8",
+    )
+    assert scan_static_risks(tmp_path) == []
 
 
 def test_static_risk_flags_substring_traversal_guard(tmp_path):

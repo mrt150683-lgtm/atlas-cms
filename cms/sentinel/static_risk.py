@@ -1,10 +1,10 @@
 """Sentinel Static Risk Scanner — risky patterns, classified by context.
 
 Two layers:
-  1. Pattern sweep over every scanned source file (TODO/FIXME/HACK, fake/force/
-     bypass verbs, placeholder/dummy/hardcoded markers). Severity depends on
-     where the hit lives: production ``cms/`` code ranks higher than tests,
-     docs rank info, and this file's own pattern registry is exempt.
+  1. Pattern sweep over executable project source (TODO/FIXME/HACK, fake/force/
+     bypass verbs, placeholder/dummy/hardcoded markers). Documentation, test
+     fixtures, and Sentinel's detector definitions are evidence/reference text,
+     not active product risks, so they are excluded instead of reported as noise.
   2. AST pass over Python files for trivial validators — a function whose name
      says it checks/validates/verifies something but whose body is a bare
      ``return True``/``return False`` is a fake implementation (critical).
@@ -56,6 +56,15 @@ def _classify(rel_path: str, base: str) -> str:
     if not rel_path.startswith("cms/"):
         return _DOWNGRADE[base]  # scripts/spec files: real but not production logic
     return base
+
+
+def _is_reference_context(rel_path: str) -> bool:
+    """Text that describes or exercises a risk is not itself an active risk."""
+    return (
+        rel_path.startswith(("tests/", "docs/", "cms/sentinel/"))
+        or rel_path == "cms/ui_assets/sentinel.html"
+        or rel_path.endswith((".md", ".txt", ".rst"))
+    )
 
 
 def _weak_path_guards(rel_path: str, text: str) -> list[dict]:
@@ -145,26 +154,28 @@ def scan_static_risks(root: Path, records: list[FileRecord] | None = None,
             text = Path(record.abs_path).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        for lineno, line in enumerate(text.splitlines(), 1):
-            for pattern, base, risk in PATTERNS:
-                if per_pattern.get(pattern, 0) >= max_per_pattern:
-                    continue
-                if re.search(pattern, line, re.I):
-                    severity = _classify(record.rel_path, base)
-                    per_pattern[pattern] = per_pattern.get(pattern, 0) + 1
-                    findings.append(make_finding(
-                        "static_risk", severity,
-                        f"'{re.search(pattern, line, re.I).group(0)}' in {record.rel_path}:{lineno}",
-                        area="risky_pattern",
-                        file=record.rel_path,
-                        line=lineno,
-                        pattern=pattern,
-                        evidence=[line.strip()[:200]],
-                        risk=risk,
-                        recommendation="Resolve the marked gap, or move the marker into an issue/ledger entry with a plan.",
-                        fingerprint_of=line.strip()[:200],
-                    ))
-        if record.language == "python":
+        if not _is_reference_context(record.rel_path):
+            for lineno, line in enumerate(text.splitlines(), 1):
+                for pattern, base, risk in PATTERNS:
+                    if per_pattern.get(pattern, 0) >= max_per_pattern:
+                        continue
+                    match = re.search(pattern, line, re.I)
+                    if match:
+                        severity = _classify(record.rel_path, base)
+                        per_pattern[pattern] = per_pattern.get(pattern, 0) + 1
+                        findings.append(make_finding(
+                            "static_risk", severity,
+                            f"'{match.group(0)}' in {record.rel_path}:{lineno}",
+                            area="risky_pattern",
+                            file=record.rel_path,
+                            line=lineno,
+                            pattern=pattern,
+                            evidence=[line.strip()[:200]],
+                            risk=risk,
+                            recommendation="Resolve the marked gap, or move the marker into an issue/ledger entry with a plan.",
+                            fingerprint_of=line.strip()[:200],
+                        ))
+        if record.language == "python" and not record.rel_path.startswith(("tests/", "docs/")):
             findings += _trivial_validators(record.rel_path, text)
             findings += _weak_path_guards(record.rel_path, text)
     return findings
