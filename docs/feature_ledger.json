@@ -3,7 +3,7 @@
  "features": [
   {
    "feature": "ActivityPulse",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/activity.py"
@@ -13,17 +13,28 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_activity.py::test_log_and_read",
+     "tests/test_activity.py::test_mcp_calls_write_activity",
+     "tests/test_activity.py::test_rotation_keeps_file_bounded",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_mcp.py::test_constellation_tools_via_mcp",
+     "tests/test_mcp.py::test_initialize_and_list_tools",
+     "tests/test_mcp.py::test_query_and_feature_tools",
+     "tests/test_mcp.py::test_serve_stdio_loop",
+     "tests/test_mcp.py::test_switch_project_flips_root_mid_session",
+     "tests/test_mcp.py::test_switch_project_guardrails_and_lazy_build_pickup",
+     "tests/test_mcp.py::test_unknown_tool_and_traversal_guard",
+     "tests/test_sentinel.py::test_run_scan_persists_results"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "AgentMemoryAccess",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/mcp.py"
@@ -33,13 +44,24 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_activity.py::test_mcp_calls_write_activity",
+     "tests/test_align.py::test_check_alignment_without_intent_errors",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_mcp.py::test_bad_arguments_surface_as_tool_error",
+     "tests/test_mcp.py::test_constellation_tools_via_mcp",
+     "tests/test_mcp.py::test_discover_root_walks_up_to_memory_layer",
+     "tests/test_mcp.py::test_initialize_and_list_tools",
+     "tests/test_mcp.py::test_no_memory_layer_serves_gracefully",
+     "tests/test_mcp.py::test_query_and_feature_tools",
+     "tests/test_mcp.py::test_rpc_plumbing_edge_cases",
+     "tests/test_mcp.py::test_serve_stdio_loop"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "AppMode",
@@ -57,13 +79,13 @@
     "manual_verification": ""
    },
    "known_limitations": [
-    "no verifying tests mapped yet"
+    "no exercising tests mapped yet"
    ],
-   "last_verified": "2026-07-05"
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "CLIOrchestration",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/cli.py"
@@ -73,17 +95,40 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_cli_verify.py::test_targeted_verify_describes_coverage_honestly",
+     "tests/test_cli_verify.py::test_targeted_verify_failure_does_not_infer_design_divergence",
+     "tests/test_cli_verify.py::test_verify_help_exposes_forced_coverage_refresh"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "ChangeAlignment",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/mcp.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [
+     "tests/test_align.py::test_check_alignment_without_intent_errors",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "CleanDirectoryScanner",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/scanner.py"
@@ -93,17 +138,55 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_activity.py::test_mcp_calls_write_activity",
+     "tests/test_align.py::test_aligned_when_target_touched_and_covered",
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_check_alignment_without_intent_errors",
+     "tests/test_align.py::test_drift_when_critical_finding_on_changed_file",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_align.py::test_partial_flags_unstated_scope_creep",
+     "tests/test_align.py::test_store_persists_intent_and_history",
+     "tests/test_align.py::test_unverified_when_no_changes",
+     "tests/test_align.py::test_unverified_when_no_covering_test",
+     "tests/test_anchors.py::test_anchors_attach_to_graph_nodes",
+     "tests/test_anchors.py::test_anchors_boost_query_ranking"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "CodebaseChat",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/chat.py",
+     "cms/mcp.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically",
+     "tests/test_ui_server.py::test_chat_endpoint_and_popup_markup"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "CodebaseDocumentationExport",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/tree_export.py"
@@ -113,17 +196,28 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_brainstorm.py::test_project_grounded_mode_uses_card",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically",
+     "tests/test_fuse.py::test_card_requires_positive_discovery_evidence",
+     "tests/test_fuse.py::test_fusion_failure_never_fakes_success",
+     "tests/test_fuse.py::test_fusion_refuses_mock_and_underevidence",
+     "tests/test_fuse.py::test_fusion_report_built_and_persisted",
+     "tests/test_fuse.py::test_fusion_staleness_flags_drifted_member"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "CodebaseOptimizationAdvisor",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/suggest.py"
@@ -133,33 +227,20 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_semantic_state.py::test_concurrent_judgment_charges_once",
+     "tests/test_semantic_state.py::test_legacy_stranded_project_recovers",
+     "tests/test_semantic_state.py::test_pipeline_status_contract",
+     "tests/test_semantic_state.py::test_stale_valid_judgment_is_frozen_not_rebuilt",
+     "tests/test_suggest.py::test_mock_structural_suggestions_and_export",
+     "tests/test_suggest.py::test_suggestions_ranked_by_roi",
+     "tests/test_update.py::test_ensure_judgment_builds_once_and_skips_mock",
+     "tests/test_update.py::test_ensure_judgment_concurrent_callers_build_once"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
-  },
-  {
-   "feature": "CodebaseTreeExport",
-   "status": "in_progress",
-   "evidence": {
-    "files": [
-     "cms/tree_export.py"
-    ],
-    "database": [
-     ".memory/graph.json"
-    ],
-    "api": [],
-    "ui": [],
-    "tests": [],
-    "manual_verification": ""
-   },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "ConfigurationManagement",
@@ -177,13 +258,33 @@
     "manual_verification": ""
    },
    "known_limitations": [
-    "no verifying tests mapped yet"
+    "no exercising tests mapped yet"
    ],
-   "last_verified": "2026-07-05"
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "Constellation",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/mcp.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [
+     "tests/test_mcp.py::test_constellation_tools_via_mcp"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "ContextualPromptEnrichment",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/prompt_export.py"
@@ -193,17 +294,51 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_prompt_export.py::test_json_pack_structure",
+     "tests/test_prompt_export.py::test_markdown_prompt_grounded_in_memory"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "CrossProjectFusionAnalysis",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/fuse.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [
+     "tests/test_brainstorm.py::test_avoid_list_covers_existing_work",
+     "tests/test_brainstorm.py::test_generate_persists_ten_and_passes_temperature",
+     "tests/test_brainstorm.py::test_goals_inject_into_every_batch",
+     "tests/test_brainstorm.py::test_honesty_guards",
+     "tests/test_brainstorm.py::test_preference_learning_feeds_next_batch",
+     "tests/test_brainstorm.py::test_project_grounded_mode_uses_card",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "DependencyGraphExport",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/exporter.py"
@@ -213,17 +348,48 @@
     ],
     "api": [],
     "ui": [],
+    "tests": [
+     "tests/test_brainstorm.py::test_project_grounded_mode_uses_card",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically",
+     "tests/test_fuse.py::test_card_requires_positive_discovery_evidence",
+     "tests/test_fuse.py::test_fusion_failure_never_fakes_success",
+     "tests/test_fuse.py::test_fusion_refuses_mock_and_underevidence",
+     "tests/test_fuse.py::test_fusion_report_built_and_persisted",
+     "tests/test_fuse.py::test_fusion_staleness_flags_drifted_member"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "DiscoveryDashboard",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/ui_assets/constellation.html"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
     "tests": [],
     "manual_verification": ""
    },
    "known_limitations": [
-    "no verifying tests mapped yet"
+    "no exercising tests mapped yet"
    ],
-   "last_verified": "2026-07-05"
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "FeatureExpectationReview",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/review.py"
@@ -233,57 +399,25 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_review.py::test_bad_llm_json_falls_back",
+     "tests/test_review.py::test_llm_review_lands_on_nodes_and_rollup",
+     "tests/test_review.py::test_mock_review_is_unverified_and_exports",
+     "tests/test_semantic_state.py::test_concurrent_judgment_charges_once",
+     "tests/test_semantic_state.py::test_legacy_stranded_project_recovers",
+     "tests/test_semantic_state.py::test_pipeline_status_contract",
+     "tests/test_semantic_state.py::test_stale_valid_judgment_is_frozen_not_rebuilt",
+     "tests/test_update.py::test_ensure_judgment_builds_once_and_skips_mock",
+     "tests/test_update.py::test_ensure_judgment_concurrent_callers_build_once"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
-  },
-  {
-   "feature": "FeatureExpectationValidation",
-   "status": "in_progress",
-   "evidence": {
-    "files": [
-     "cms/review.py"
-    ],
-    "database": [
-     ".memory/graph.json"
-    ],
-    "api": [],
-    "ui": [],
-    "tests": [],
-    "manual_verification": ""
-   },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
-  },
-  {
-   "feature": "FeatureSuggestion",
-   "status": "in_progress",
-   "evidence": {
-    "files": [
-     "cms/suggest.py"
-    ],
-    "database": [
-     ".memory/graph.json"
-    ],
-    "api": [],
-    "ui": [],
-    "tests": [],
-    "manual_verification": ""
-   },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "FeatureTracing",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/features.py"
@@ -293,13 +427,24 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_activity.py::test_mcp_calls_write_activity",
+     "tests/test_align.py::test_aligned_when_target_touched_and_covered",
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_check_alignment_without_intent_errors",
+     "tests/test_align.py::test_drift_when_critical_finding_on_changed_file",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_align.py::test_partial_flags_unstated_scope_creep",
+     "tests/test_align.py::test_store_persists_intent_and_history",
+     "tests/test_align.py::test_unverified_when_no_changes",
+     "tests/test_align.py::test_unverified_when_no_covering_test",
+     "tests/test_brainstorm.py::test_project_grounded_mode_uses_card",
+     "tests/test_chat.py::test_ask_codebase_over_mcp"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "FeatureVerification",
@@ -317,33 +462,13 @@
     "manual_verification": ""
    },
    "known_limitations": [
-    "no verifying tests mapped yet"
+    "no exercising tests mapped yet"
    ],
-   "last_verified": "2026-07-05"
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "FindingPersistence",
-   "status": "in_progress",
-   "evidence": {
-    "files": [
-     "cms/sentinel/store.py"
-    ],
-    "database": [
-     ".memory/graph.json"
-    ],
-    "api": [],
-    "ui": [],
-    "tests": [],
-    "manual_verification": ""
-   },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
-  },
-  {
-   "feature": "FindingQualityGate",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/sentinel/__init__.py",
@@ -354,17 +479,28 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_align.py::test_aligned_when_target_touched_and_covered",
+     "tests/test_align.py::test_drift_when_critical_finding_on_changed_file",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_align.py::test_partial_flags_unstated_scope_creep",
+     "tests/test_align.py::test_unverified_when_no_changes",
+     "tests/test_align.py::test_unverified_when_no_covering_test",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "GitHistoryLayer",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/githistory.py"
@@ -374,17 +510,28 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_brainstorm.py::test_project_grounded_mode_uses_card",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically",
+     "tests/test_fuse.py::test_card_requires_positive_discovery_evidence",
+     "tests/test_fuse.py::test_fusion_failure_never_fakes_success",
+     "tests/test_fuse.py::test_fusion_refuses_mock_and_underevidence",
+     "tests/test_fuse.py::test_fusion_report_built_and_persisted",
+     "tests/test_fuse.py::test_fusion_staleness_flags_drifted_member"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "HermesSentinel",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/sentinel/contracts.py",
@@ -402,17 +549,54 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_sentinel.py::test_bug_report_generation_and_export",
+     "tests/test_sentinel.py::test_contract_checker_detects_unhandled_ui_fetch",
+     "tests/test_sentinel.py::test_contracts_clean_on_this_repo",
+     "tests/test_sentinel.py::test_domain_rules_clean_on_this_repo",
+     "tests/test_sentinel.py::test_domain_rules_flag_missing_graph",
+     "tests/test_sentinel.py::test_domain_rules_flag_provenance_and_ghost_members",
+     "tests/test_sentinel.py::test_inventory_detects_real_surfaces",
+     "tests/test_sentinel.py::test_ledger_flags_unledgered_graph_features",
+     "tests/test_sentinel.py::test_ledger_missing_is_flagged",
+     "tests/test_sentinel.py::test_ledger_parses_and_flags_unbacked_completion",
+     "tests/test_sentinel.py::test_mcp_docs_contract_clean_when_docs_current",
+     "tests/test_sentinel.py::test_mcp_docs_contract_flags_stale_tool_list"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "IdeaGenerationWithFeedback",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/brainstorm.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [
+     "tests/test_brainstorm.py::test_avoid_list_covers_existing_work",
+     "tests/test_brainstorm.py::test_generate_persists_ten_and_passes_temperature",
+     "tests/test_brainstorm.py::test_goals_inject_into_every_batch",
+     "tests/test_brainstorm.py::test_honesty_guards",
+     "tests/test_brainstorm.py::test_preference_learning_feeds_next_batch",
+     "tests/test_brainstorm.py::test_project_grounded_mode_uses_card",
+     "tests/test_ui_server.py::test_brainstorm_apis"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "ImpactAnalysis",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/impact.py"
@@ -422,17 +606,28 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_align.py::test_aligned_when_target_touched_and_covered",
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_drift_when_critical_finding_on_changed_file",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_align.py::test_partial_flags_unstated_scope_creep",
+     "tests/test_align.py::test_unverified_when_no_covering_test",
+     "tests/test_impact.py::test_impact_walks_upstream",
+     "tests/test_mcp.py::test_query_and_feature_tools",
+     "tests/test_prompt_export.py::test_json_pack_structure",
+     "tests/test_prompt_export.py::test_markdown_prompt_grounded_in_memory",
+     "tests/test_sentinel.py::test_run_scan_persists_results",
+     "tests/test_sentinel.py::test_workflow_checks_all_pass_on_real_pipeline"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "IncrementalUpdates",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/update.py"
@@ -442,20 +637,80 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_brainstorm.py::test_project_grounded_mode_uses_card",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically",
+     "tests/test_fuse.py::test_card_requires_positive_discovery_evidence",
+     "tests/test_fuse.py::test_fusion_failure_never_fakes_success",
+     "tests/test_fuse.py::test_fusion_refuses_mock_and_underevidence",
+     "tests/test_fuse.py::test_fusion_report_built_and_persisted",
+     "tests/test_fuse.py::test_fusion_staleness_flags_drifted_member"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
-   "feature": "InteractivePromptGeneration",
+   "feature": "IntentCapture",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/intent.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "IntentRealityVerdict",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/align.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [
+     "tests/test_align.py::test_aligned_when_target_touched_and_covered",
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_check_alignment_without_intent_errors",
+     "tests/test_align.py::test_drift_when_critical_finding_on_changed_file",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_align.py::test_partial_flags_unstated_scope_creep",
+     "tests/test_align.py::test_store_persists_intent_and_history",
+     "tests/test_align.py::test_unverified_when_no_changes",
+     "tests/test_align.py::test_unverified_when_no_covering_test"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "InteractiveCodebaseSetup",
    "status": "in_progress",
    "evidence": {
     "files": [
-     "cms/prompt_export.py"
+     "cms/ui_assets/setup.html"
     ],
     "database": [
      ".memory/graph.json"
@@ -466,13 +721,57 @@
     "manual_verification": ""
    },
    "known_limitations": [
-    "no verifying tests mapped yet"
+    "no exercising tests mapped yet"
    ],
-   "last_verified": "2026-07-05"
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "InteractiveFolderSelection",
+   "status": "in_progress",
+   "evidence": {
+    "files": [
+     "cms/picker.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "no exercising tests mapped yet"
+   ],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "JavaScriptTypeScriptParsing",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/js_parser.py"
+    ],
+    "database": [
+     ".memory/graph.json"
+    ],
+    "api": [],
+    "ui": [],
+    "tests": [
+     "tests/test_graph_builder.py::test_every_edge_carries_provenance",
+     "tests/test_js_parser.py::test_build_graph_resolves_ts_structure",
+     "tests/test_js_parser.py::test_build_graph_ts_calls_and_inherits",
+     "tests/test_js_parser.py::test_parse_js_calls_and_extends",
+     "tests/test_js_parser.py::test_parse_js_components_and_imports"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "KnowledgeGraphConstruction",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/graph_builder.py"
@@ -482,17 +781,28 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_activity.py::test_mcp_calls_write_activity",
+     "tests/test_align.py::test_aligned_when_target_touched_and_covered",
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_check_alignment_without_intent_errors",
+     "tests/test_align.py::test_drift_when_critical_finding_on_changed_file",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_align.py::test_partial_flags_unstated_scope_creep",
+     "tests/test_align.py::test_store_persists_intent_and_history",
+     "tests/test_align.py::test_unverified_when_no_changes",
+     "tests/test_align.py::test_unverified_when_no_covering_test",
+     "tests/test_anchors.py::test_anchors_attach_to_graph_nodes",
+     "tests/test_anchors.py::test_anchors_boost_query_ranking"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "LLMProviderAbstraction",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/providers.py"
@@ -502,37 +812,59 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_query.py::test_query_ranks_relevant_function_first",
+     "tests/test_query.py::test_query_roundtrip_through_json",
+     "tests/test_semantic_state.py::test_mock_never_creates_completion_markers",
+     "tests/test_sentinel.py::test_provider_validator_clean_on_real_providers",
+     "tests/test_sentinel.py::test_run_scan_persists_results",
+     "tests/test_sentinel.py::test_workflow_checks_all_pass_on_real_pipeline",
+     "tests/test_sentinel_ui.py::test_scan_runs_findings_update_and_export",
+     "tests/test_ui_server.py::test_semantic_endpoint_reports_stage_evidence",
+     "tests/test_ui_server.py::test_switch_root_rebinds_live",
+     "tests/test_update.py::test_changed_file_is_reprocessed",
+     "tests/test_update.py::test_ensure_judgment_builds_once_and_skips_mock",
+     "tests/test_update.py::test_ensure_judgment_concurrent_callers_build_once"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
-   "feature": "LLMProviderPluggability",
-   "status": "in_progress",
+   "feature": "LiveSemanticValidation",
+   "status": "complete",
    "evidence": {
     "files": [
-     "cms/providers.py"
+     "cms/semantic_state.py"
     ],
     "database": [
      ".memory/graph.json"
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_brainstorm.py::test_avoid_list_covers_existing_work",
+     "tests/test_brainstorm.py::test_generate_persists_ten_and_passes_temperature",
+     "tests/test_brainstorm.py::test_goals_inject_into_every_batch",
+     "tests/test_brainstorm.py::test_preference_learning_feeds_next_batch",
+     "tests/test_brainstorm.py::test_project_grounded_mode_uses_card",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically",
+     "tests/test_fuse.py::test_card_requires_positive_discovery_evidence"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "MemoryAnchors",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/anchors.py"
@@ -542,57 +874,60 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_activity.py::test_mcp_calls_write_activity",
+     "tests/test_align.py::test_aligned_when_target_touched_and_covered",
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_check_alignment_without_intent_errors",
+     "tests/test_align.py::test_drift_when_critical_finding_on_changed_file",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_align.py::test_partial_flags_unstated_scope_creep",
+     "tests/test_align.py::test_store_persists_intent_and_history",
+     "tests/test_align.py::test_unverified_when_no_changes",
+     "tests/test_align.py::test_unverified_when_no_covering_test",
+     "tests/test_anchors.py::test_anchors_attach_to_graph_nodes",
+     "tests/test_anchors.py::test_anchors_boost_query_ranking"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
-   "feature": "MemoryLayerPersistence",
-   "status": "in_progress",
+   "feature": "MemoryBundlePackaging",
+   "status": "complete",
    "evidence": {
     "files": [
-     "cms/exporter.py"
+     "cms/bundle.py",
+     "cms/scope.py"
     ],
     "database": [
      ".memory/graph.json"
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_activity.py::test_mcp_calls_write_activity",
+     "tests/test_align.py::test_aligned_when_target_touched_and_covered",
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_check_alignment_without_intent_errors",
+     "tests/test_align.py::test_drift_when_critical_finding_on_changed_file",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_align.py::test_partial_flags_unstated_scope_creep",
+     "tests/test_align.py::test_store_persists_intent_and_history",
+     "tests/test_align.py::test_unverified_when_no_changes",
+     "tests/test_align.py::test_unverified_when_no_covering_test",
+     "tests/test_anchors.py::test_anchors_attach_to_graph_nodes",
+     "tests/test_anchors.py::test_anchors_boost_query_ranking"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
-  },
-  {
-   "feature": "MemoryLayerStoreExport",
-   "status": "in_progress",
-   "evidence": {
-    "files": [
-     "cms/exporter.py"
-    ],
-    "database": [
-     ".memory/graph.json"
-    ],
-    "api": [],
-    "ui": [],
-    "tests": [],
-    "manual_verification": ""
-   },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "MemoryViewer",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/ui.py"
@@ -602,53 +937,75 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_sentinel_ui.py::test_latest_empty_before_any_scan",
+     "tests/test_sentinel_ui.py::test_notes_crud_roundtrip",
+     "tests/test_sentinel_ui.py::test_scan_runs_findings_update_and_export",
+     "tests/test_sentinel_ui.py::test_sentinel_page_served",
+     "tests/test_ui_server.py::test_activity_endpoint_since_filtering",
+     "tests/test_ui_server.py::test_brainstorm_apis",
+     "tests/test_ui_server.py::test_cache_reloads_when_graph_changes",
+     "tests/test_ui_server.py::test_chat_endpoint_and_popup_markup",
+     "tests/test_ui_server.py::test_discovery_page_and_apis",
+     "tests/test_ui_server.py::test_graph_tree_query_endpoints",
+     "tests/test_ui_server.py::test_index_and_meta",
+     "tests/test_ui_server.py::test_projects_endpoint_lists_mapped_with_current_flag"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
-   "feature": "NestedTreeStructureExport",
-   "status": "in_progress",
+   "feature": "PersistentUserNotes",
+   "status": "complete",
    "evidence": {
     "files": [
-     "cms/tree_export.py"
+     "cms/notes.py"
     ],
     "database": [
      ".memory/graph.json"
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_sentinel_ui.py::test_notes_crud_roundtrip",
+     "tests/test_sentinel_ui.py::test_notes_persist_across_store_instances"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
-   "feature": "PromptPackGeneration",
-   "status": "in_progress",
+   "feature": "ProjectPlanDiscovery",
+   "status": "complete",
    "evidence": {
     "files": [
-     "cms/prompt_export.py"
+     "cms/scout.py"
     ],
     "database": [
      ".memory/graph.json"
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_brainstorm.py::test_avoid_list_covers_existing_work",
+     "tests/test_brainstorm.py::test_generate_persists_ten_and_passes_temperature",
+     "tests/test_brainstorm.py::test_goals_inject_into_every_batch",
+     "tests/test_brainstorm.py::test_honesty_guards",
+     "tests/test_brainstorm.py::test_preference_learning_feeds_next_batch",
+     "tests/test_scout.py::test_find_plans_matches_and_prunes",
+     "tests/test_scout.py::test_mass_review_and_never_repropose",
+     "tests/test_scout.py::test_review_guards",
+     "tests/test_scout.py::test_scan_cards_cache_by_content_hash",
+     "tests/test_scout.py::test_scan_honesty",
+     "tests/test_ui_server.py::test_discovery_page_and_apis"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "PublicAPIExportOrchestration",
@@ -666,13 +1023,13 @@
     "manual_verification": ""
    },
    "known_limitations": [
-    "no verifying tests mapped yet"
+    "no exercising tests mapped yet"
    ],
-   "last_verified": "2026-07-05"
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "QueryEngine",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/memory.py"
@@ -682,20 +1039,31 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_activity.py::test_mcp_calls_write_activity",
+     "tests/test_align.py::test_capture_intent_persists_active_intent",
+     "tests/test_align.py::test_mcp_declares_intent_and_checks_alignment",
+     "tests/test_anchors.py::test_anchors_boost_query_ranking",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically",
+     "tests/test_features.py::test_discovered_synonyms_collapse_to_canonical_feature_with_aliases",
+     "tests/test_features.py::test_features_queryable"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
-   "feature": "RankedSuggestionGeneration",
+   "feature": "SecurityFindingsWorkflow",
    "status": "in_progress",
    "evidence": {
     "files": [
-     "cms/suggest.py"
+     "cms/ui_assets/sentinel.html"
     ],
     "database": [
      ".memory/graph.json"
@@ -706,73 +1074,38 @@
     "manual_verification": ""
    },
    "known_limitations": [
-    "no verifying tests mapped yet"
+    "no exercising tests mapped yet"
    ],
-   "last_verified": "2026-07-05"
+   "last_verified": "2026-07-13"
   },
   {
-   "feature": "SemanticMemoryExport",
-   "status": "in_progress",
+   "feature": "SourceExclusionTransparency",
+   "status": "complete",
    "evidence": {
     "files": [
-     "cms/exporter.py"
+     "cms/sources.py"
     ],
     "database": [
      ".memory/graph.json"
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_sources.py::test_add_ignore_pattern_idempotent",
+     "tests/test_sources.py::test_embedded_project_directories_are_flagged",
+     "tests/test_sources.py::test_gitignore_is_reflected",
+     "tests/test_sources.py::test_included_and_defaults",
+     "tests/test_sources.py::test_no_false_positive_on_clean_source",
+     "tests/test_sources.py::test_recommendations_are_grounded"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
-  },
-  {
-   "feature": "SemanticMemoryPersistence",
-   "status": "in_progress",
-   "evidence": {
-    "files": [
-     "cms/exporter.py"
-    ],
-    "database": [
-     ".memory/graph.json"
-    ],
-    "api": [],
-    "ui": [],
-    "tests": [],
-    "manual_verification": ""
-   },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
-  },
-  {
-   "feature": "SentinelBugFinding",
-   "status": "in_progress",
-   "evidence": {
-    "files": [
-     "cms/sentinel/__init__.py"
-    ],
-    "database": [
-     ".memory/graph.json"
-    ],
-    "api": [],
-    "ui": [],
-    "tests": [],
-    "manual_verification": ""
-   },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
    "feature": "SummaryGenerator",
-   "status": "in_progress",
+   "status": "complete",
    "evidence": {
     "files": [
      "cms/summarizer.py"
@@ -782,33 +1115,59 @@
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_brainstorm.py::test_project_grounded_mode_uses_card",
+     "tests/test_chat.py::test_ask_codebase_over_mcp",
+     "tests/test_chat.py::test_ask_grounds_prompt_and_appends_transcript",
+     "tests/test_chat.py::test_evidence_pack_matches_named_feature",
+     "tests/test_chat.py::test_generated_cli_commands_are_checked_against_live_surface",
+     "tests/test_chat.py::test_honesty_guards",
+     "tests/test_chat.py::test_sessions_isolate_history_and_list_logically",
+     "tests/test_fuse.py::test_card_requires_positive_discovery_evidence",
+     "tests/test_fuse.py::test_fusion_failure_never_fakes_success",
+     "tests/test_fuse.py::test_fusion_refuses_mock_and_underevidence",
+     "tests/test_fuse.py::test_fusion_report_built_and_persisted",
+     "tests/test_fuse.py::test_fusion_staleness_flags_drifted_member"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   },
   {
-   "feature": "TaskPromptGeneration",
-   "status": "in_progress",
+   "feature": "WebUIServer",
+   "status": "complete",
    "evidence": {
     "files": [
-     "cms/prompt_export.py"
+     "cms/ui.py",
+     "cms/ui_assets/constellation.html",
+     "cms/ui_assets/index.html",
+     "cms/ui_assets/sentinel.html",
+     "cms/ui_assets/setup.html"
     ],
     "database": [
      ".memory/graph.json"
     ],
     "api": [],
     "ui": [],
-    "tests": [],
+    "tests": [
+     "tests/test_sentinel_ui.py::test_latest_empty_before_any_scan",
+     "tests/test_sentinel_ui.py::test_notes_crud_roundtrip",
+     "tests/test_sentinel_ui.py::test_scan_runs_findings_update_and_export",
+     "tests/test_sentinel_ui.py::test_sentinel_page_served",
+     "tests/test_ui_server.py::test_activity_endpoint_since_filtering",
+     "tests/test_ui_server.py::test_brainstorm_apis",
+     "tests/test_ui_server.py::test_cache_reloads_when_graph_changes",
+     "tests/test_ui_server.py::test_chat_endpoint_and_popup_markup",
+     "tests/test_ui_server.py::test_discovery_page_and_apis",
+     "tests/test_ui_server.py::test_graph_tree_query_endpoints",
+     "tests/test_ui_server.py::test_index_and_meta",
+     "tests/test_ui_server.py::test_projects_endpoint_lists_mapped_with_current_flag"
+    ],
     "manual_verification": ""
    },
-   "known_limitations": [
-    "no verifying tests mapped yet"
-   ],
-   "last_verified": "2026-07-05"
+   "known_limitations": [],
+   "last_verified": "2026-07-13"
   }
  ]
 }
