@@ -90,6 +90,8 @@ APPROVAL_TOKEN = "test-approval-code"
 
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
+    from cms import config
+
     root = tmp_path_factory.mktemp("uiproj")
     (root / "app.py").write_text(SOURCE, encoding="utf-8")
     records = scan(root)
@@ -98,6 +100,12 @@ def server(tmp_path_factory):
     memory_dir = root / ".memory"
     export_tree(root, records, memory_dir)
     export_graph(graph, memory_dir)
+
+    # keep the library scopes off the real repo and the real home dir
+    empty = tmp_path_factory.mktemp("nolib")
+    os.environ["CMS_LIBRARY_BUILTIN"] = str(empty / "builtin")
+    real_user_dir = config.LIBRARY_USER_DIR
+    config.LIBRARY_USER_DIR = empty / "userlib"
 
     cache = _MemoryCache(memory_dir / "graph.json")
     os.environ["CMS_APPROVAL_TOKEN"] = APPROVAL_TOKEN  # deterministic gate for tests
@@ -112,6 +120,8 @@ def server(tmp_path_factory):
     yield client, root
     httpd.shutdown()
     httpd.server_close()
+    config.LIBRARY_USER_DIR = real_user_dir
+    os.environ.pop("CMS_LIBRARY_BUILTIN", None)
 
 
 def test_index_and_meta(server) -> None:
@@ -814,3 +824,124 @@ def test_lens_endpoint_and_slider_wiring(server, monkeypatch) -> None:
         assert f'id="{el}"' in html, f"missing {el}"
     assert '"/api/lens"' in html
     assert html.count("data-lens") >= 12  # summaries/features/review/suggestions/chat
+
+
+# --- Library screen -----------------------------------------------------------
+
+ASSET_MD = ("---\nid: house-rules\nname: House Rules\ntype: constraint\n"
+            "description: The rules of this house.\ntags: [rules]\n---\n\nNever touch generated files.")
+
+
+def test_library_page_and_nav_entry(server) -> None:
+    client, _ = server
+    status, body = client.get("/library")
+    assert status == 200 and b'id="rows"' in body
+    page = body.decode("utf-8")
+    for el in ("btnNew", "btnImport", "compose", "lensBtn", "editDlg", "importDlg"):
+        assert f'id="{el}"' in page, f"missing {el}"
+    assert "data-lens" in page                      # asset prose flows through the lens
+    assert '"/api/library/compose"' in page
+    index = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+             ).read_text(encoding="utf-8")
+    assert 'href="/library"' in index               # reachable from the map
+
+
+def test_library_draft_then_publish_is_token_gated(server) -> None:
+    client, root = server
+    status, body = client.post("/api/library/asset", {
+        "id": "house-rules", "name": "House Rules", "type": "constraint",
+        "description": "The rules of this house.", "tags": ["rules"],
+        "content": "Never touch generated files."})
+    assert status == 200
+    rec = json.loads(body)["asset"]
+    assert rec["status"] == "draft" and rec["trust"] == "project"
+    assert rec["created_by"]["via"] == "http"       # transport stamped server-side
+
+    # a draft is inert: it never reaches an agent's composed context
+    _, body = client.post("/api/library/compose", {"selection": ["house-rules"]})
+    composed = json.loads(body)
+    assert composed["assets"] == []
+    assert any(w["kind"] == "unpublished-asset" for w in composed["warnings"])
+
+    # publishing is a human act — the session code lives only in the terminal
+    status, body = client.post("/api/library/publish",
+                               {"id": "house-rules", "published_by": "alex"})
+    assert status == 403 and "session code" in json.loads(body)["error"]
+    status, body = client.post("/api/library/publish",
+                               {"id": "house-rules", "published_by": "alex",
+                                "token": "wrong-code"})
+    assert status == 403
+
+    status, body = client.post("/api/library/publish",
+                               {"id": "house-rules", "published_by": "alex",
+                                "token": APPROVAL_TOKEN})
+    assert status == 200
+    published = json.loads(body)["asset"]
+    assert published["status"] == "published" and published["current_version"] == 1
+    assert len(published["versions"][0]["content_hash"]) == 24
+    assert published["versions"][0]["published_by"] == "alex"
+
+
+def test_library_list_get_export_and_compose(server) -> None:
+    client, _ = server
+    status, body = client.get("/api/library?type=constraint")
+    data = json.loads(body)
+    assert status == 200
+    assert [a["id"] for a in data["assets"]] == ["house-rules"]
+    assert "profile" in data["types"] and "project" in data["scopes"]
+    assert json.loads(client.get("/api/library?q=nothing-here")[1])["assets"] == []
+
+    _, body = client.get("/api/library/asset?id=house-rules")
+    detail = json.loads(body)["asset"]
+    assert detail["body"] == "Never touch generated files."   # canonical, verbatim
+    assert detail["versions"][0]["version"] == 1
+    assert client.get("/api/library/asset?id=ghost")[0] == 404
+
+    status, body = client.get("/api/library/export?id=house-rules")
+    assert status == 200 and b"id: house-rules" in body       # round-trippable markdown
+
+    _, body = client.post("/api/library/compose", {"selection": ["house-rules"]})
+    composed = json.loads(body)
+    assert composed["assets"][0]["version"] == 1
+    assert composed["est_tokens"] > 0 and composed["oversized"] is False
+
+
+def test_library_import_lands_untrusted_and_deprecate_is_gated(server) -> None:
+    client, _ = server
+    status, body = client.post("/api/library/import", {
+        "content": "---\nname: Getting Rich\ndescription: Money manual.\n---\n\nSpend less than you earn.",
+        "filename": "getting_rich.md"})
+    assert status == 200
+    rec = json.loads(body)["asset"]
+    assert rec["id"] == "getting-rich"
+    assert rec["trust"] == "imported" and rec["status"] == "draft"  # visibly untrusted
+
+    # deprecation also rewrites what agents are handed -> same human gate
+    status, _ = client.post("/api/library/status",
+                            {"id": "house-rules", "status": "deprecated"})
+    assert status == 403
+    status, body = client.post("/api/library/status",
+                               {"id": "house-rules", "status": "deprecated",
+                                "token": APPROVAL_TOKEN})
+    assert status == 200 and json.loads(body)["asset"]["status"] == "deprecated"
+
+    # disable/enable is a local view toggle, not a rewrite of canonical content
+    status, _ = client.post("/api/library/status",
+                            {"id": "house-rules", "status": "disabled"})
+    assert status == 200
+    _, body = client.get("/api/library?scope=project")
+    row = next(a for a in json.loads(body)["assets"] if a["id"] == "house-rules")
+    assert row["enabled_effective"] is False
+    client.post("/api/library/status", {"id": "house-rules", "status": "enabled"})
+
+
+def test_library_rejects_invalid_assets(server) -> None:
+    client, _ = server
+    status, body = client.post("/api/library/asset", {
+        "id": "../../evil", "name": "Evil", "type": "skill",
+        "description": "x", "content": "y"})
+    assert status == 400 and "invalid asset id" in json.loads(body)["error"]
+    status, body = client.post("/api/library/asset", {
+        "id": "bad-type", "name": "Bad", "type": "sorcery",
+        "description": "x", "content": "y"})
+    assert status == 400 and "unknown asset type" in json.loads(body)["error"]

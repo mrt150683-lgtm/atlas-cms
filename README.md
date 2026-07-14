@@ -407,6 +407,7 @@ the agents query, rendered for humans at whatever depth and wording fits them.
 | ![Hover tooltips with per-file summaries and git stats](docs/images/map-tooltip.png) *Hover any node for its summary, lines, commits and provenance* | ![Annotated file reader](docs/images/file-reader.png) *Built-in reader: markdown rendering, source view, quote-anchored notes* |
 | ![Discovery: Constellation fusion report](docs/images/discovery.png) *Discovery: cross-project integrations, emergent features and conflicts (Constellation)* | ![Brainstorm: taste-learning idea generation](docs/images/brainstorm.png) *Brainstorm: temperature-dialed new concepts that learn from 👍/👎* |
 | ![Hermes Sentinel quality gate](docs/images/sentinel.png) *Hermes Sentinel: findings, workflow checks and the completion quality gate* | ![Setup: sources & exclusions transparency](docs/images/setup.png) *Setup: what gets analysed, what's skipped, and why, with evidence* |
+| ![The Library: versioned, composable agent-context assets](docs/images/library-screen.png) *The Library: versioned assets (skills, strategies, preferences, constraints, profiles) with the resolved context an agent would receive* | |
 
 Everything lands in `.memory/` inside the analysed project:
 

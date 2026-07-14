@@ -83,6 +83,7 @@ any shell — it prefers `.venv` and never pauses when given arguments.
 | Full rebuild | `cms update --full` or `cms run-all` |
 | Quality gate | `cms sentinel` (exit 1 on active criticals) |
 | Change gate | `cms align "<goal>"` → edit → `cms align status` (exit 1 on drift) |
+| Library | `cms library list` · `cms library compose atlas-default` · publish: `cms library publish <id> --by "<name>"` |
 | Tests | `uv run python -m pytest tests -q` |
 | UI | `cms app` (or double-click `CMS.bat`) |
 | Diagnose | `cms features` (memory loads?) · `codex mcp list` (entry present?) · `.venv\Scripts\python -m cms.cli --help` (runtime OK?) |
@@ -93,6 +94,13 @@ untouched related file is reported under `related_not_touched` but is not a
 gap. Requested companion docs, CI, dependency/security policy, UI assets,
 tests, and proof ledgers are accepted when justified by the goal; unrelated
 changes remain `unstated-change`.
+
+Publishing a Library asset (and deprecating one) takes the same per-session
+approval code as decision approval — printed only to the terminal that launched
+Atlas, so an agent driving the HTTP API cannot publish what agents will later be
+handed. Over the CLI the terminal *is* the human channel, so `--by "<name>"` is
+enough. Agents may only propose drafts (`propose_asset`) and annotate assets
+(`add_annotation` with `target="asset:<id>"`).
 
 ## Mock vs semantic output
 

@@ -1,160 +1,160 @@
 {
- "schema_version": 1,
- "assets": [
-  {
-   "id": "atlas-conventions",
-   "type": "preference",
-   "name": "Atlas Conventions",
-   "description": "House conventions for working in an Atlas-mapped codebase \u2014 anchors, memory upkeep, and honest completion habits.",
-   "tags": [
-    "atlas",
-    "conventions",
-    "memory"
-   ],
-   "path": "atlas-conventions.md",
-   "status": "published",
-   "enabled": true,
-   "trust": "project",
-   "current_version": 1,
-   "versions": [
+  "schema_version": 1,
+  "assets": [
     {
-     "version": 1,
-     "content_hash": "dc95702dac44569754c02156",
-     "snapshot": ".versions/atlas-conventions/v1.md",
-     "published_at": "2026-07-14T13:41:55Z",
-     "published_by": "Alex Terry"
-    }
-   ],
-   "created_by": {
-    "kind": "user",
-    "identity": "user"
-   },
-   "created_at": "2026-07-14T13:41:55Z",
-   "updated_at": "2026-07-14T13:41:55Z"
-  },
-  {
-   "id": "atlas-default",
-   "type": "profile",
-   "name": "Atlas Default",
-   "description": "The baseline working agreement for any agent touching an Atlas-mapped codebase \u2014 memory-first grounding, honest verification, canonical-content discipline, and the house conventions.",
-   "tags": [
-    "atlas",
-    "baseline"
-   ],
-   "path": "atlas-default.md",
-   "status": "published",
-   "enabled": true,
-   "trust": "project",
-   "current_version": 1,
-   "versions": [
+      "id": "atlas-conventions",
+      "type": "preference",
+      "name": "Atlas Conventions",
+      "description": "House conventions for working in an Atlas-mapped codebase — anchors, memory upkeep, and honest completion habits.",
+      "tags": [
+        "atlas",
+        "conventions",
+        "memory"
+      ],
+      "path": "atlas-conventions.md",
+      "status": "published",
+      "enabled": true,
+      "trust": "project",
+      "current_version": 1,
+      "versions": [
+        {
+          "version": 1,
+          "content_hash": "dc95702dac44569754c02156",
+          "snapshot": ".versions/atlas-conventions/v1.md",
+          "published_at": "2026-07-14T13:41:55Z",
+          "published_by": "Alex Terry"
+        }
+      ],
+      "created_by": {
+        "kind": "user",
+        "identity": "user"
+      },
+      "created_at": "2026-07-14T13:41:55Z",
+      "updated_at": "2026-07-14T13:41:55Z"
+    },
     {
-     "version": 1,
-     "content_hash": "799a70041cf0ed19a50b536f",
-     "snapshot": ".versions/atlas-default/v1.md",
-     "published_at": "2026-07-14T13:42:26Z",
-     "published_by": "Alex Terry"
-    }
-   ],
-   "created_by": {
-    "kind": "user",
-    "identity": "user"
-   },
-   "created_at": "2026-07-14T13:42:26Z",
-   "updated_at": "2026-07-14T13:42:26Z"
-  },
-  {
-   "id": "memory-first",
-   "type": "strategy",
-   "name": "Memory First",
-   "description": "Consult the Atlas memory layer before grepping or reading whole files \u2014 query, summarize, then read surgically.",
-   "tags": [
-    "atlas",
-    "workflow",
-    "context"
-   ],
-   "path": "memory-first.md",
-   "status": "published",
-   "enabled": true,
-   "trust": "project",
-   "current_version": 1,
-   "versions": [
+      "id": "atlas-default",
+      "type": "profile",
+      "name": "Atlas Default",
+      "description": "The baseline working agreement for any agent touching an Atlas-mapped codebase — memory-first grounding, honest verification, canonical-content discipline, and the house conventions.",
+      "tags": [
+        "atlas",
+        "baseline"
+      ],
+      "path": "atlas-default.md",
+      "status": "published",
+      "enabled": true,
+      "trust": "project",
+      "current_version": 1,
+      "versions": [
+        {
+          "version": 1,
+          "content_hash": "799a70041cf0ed19a50b536f",
+          "snapshot": ".versions/atlas-default/v1.md",
+          "published_at": "2026-07-14T13:42:26Z",
+          "published_by": "Alex Terry"
+        }
+      ],
+      "created_by": {
+        "kind": "user",
+        "identity": "user"
+      },
+      "created_at": "2026-07-14T13:42:26Z",
+      "updated_at": "2026-07-14T13:42:26Z"
+    },
     {
-     "version": 1,
-     "content_hash": "5e56735826aa7ea9604e2594",
-     "snapshot": ".versions/memory-first/v1.md",
-     "published_at": "2026-07-14T13:41:56Z",
-     "published_by": "Alex Terry"
-    }
-   ],
-   "created_by": {
-    "kind": "user",
-    "identity": "user"
-   },
-   "created_at": "2026-07-14T13:41:56Z",
-   "updated_at": "2026-07-14T13:41:56Z"
-  },
-  {
-   "id": "no-silent-canonical-edits",
-   "type": "constraint",
-   "name": "No Silent Canonical Edits",
-   "description": "Never rewrite approved or model-authored canonical content in place \u2014 correct by superseding, so the audit trail survives.",
-   "tags": [
-    "atlas",
-    "trust",
-    "provenance"
-   ],
-   "path": "no-silent-canonical-edits.md",
-   "status": "published",
-   "enabled": true,
-   "trust": "project",
-   "current_version": 1,
-   "versions": [
+      "id": "memory-first",
+      "type": "strategy",
+      "name": "Memory First",
+      "description": "Consult the Atlas memory layer before grepping or reading whole files — query, summarize, then read surgically.",
+      "tags": [
+        "atlas",
+        "workflow",
+        "context"
+      ],
+      "path": "memory-first.md",
+      "status": "published",
+      "enabled": true,
+      "trust": "project",
+      "current_version": 1,
+      "versions": [
+        {
+          "version": 1,
+          "content_hash": "5e56735826aa7ea9604e2594",
+          "snapshot": ".versions/memory-first/v1.md",
+          "published_at": "2026-07-14T13:41:56Z",
+          "published_by": "Alex Terry"
+        }
+      ],
+      "created_by": {
+        "kind": "user",
+        "identity": "user"
+      },
+      "created_at": "2026-07-14T13:41:56Z",
+      "updated_at": "2026-07-14T13:41:56Z"
+    },
     {
-     "version": 1,
-     "content_hash": "14b5b66fd7e93a44e90d3e1e",
-     "snapshot": ".versions/no-silent-canonical-edits/v1.md",
-     "published_at": "2026-07-14T13:41:58Z",
-     "published_by": "Alex Terry"
-    }
-   ],
-   "created_by": {
-    "kind": "user",
-    "identity": "user"
-   },
-   "created_at": "2026-07-14T13:41:58Z",
-   "updated_at": "2026-07-14T13:41:58Z"
-  },
-  {
-   "id": "verify-before-done",
-   "type": "strategy",
-   "name": "Verify Before Done",
-   "description": "Prove a change landed before claiming completion \u2014 declare intent, check alignment, run the named tests, close the gaps.",
-   "tags": [
-    "atlas",
-    "verification",
-    "alignment"
-   ],
-   "path": "verify-before-done.md",
-   "status": "published",
-   "enabled": true,
-   "trust": "project",
-   "current_version": 1,
-   "versions": [
+      "id": "no-silent-canonical-edits",
+      "type": "constraint",
+      "name": "No Silent Canonical Edits",
+      "description": "Never rewrite approved or model-authored canonical content in place — correct by superseding, so the audit trail survives.",
+      "tags": [
+        "atlas",
+        "trust",
+        "provenance"
+      ],
+      "path": "no-silent-canonical-edits.md",
+      "status": "published",
+      "enabled": true,
+      "trust": "project",
+      "current_version": 1,
+      "versions": [
+        {
+          "version": 1,
+          "content_hash": "14b5b66fd7e93a44e90d3e1e",
+          "snapshot": ".versions/no-silent-canonical-edits/v1.md",
+          "published_at": "2026-07-14T13:41:58Z",
+          "published_by": "Alex Terry"
+        }
+      ],
+      "created_by": {
+        "kind": "user",
+        "identity": "user"
+      },
+      "created_at": "2026-07-14T13:41:58Z",
+      "updated_at": "2026-07-14T13:41:58Z"
+    },
     {
-     "version": 1,
-     "content_hash": "aba9752a03d699f923193005",
-     "snapshot": ".versions/verify-before-done/v1.md",
-     "published_at": "2026-07-14T13:41:57Z",
-     "published_by": "Alex Terry"
+      "id": "verify-before-done",
+      "type": "strategy",
+      "name": "Verify Before Done",
+      "description": "Prove a change landed before claiming completion — declare intent, check alignment, run the named tests, close the gaps.",
+      "tags": [
+        "atlas",
+        "verification",
+        "alignment"
+      ],
+      "path": "verify-before-done.md",
+      "status": "published",
+      "enabled": true,
+      "trust": "project",
+      "current_version": 1,
+      "versions": [
+        {
+          "version": 1,
+          "content_hash": "aba9752a03d699f923193005",
+          "snapshot": ".versions/verify-before-done/v1.md",
+          "published_at": "2026-07-14T13:41:57Z",
+          "published_by": "Alex Terry"
+        }
+      ],
+      "created_by": {
+        "kind": "user",
+        "identity": "user"
+      },
+      "created_at": "2026-07-14T13:41:57Z",
+      "updated_at": "2026-07-14T13:41:57Z"
     }
-   ],
-   "created_by": {
-    "kind": "user",
-    "identity": "user"
-   },
-   "created_at": "2026-07-14T13:41:57Z",
-   "updated_at": "2026-07-14T13:41:57Z"
-  }
- ],
- "overrides": {}
+  ],
+  "overrides": {}
 }

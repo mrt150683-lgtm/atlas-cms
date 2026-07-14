@@ -499,7 +499,7 @@ class LibraryStore:
 # --- merged view ---------------------------------------------------------------
 
 # @memory:feature:AtlasLibrary
-# @memory:connects:TaskPromptExport, StructuredAnnotations
+# @memory:connects:PromptExport, StructuredAnnotations
 # @memory:summary:Merged built-in/user/project view with project-wins precedence; compose() expands profiles, walks requires, reports conflicts and shadowing, dedupes, orders, estimates size, and returns exact version provenance.
 class LibraryView:
     """The three scopes merged, ascending precedence: built-in, user, project."""

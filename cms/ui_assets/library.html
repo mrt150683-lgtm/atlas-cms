@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atlas — Library</title>
+<style>
+  :root {
+    --bg: #0d0d0d;
+    --surface: #1a1a19;
+    --surface-2: #141413;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.14);
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --ink-3: #898781;
+    --accent: #3987e5;
+    --ok: #3fa66a;
+    --warn: #c98500;
+    --bad: #d05252;
+    --radius: 8px;
+    --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--ink-2); font: 13px/1.55 var(--font);
+         -webkit-font-smoothing: antialiased; overflow: hidden; }
+  a { color: var(--accent); text-decoration: none; }
+  button { font: inherit; cursor: pointer; }
+
+  #app { height: 100%; display: grid; grid-template-rows: 52px 1fr; }
+  header { display: flex; align-items: center; gap: 14px; padding: 0 16px;
+           border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .brand { display: flex; align-items: center; gap: 9px; }
+  .logo { width: 22px; height: 22px; }
+  .lg-peak { fill: none; stroke: var(--accent); stroke-width: 1.7; stroke-linejoin: round; }
+  .lg-inner { fill: var(--accent); opacity: .22; }
+  .lg-star { fill: var(--accent); }
+  .mark { color: var(--ink); font-weight: 600; letter-spacing: .22em; font-size: 13px; }
+  .sub { color: var(--ink-3); font-size: 12px; }
+  .grow { flex: 1; }
+  .backlink { color: var(--ink-3); font-size: 12px; border: 1px solid var(--border);
+              border-radius: 999px; padding: 3px 11px; }
+  .backlink:hover { color: var(--ink); border-color: var(--border-strong); }
+
+  #lensCtl { position: relative; }
+  #lensBtn { background: transparent; border: 1px solid var(--border); color: var(--ink-3);
+             border-radius: 999px; padding: 3px 11px; font-size: 12px; }
+  #lensBtn:hover, #lensBtn.on { color: var(--ink); border-color: var(--border-strong); }
+  #lensPop { display: none; position: absolute; right: 0; top: 30px; width: 250px; z-index: 40;
+             background: var(--surface); border: 1px solid var(--border-strong);
+             border-radius: var(--radius); padding: 12px; box-shadow: 0 12px 34px rgba(0,0,0,.55); }
+  #lensPop.open { display: block; }
+  #lensPop input[type=range] { width: 100%; margin: 8px 0 2px; accent-color: var(--accent); }
+  .lp-title { color: var(--ink); font-weight: 600; }
+  .lp-sub, .lp-scale, .lp-blurb { color: var(--ink-3); font-size: 11px; }
+  .lp-scale { display: flex; justify-content: space-between; }
+  .lp-name { color: var(--accent); font-size: 12px; margin-top: 6px; }
+
+  main { display: grid; grid-template-columns: 340px 1fr; min-height: 0; }
+  #list { border-right: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+  .filters { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex;
+             flex-wrap: wrap; gap: 6px; }
+  .filters input[type=text] { width: 100%; background: var(--surface-2); color: var(--ink);
+        border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; font: inherit;
+        outline: none; margin-bottom: 2px; }
+  .filters input:focus { border-color: var(--accent); }
+  .chip { background: transparent; border: 1px solid var(--border); color: var(--ink-3);
+          border-radius: 999px; padding: 2px 9px; font-size: 11px; }
+  .chip:hover { color: var(--ink); }
+  .chip.on { background: rgba(57,135,229,.14); border-color: var(--accent); color: var(--ink); }
+  #rows { overflow-y: auto; flex: 1; }
+  .row { padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .row:hover { background: var(--surface-2); }
+  .row.sel { background: rgba(57,135,229,.10); border-left: 2px solid var(--accent);
+             padding-left: 10px; }
+  .row.shadow { opacity: .45; }
+  .row.off .rname { text-decoration: line-through; }
+  .rname { color: var(--ink); font-weight: 500; }
+  .rmeta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 3px; }
+  .rdesc { color: var(--ink-3); font-size: 11px; margin-top: 3px;
+           display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tag { font-size: 10px; border-radius: 999px; padding: 1px 7px; border: 1px solid var(--border);
+         color: var(--ink-3); white-space: nowrap; }
+  .t-skill { color: #7fb8ff; border-color: rgba(127,184,255,.3); }
+  .t-strategy { color: #9d8cf5; border-color: rgba(157,140,245,.3); }
+  .t-preference { color: #6fc99a; border-color: rgba(111,201,154,.3); }
+  .t-constraint { color: #e08a8a; border-color: rgba(224,138,138,.3); }
+  .t-profile { color: #e0c070; border-color: rgba(224,192,112,.3); }
+  .tr-agent, .tr-imported { color: var(--warn); border-color: rgba(201,133,0,.35); }
+  .tr-builtin { color: var(--ink-3); }
+  .st-draft { color: var(--warn); border-color: rgba(201,133,0,.3); }
+  .st-published { color: var(--ok); border-color: rgba(63,166,106,.3); }
+  .st-deprecated { color: var(--ink-3); }
+  .ver { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+
+  #pane { overflow-y: auto; padding: 18px 22px 60px; min-height: 0; }
+  .empty { color: var(--ink-3); padding: 40px 0; text-align: center; }
+  h1 { color: var(--ink); font-size: 19px; font-weight: 600; }
+  h2 { color: var(--ink); font-size: 12px; font-weight: 600; text-transform: uppercase;
+       letter-spacing: .08em; margin: 22px 0 8px; }
+  .sect { border-top: 1px solid var(--border); padding-top: 4px; }
+  pre.canon { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+              padding: 13px 15px; font: 12px/1.6 var(--mono); color: var(--ink-2);
+              white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px; font-size: 12px; }
+  .kv b { color: var(--ink-3); font-weight: 400; }
+  .actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+  .btn { background: var(--surface); border: 1px solid var(--border-strong); color: var(--ink-2);
+         border-radius: 6px; padding: 5px 12px; font-size: 12px; }
+  .btn:hover { color: var(--ink); border-color: var(--accent); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.warn:hover { border-color: var(--warn); color: var(--warn); }
+  table.vers { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.vers td { padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); }
+  table.vers .h { font-family: var(--mono); color: var(--ink-3); font-size: 11px; }
+  .note { color: var(--ink-3); font-size: 11px; margin-top: 5px; }
+  .banner { border-radius: 6px; padding: 8px 11px; font-size: 12px; margin-bottom: 12px; }
+  .banner.warn { background: rgba(201,133,0,.10); border: 1px solid rgba(201,133,0,.35); color: #e0b060; }
+  .banner.bad { background: rgba(208,82,82,.10); border: 1px solid rgba(208,82,82,.35); color: #e08a8a; }
+  .banner.info { background: rgba(57,135,229,.08); border: 1px solid rgba(57,135,229,.3); color: #9dc3ef; }
+  .ann { border-left: 2px solid var(--border-strong); padding: 5px 0 5px 10px; margin-bottom: 7px; }
+  .ann .who { font-size: 10px; color: var(--ink-3); }
+  .lensed { border-bottom: 1px dotted rgba(57,135,229,.5); }
+
+  /* compose drawer */
+  #compose { position: fixed; right: 0; bottom: 0; width: min(560px, 50vw); max-height: 74vh;
+             background: var(--surface); border: 1px solid var(--border-strong);
+             border-radius: var(--radius) 0 0 0; box-shadow: 0 -8px 40px rgba(0,0,0,.6);
+             display: flex; flex-direction: column; z-index: 30; transform: translateY(calc(100% - 40px));
+             transition: transform .18s ease; }
+  #compose.open { transform: translateY(0); }
+  #composeHead { height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 14px;
+                 cursor: pointer; border-bottom: 1px solid var(--border); }
+  #composeHead b { color: var(--ink); font-size: 12px; }
+  #composeBody { overflow-y: auto; padding: 12px 14px 18px; }
+  .selpill { display: inline-flex; align-items: center; gap: 5px; background: var(--surface-2);
+             border: 1px solid var(--border); border-radius: 999px; padding: 2px 5px 2px 9px;
+             font-size: 11px; margin: 0 4px 4px 0; color: var(--ink-2); }
+  .selpill button { background: none; border: 0; color: var(--ink-3); font-size: 13px; line-height: 1; }
+  .selpill button:hover { color: var(--bad); }
+  .meter { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin: 8px 0 4px; }
+  .meter i { display: block; height: 100%; background: var(--accent); }
+  .meter.over i { background: var(--warn); }
+  dialog { background: var(--surface); color: var(--ink-2); border: 1px solid var(--border-strong);
+           border-radius: var(--radius); padding: 18px; width: min(640px, 92vw); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  dialog h3 { color: var(--ink); margin-bottom: 10px; }
+  dialog input, dialog textarea, dialog select {
+      width: 100%; background: var(--surface-2); color: var(--ink); border: 1px solid var(--border);
+      border-radius: 6px; padding: 7px 9px; font: inherit; margin-bottom: 9px; outline: none; }
+  dialog textarea { font: 12px/1.6 var(--mono); min-height: 190px; resize: vertical; }
+  dialog input:focus, dialog textarea:focus, dialog select:focus { border-color: var(--accent); }
+  dialog label { display: block; font-size: 11px; color: var(--ink-3); margin-bottom: 3px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 28 28" aria-hidden="true">
+        <path class="lg-peak" d="M14 4 L25 23 L3 23 Z"/>
+        <path class="lg-inner" d="M14 11.5 L19.5 21 L8.5 21 Z"/>
+        <circle class="lg-star" cx="14" cy="8" r="1.15"/>
+      </svg>
+      <span class="mark">ATLAS</span>
+      <span class="sub">· Library</span>
+    </div>
+    <span class="sub" id="count"></span>
+    <div class="grow"></div>
+    <div id="lensCtl">
+      <button id="lensBtn" title="Comprehension lens — have descriptions explained for a different audience">◐ Lens</button>
+      <div id="lensPop">
+        <div class="lp-title">Comprehension lens</div>
+        <div class="lp-sub">How should Atlas explain these assets?</div>
+        <input id="lensRange" type="range" min="0" max="6" step="1" value="6" aria-label="Comprehension level">
+        <div class="lp-scale"><span>simplest</span><span>raw data</span></div>
+        <div class="lp-name" id="lensName"></div>
+        <div class="lp-blurb" id="lensBlurb"></div>
+        <div class="lp-note note" id="lensNote"></div>
+      </div>
+    </div>
+    <button class="btn" id="btnNew">+ New asset</button>
+    <button class="btn" id="btnImport">Import</button>
+    <a class="backlink" href="/">← Map</a>
+  </header>
+
+  <main>
+    <section id="list">
+      <div class="filters">
+        <input id="q" type="text" placeholder="Search assets…" autocomplete="off" spellcheck="false">
+        <div id="typeChips"></div>
+        <div id="scopeChips"></div>
+      </div>
+      <div id="rows"></div>
+    </section>
+    <section id="pane"><div class="empty">Select an asset to inspect it.</div></section>
+  </main>
+</div>
+
+<div id="compose">
+  <div id="composeHead"><b>⌁ Compose context</b><span class="sub" id="composeSummary">nothing selected</span>
+    <div class="grow"></div><span class="sub" id="composeCaret">▲</span></div>
+  <div id="composeBody">
+    <div class="note">Pick assets (or a profile) to see exactly what an agent would receive — resolved, deduped, and version-pinned.</div>
+    <div id="selPills" style="margin-top:8px"></div>
+    <div id="composeOut"></div>
+  </div>
+</div>
+
+<dialog id="editDlg">
+  <h3 id="editTitle">New asset</h3>
+  <div id="editErr"></div>
+  <label>Id (lowercase slug — permanent)</label>
+  <input id="fId" placeholder="react-conventions">
+  <label>Name</label>
+  <input id="fName" placeholder="React Conventions">
+  <label>Type</label>
+  <select id="fType"></select>
+  <label>Description (one line: what it does, when to load it)</label>
+  <input id="fDesc" placeholder="How we write React components here.">
+  <label>Tags (comma separated)</label>
+  <input id="fTags" placeholder="react, frontend">
+  <label>Requires (asset ids, comma separated)</label>
+  <input id="fReq" placeholder="frontend-base">
+  <label>Conflicts with (asset ids, comma separated)</label>
+  <input id="fConf" placeholder="">
+  <div id="wrapMembers" style="display:none">
+    <label>Members (profiles only — pinned refs like <code>id@1</code>)</label>
+    <input id="fMembers" placeholder="frontend-base@1, react-skill@2">
+  </div>
+  <label>Canonical content — what the agent receives verbatim</label>
+  <textarea id="fContent" spellcheck="false"></textarea>
+  <div class="actions" style="justify-content:flex-end">
+    <button class="btn" id="editCancel">Cancel</button>
+    <button class="btn primary" id="editSave">Save draft</button>
+  </div>
+</dialog>
+
+<dialog id="importDlg">
+  <h3>Import a markdown skill file</h3>
+  <div class="banner info">Imported assets land as <b>drafts</b> with trust <b>imported</b>. They never
+    enter an agent's context until you publish them.</div>
+  <div id="importErr"></div>
+  <input type="file" id="fFile" accept=".md,text/markdown">
+  <label style="margin-top:8px">…or paste the file</label>
+  <textarea id="fPaste" spellcheck="false" placeholder="---&#10;name: Getting Rich&#10;description: …&#10;---&#10;&#10;Body…"></textarea>
+  <div class="actions" style="justify-content:flex-end">
+    <button class="btn" id="importCancel">Cancel</button>
+    <button class="btn primary" id="importSave">Import as draft</button>
+  </div>
+</dialog>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+const S = { assets: [], types: [], scopes: [], sel: null, filter: { type: "", scope: "", q: "" },
+            picked: [], detail: null };
+
+/* ---- comprehension lens: reuse the server-side rewrite + cache ---- */
+const LENS_LEVELS = [
+  { id: "schoolchild", name: "Schoolchild", blurb: "Everyday words and analogies." },
+  { id: "tech",        name: "Technician",  blurb: "Practical, hands-on terms." },
+  { id: "uni",         name: "Uni student", blurb: "Precise terminology, connected to fundamentals." },
+  { id: "specialist",  name: "Specialist",  blurb: "Dense and precise for a domain expert." },
+  { id: "tldr",        name: "TL;DR",       blurb: "One punchy sentence per item." },
+  { id: "adhd",        name: "ADHD / low focus", blurb: "2-4 ultra-short bullets, key word bolded." },
+  { id: "default",     name: "Default",     blurb: "The data exactly as written — no rewriting." },
+];
+const Lens = { level: localStorage.getItem("cms.lens.level") || "default", cache: new Map(), busy: false };
+if (!LENS_LEVELS.some(l => l.id === Lens.level)) Lens.level = "default";
+
+function lensHash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36) + ":" + s.length; }
+
+async function applyLens() {
+  const els = [...document.querySelectorAll("[data-lens]")];
+  if (Lens.level === "default") {
+    els.forEach(el => { if (el.dataset.orig) { el.textContent = el.dataset.orig;
+      el.classList.remove("lensed"); el.removeAttribute("title"); } });
+    return;
+  }
+  const items = [], pending = new Map();
+  for (const el of els) {
+    const orig = el.dataset.orig || (el.dataset.orig = el.textContent.trim());
+    if (!orig) continue;
+    const key = Lens.level + " " + lensHash(orig);
+    if (Lens.cache.has(key)) { paint(el, Lens.cache.get(key), orig); continue; }
+    const h = lensHash(orig);
+    if (!pending.has(h)) { pending.set(h, []); items.push({ id: h, text: orig }); }
+    pending.get(h).push(el);
+  }
+  if (!items.length || Lens.busy) return;
+  Lens.busy = true;
+  try {
+    for (let i = 0; i < items.length; i += 16) {   // server caps a batch at 16
+      const r = await fetch("/api/lens", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: Lens.level, items: items.slice(i, i + 16) }) });
+      const data = await r.json();
+      $("lensNote").textContent = data.real === false
+        ? "No AI provider configured — persona levels show the original text." : "";
+      for (const [id, text] of Object.entries(data.results || {})) {
+        Lens.cache.set(Lens.level + " " + id, text);
+        for (const el of (pending.get(id) || [])) paint(el, text, el.dataset.orig);
+      }
+    }
+  } catch (e) { /* lens is presentation only — never block the page */ }
+  Lens.busy = false;
+}
+function paint(el, text, orig) {
+  if (!text || text === orig) { el.textContent = orig; el.classList.remove("lensed"); return; }
+  el.classList.add("lensed");
+  el.title = "Rewritten for the current lens — set Default for the original";
+  if (Lens.level === "adhd") {
+    const bullets = text.split(/\r?\n/).map(l => l.replace(/^[-•*]\s*/, "").trim()).filter(Boolean);
+    el.innerHTML = "<ul>" + bullets.map(b => "<li>" + esc(b) + "</li>").join("") + "</ul>";
+  } else el.textContent = text;
+}
+function initLens() {
+  const idx = LENS_LEVELS.findIndex(l => l.id === Lens.level);
+  $("lensRange").value = idx < 0 ? 6 : idx;
+  const show = () => { const l = LENS_LEVELS[+$("lensRange").value];
+    $("lensName").textContent = l.name; $("lensBlurb").textContent = l.blurb; };
+  show();
+  $("lensBtn").onclick = () => { $("lensPop").classList.toggle("open");
+    $("lensBtn").classList.toggle("on"); };
+  $("lensRange").oninput = () => { const l = LENS_LEVELS[+$("lensRange").value];
+    Lens.level = l.id; localStorage.setItem("cms.lens.level", l.id); show(); applyLens(); };
+  document.addEventListener("click", e => {
+    if (!$("lensCtl").contains(e.target)) { $("lensPop").classList.remove("open");
+      $("lensBtn").classList.remove("on"); } });
+}
+
+/* ---- list ---- */
+function trustChip(t) {
+  const cls = t === "agent" ? "tr-agent" : t === "imported" ? "tr-imported"
+            : t === "built-in" ? "tr-builtin" : "";
+  const icon = (t === "agent") ? "🤖 " : (t === "imported") ? "⇩ " : "";
+  return `<span class="tag ${cls}" title="Trust level: ${esc(t)}">${icon}${esc(t)}</span>`;
+}
+function rowHtml(a) {
+  const ver = a.current_version ? "v" + a.current_version : "draft";
+  const cls = [a.effective ? "" : "shadow", a.enabled_effective ? "" : "off",
+               S.sel === a.id + "|" + a.scope ? "sel" : ""].join(" ");
+  return `<div class="row ${cls}" data-id="${esc(a.id)}" data-scope="${esc(a.scope)}">
+    <div class="rname">${esc(a.name || a.id)}</div>
+    <div class="rmeta">
+      <span class="tag t-${esc(a.type)}">${esc(a.type)}</span>
+      <span class="ver">${esc(a.id)}@${ver}</span>
+      <span class="tag">${esc(a.scope)}</span>
+      ${trustChip(a.trust)}
+      <span class="tag st-${esc(a.status)}">${esc(a.status)}</span>
+      ${a.dirty ? '<span class="tag st-draft" title="The file changed since the last publish">modified</span>' : ""}
+      ${a.registered === false ? '<span class="tag st-draft" title="On disk but not registered in the index">unregistered</span>' : ""}
+      ${a.shadowed_by ? `<span class="tag" title="Overridden by the ${esc(a.shadowed_by)} scope">shadowed</span>` : ""}
+      ${a.enabled_effective ? "" : '<span class="tag st-deprecated">disabled</span>'}
+    </div>
+    <div class="rdesc" data-lens>${esc(a.description || "")}</div>
+  </div>`;
+}
+async function loadList() {
+  const p = new URLSearchParams();
+  if (S.filter.type) p.set("type", S.filter.type);
+  if (S.filter.scope) p.set("scope", S.filter.scope);
+  if (S.filter.q) p.set("q", S.filter.q);
+  const data = await (await fetch("/api/library?" + p)).json();
+  S.assets = data.assets || [];
+  S.types = data.types || [];
+  S.scopes = data.scopes || [];
+  renderChips();
+  $("rows").innerHTML = S.assets.length
+    ? S.assets.map(rowHtml).join("")
+    : '<div class="empty">No assets match.<br><span class="note">Create one, or import a markdown skill file.</span></div>';
+  const effective = S.assets.filter(a => a.effective).length;
+  $("count").textContent = `· ${effective} asset${effective === 1 ? "" : "s"}`;
+  [...document.querySelectorAll(".row")].forEach(r => r.onclick = () => open(r.dataset.id));
+  applyLens();
+}
+function renderChips() {
+  const chips = (host, values, key) => {
+    $(host).innerHTML = values.map(v =>
+      `<button class="chip ${S.filter[key] === v ? "on" : ""}" data-v="${esc(v)}">${esc(v)}</button>`).join("");
+    [...$(host).querySelectorAll(".chip")].forEach(c => c.onclick = () => {
+      S.filter[key] = S.filter[key] === c.dataset.v ? "" : c.dataset.v; loadList(); });
+  };
+  if (!$("typeChips").dataset.done || S.types.length) {
+    chips("typeChips", S.types, "type"); $("typeChips").dataset.done = "1";
+  }
+  chips("scopeChips", S.scopes, "scope");
+}
+
+/* ---- detail ---- */
+async function open(id) {
+  const r = await fetch("/api/library/asset?id=" + encodeURIComponent(id));
+  if (!r.ok) { $("pane").innerHTML = `<div class="banner bad">${esc((await r.json()).error)}</div>`; return; }
+  const data = await r.json();
+  const a = data.asset;
+  S.sel = a.id + "|" + a.scope;
+  S.detail = a;
+  const meta = a.meta || {};
+  const refs = list => (list || []).map(x =>
+    `<button class="chip" onclick="open('${esc(String(x).split("@")[0])}')">${esc(x)}</button>`).join(" ");
+  const published = (a.versions || []).length;
+
+  $("pane").innerHTML = `
+    ${a.trust === "agent" ? `<div class="banner warn">🤖 Proposed by an agent. Review the content before publishing —
+      until you do, no agent will load it.</div>` : ""}
+    ${a.trust === "imported" ? `<div class="banner warn">⇩ Imported from outside this project and not yet reviewed.</div>` : ""}
+    ${a.dirty ? `<div class="banner info">The draft file has changed since v${a.current_version} was published.
+      Publishing will freeze it as v${a.current_version + 1}; the published version is untouched until then.</div>` : ""}
+    ${!published ? `<div class="banner info">Draft — not published, so it stays out of every agent's composed context.</div>` : ""}
+    <h1>${esc(a.name || a.id)}</h1>
+    <div class="rmeta" style="margin-top:6px">
+      <span class="tag t-${esc(a.type)}">${esc(a.type)}</span>
+      <span class="ver">${esc(a.id)}${a.resolved_version ? "@v" + a.resolved_version : ""}</span>
+      <span class="tag">${esc(a.scope)}</span>${trustChip(a.trust)}
+      <span class="tag st-${esc(a.status)}">${esc(a.status)}</span>
+      ${a.enabled_effective ? "" : '<span class="tag st-deprecated">disabled</span>'}
+    </div>
+    <p style="margin-top:10px" data-lens>${esc(a.description || "")}</p>
+
+    <div class="actions">
+      <button class="btn" id="aPick">${S.picked.includes(a.id) ? "In compose ✓" : "+ Add to compose"}</button>
+      ${a.scope !== "built-in" ? `<button class="btn" id="aEdit">Edit draft</button>` : ""}
+      ${a.scope !== "built-in" && (!published || a.dirty)
+        ? `<button class="btn primary" id="aPub">Publish${published ? " v" + (a.current_version + 1) : ""}</button>` : ""}
+      ${a.scope !== "built-in" && a.status === "published" ? `<button class="btn warn" id="aDep">Deprecate</button>` : ""}
+      <button class="btn" id="aTog">${a.enabled_effective ? "Disable" : "Enable"}</button>
+      <a class="btn" href="/api/library/export?id=${encodeURIComponent(a.id)}" download="${esc(a.id)}.md">Export</a>
+    </div>
+
+    <h2>Canonical content <span class="note" style="text-transform:none">— what the agent receives, verbatim</span></h2>
+    <pre class="canon">${esc(a.body || "")}</pre>
+
+    <div class="sect">
+      <h2>Details</h2>
+      <div class="kv">
+        <b>Requires</b><div>${refs(meta.requires) || '<span class="note">none</span>'}</div>
+        <b>Conflicts with</b><div>${refs(meta.conflicts_with) || '<span class="note">none</span>'}</div>
+        ${a.type === "profile" ? `<b>Members</b><div>${refs(meta.assets)}</div>` : ""}
+        <b>Tags</b><div>${(a.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join(" ") || '<span class="note">none</span>'}</div>
+        <b>Created by</b><div>${esc((a.created_by || {}).identity || "—")}
+           ${(a.created_by || {}).kind === "model" ? '<span class="tag tr-agent">🤖 model</span>' : ""}</div>
+        ${a.shadowed_scopes && a.shadowed_scopes.length
+          ? `<b>Shadows</b><div><span class="note">overrides the same id in: ${esc(a.shadowed_scopes.join(", "))}</span></div>` : ""}
+      </div>
+    </div>
+
+    <div class="sect">
+      <h2>Versions <span class="note" style="text-transform:none">— published versions are frozen</span></h2>
+      ${published ? `<table class="vers">${(a.versions || []).slice().reverse().map(v => `
+        <tr><td>v${v.version}</td><td class="h">${esc(v.content_hash)}</td>
+        <td class="note">${esc(v.published_at || "")}</td>
+        <td class="note">${esc(v.published_by || "")}</td></tr>`).join("")}</table>`
+        : '<div class="note">Never published.</div>'}
+    </div>
+
+    <div class="sect">
+      <h2>Notes <span class="note" style="text-transform:none">— kept beside the asset, never inside its canonical content</span></h2>
+      <div id="anns">${(data.annotations || []).length
+        ? data.annotations.map(n => `<div class="ann">
+            <div class="who">${(n.author || {}).kind === "model" ? "🤖 " : ""}${esc((n.author || {}).identity || "user")}
+              · ${esc(n.type)} · ${esc(n.status)}</div>
+            <div data-lens>${esc(n.body)}</div></div>`).join("")
+        : '<div class="note">No notes yet. Agents can attach them with add_annotation(target="asset:' + esc(a.id) + '").</div>'}</div>
+    </div>`;
+
+  $("aPick").onclick = () => { togglePick(a.id); open(a.id); };
+  const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on("aEdit", () => openEdit(a));
+  on("aPub", () => publish(a));
+  on("aDep", () => setStatus(a, "deprecated"));
+  on("aTog", () => setStatus(a, a.enabled_effective ? "disabled" : "enabled"));
+  loadList();
+  applyLens();
+}
+
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+  return data;
+}
+
+/* Publishing changes what every future agent is handed — it takes the session
+   code printed in the terminal, exactly like approving a decision. */
+async function publish(a) {
+  const by = prompt("Publish as (your name) — publishing is a human act:");
+  if (!by) return;
+  const token = prompt("Session approval code (printed in the terminal that launched Atlas):");
+  if (!token) return;
+  try {
+    await post("/api/library/publish", { id: a.id, scope: a.scope, published_by: by, token });
+    open(a.id);
+  } catch (e) { alert(e.message); }
+}
+async function setStatus(a, status) {
+  const body = { id: a.id, scope: a.scope === "built-in" ? "project" : a.scope, status };
+  if (status === "deprecated") {
+    const token = prompt("Session approval code (deprecating changes what agents get):");
+    if (!token) return;
+    body.token = token;
+  }
+  try { await post("/api/library/status", body); open(a.id); }
+  catch (e) { alert(e.message); }
+}
+
+/* ---- create / edit ---- */
+function openEdit(a) {
+  $("editTitle").textContent = a ? "Edit draft — " + a.id : "New asset";
+  $("editErr").innerHTML = "";
+  $("fType").innerHTML = (S.types.length ? S.types : ["skill"]).map(t =>
+    `<option value="${esc(t)}">${esc(t)}</option>`).join("");
+  const meta = (a && a.meta) || {};
+  $("fId").value = a ? a.id : "";
+  $("fId").disabled = !!a;
+  $("fName").value = a ? (a.name || "") : "";
+  $("fType").value = a ? a.type : "skill";
+  $("fDesc").value = a ? (a.description || "") : "";
+  $("fTags").value = ((a && a.tags) || []).join(", ");
+  $("fReq").value = (meta.requires || []).join(", ");
+  $("fConf").value = (meta.conflicts_with || []).join(", ");
+  $("fMembers").value = (meta.assets || []).join(", ");
+  $("fContent").value = a ? (a.body || "") : "";
+  const syncMembers = () => { $("wrapMembers").style.display =
+    $("fType").value === "profile" ? "block" : "none"; };
+  $("fType").onchange = syncMembers; syncMembers();
+  $("editDlg").showModal();
+  $("editSave").onclick = async () => {
+    const split = v => v.split(",").map(s => s.trim()).filter(Boolean);
+    try {
+      await post("/api/library/asset", {
+        scope: a && a.scope !== "built-in" ? a.scope : "project",
+        id: $("fId").value.trim(), name: $("fName").value.trim(),
+        type: $("fType").value, description: $("fDesc").value.trim(),
+        tags: split($("fTags").value), requires: split($("fReq").value),
+        conflicts_with: split($("fConf").value),
+        assets: $("fType").value === "profile" ? split($("fMembers").value) : [],
+        content: $("fContent").value,
+      });
+      $("editDlg").close();
+      await loadList();
+      open($("fId").value.trim());
+    } catch (e) { $("editErr").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+  };
+}
+$("btnNew").onclick = () => openEdit(null);
+$("editCancel").onclick = () => $("editDlg").close();
+
+$("btnImport").onclick = () => { $("importErr").innerHTML = ""; $("fPaste").value = "";
+  $("fFile").value = ""; $("importDlg").showModal(); };
+$("importCancel").onclick = () => $("importDlg").close();
+$("importSave").onclick = async () => {
+  const file = $("fFile").files[0];
+  const content = file ? await file.text() : $("fPaste").value;
+  if (!content.trim()) { $("importErr").innerHTML =
+    '<div class="banner bad">Choose a file or paste its contents.</div>'; return; }
+  try {
+    const out = await post("/api/library/import",
+      { content, filename: file ? file.name : "pasted.md", scope: "project" });
+    $("importDlg").close();
+    await loadList();
+    open(out.asset.id);
+  } catch (e) { $("importErr").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; }
+};
+
+/* ---- compose drawer ---- */
+function togglePick(id) {
+  const i = S.picked.indexOf(id);
+  if (i >= 0) S.picked.splice(i, 1); else S.picked.push(id);
+  renderCompose();
+}
+async function renderCompose() {
+  $("selPills").innerHTML = S.picked.map(id =>
+    `<span class="selpill">${esc(id)}<button data-id="${esc(id)}">×</button></span>`).join("");
+  [...$("selPills").querySelectorAll("button")].forEach(b =>
+    b.onclick = () => { togglePick(b.dataset.id); if (S.detail) open(S.detail.id); });
+  if (!S.picked.length) {
+    $("composeSummary").textContent = "nothing selected";
+    $("composeOut").innerHTML = "";
+    return;
+  }
+  const r = await post("/api/library/compose", { selection: S.picked });
+  $("composeSummary").textContent =
+    `${r.assets.length} asset${r.assets.length === 1 ? "" : "s"} · ~${r.est_tokens} tokens`;
+  const pct = Math.min(100, Math.round(r.est_chars / 24000 * 100));
+  $("composeOut").innerHTML = `
+    <div class="meter ${r.oversized ? "over" : ""}"><i style="width:${pct}%"></i></div>
+    <div class="note">~${r.est_tokens} tokens${r.oversized ? " — oversized: trim the selection" : ""}</div>
+    ${(r.conflicts || []).map(c => `<div class="banner bad" style="margin-top:8px">
+        <b>Conflict:</b> <code>${esc(c.a)}</code> and <code>${esc(c.b)}</code> declare each other
+        incompatible. Both are included — Atlas warns, it never silently picks one.</div>`).join("")}
+    ${(r.warnings || []).map(w => `<div class="banner warn" style="margin-top:8px">
+        <b>${esc(w.kind)}</b> ${esc(Object.entries(w).filter(([k]) => k !== "kind")
+          .map(([k, v]) => k + ": " + v).join(", "))}</div>`).join("")}
+    ${(r.shadowed || []).map(s => `<div class="note" style="margin-top:6px">
+        <code>${esc(s.id)}</code> resolved from <b>${esc(s.winning_scope)}</b>,
+        overriding ${esc(s.shadowed_scopes.join(", "))}.</div>`).join("")}
+    <h2>Resolved context</h2>
+    ${r.assets.map(a => `<div style="margin-bottom:12px">
+        <div class="rmeta"><span class="tag t-${esc(a.type)}">${esc(a.type)}</span>
+          <span class="ver">${esc(a.id)}@${a.version ? "v" + a.version : "draft"}</span>
+          <span class="tag">${esc(a.scope)}</span>${trustChip(a.trust)}</div>
+        <pre class="canon" style="margin-top:5px">${esc(a.content)}</pre></div>`).join("")}
+    <button class="btn" id="copyCtx">Copy as markdown</button>`;
+  const copy = $("copyCtx");
+  if (copy) copy.onclick = () => {
+    const text = r.assets.map(a =>
+      `### [${a.type}] ${a.name} (${a.id}@${a.version ? "v" + a.version : "draft"}, ${a.scope}, ${a.trust})\n${a.content}`
+    ).join("\n\n");
+    navigator.clipboard.writeText(text);
+    copy.textContent = "Copied ✓";
+    setTimeout(() => copy.textContent = "Copy as markdown", 1400);
+  };
+}
+$("composeHead").onclick = () => {
+  const open = $("compose").classList.toggle("open");
+  $("composeCaret").textContent = open ? "▼" : "▲";
+};
+
+/* ---- boot ---- */
+$("q").oninput = () => { clearTimeout($("q")._t);
+  $("q")._t = setTimeout(() => { S.filter.q = $("q").value.trim(); loadList(); }, 200); };
+initLens();
+loadList().then(() => {
+  // deep links, same idea as ?file= / ?feature= on the map
+  const p = new URLSearchParams(location.search);
+  const compose = (p.get("compose") || "").split(",").map(s => s.trim()).filter(Boolean);
+  if (compose.length) {
+    S.picked = compose;
+    $("compose").classList.add("open");
+    $("composeCaret").textContent = "▼";
+    renderCompose();
+  }
+  if (p.get("id")) open(p.get("id"));
+});
+</script>
+</body>
+</html>

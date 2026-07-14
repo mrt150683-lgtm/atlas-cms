@@ -40,8 +40,8 @@ def _declared_paths(task: str) -> list[str]:
     return sorted({p.strip("`'\"") for p in paths if "://" not in p})
 
 
-# @memory:feature:TaskPromptExport
-# @memory:connects:AtlasLibrary
+# @memory:feature:PromptExport
+# @memory:connects:AtlasLibrary, ChangeAlignment
 # @memory:summary:Assembles a memory-grounded task pack; selected Library assets are composed in with exact id/version/content_hash provenance, so intents and alignment inherit which reusable context an agent actually ran on.
 def _library_section(root: Path, assets: list[str] | None) -> dict | None:
     """Compose the selected Library assets. A composition failure must never

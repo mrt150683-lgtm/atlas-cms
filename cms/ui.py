@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from . import config
 from .config import LANGUAGE_BY_EXTENSION
+from .library import ASSET_TYPES as _ASSET_TYPES
 from .memory import CodebaseMemory
 
 if getattr(sys, "frozen", False):  # PyInstaller bundle
@@ -112,6 +113,9 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._send(200, page, "text/html; charset=utf-8")
                 elif url.path in ("/discovery", "/constellation"):
                     page = (_ASSETS_DIR / "constellation.html").read_bytes()
+                    self._send(200, page, "text/html; charset=utf-8")
+                elif url.path in ("/library", "/library.html"):
+                    page = (_ASSETS_DIR / "library.html").read_bytes()
                     self._send(200, page, "text/html; charset=utf-8")
                 elif url.path == "/api/fusion":
                     from .fuse import fusion_history, fusion_staleness, load_fusion
@@ -229,6 +233,12 @@ def make_handler(root: Path, cache: _MemoryCache):
                         self._error(403, "flow review is disabled (CMS_FLOW_REVIEW=0)")
                         return
                     self._flowreview_get(query)
+                elif url.path == "/api/library":
+                    self._library_list(query)
+                elif url.path == "/api/library/asset":
+                    self._library_asset(query)
+                elif url.path == "/api/library/export":
+                    self._library_export(query)
                 else:
                     self._error(404, "not found")
             except BrokenPipeError:
@@ -272,6 +282,10 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._feature_discover(body)
                 elif url.path == "/api/feature/confirm":
                     self._feature_confirm(body)
+                elif url.path in ("/api/library/asset", "/api/library/publish",
+                                  "/api/library/status", "/api/library/compose",
+                                  "/api/library/import"):
+                    self._library_post(url.path, body)
                 elif url.path == "/api/scope":
                     self._scope_set(body)
                 elif url.path == "/api/build":
@@ -799,6 +813,128 @@ def make_handler(root: Path, cache: _MemoryCache):
                 self._error(400, str(exc))
                 return
             self._json({"decision": dec})
+
+        # --- Library ------------------------------------------------------
+        # Publishing and deprecation change what every future agent is told;
+        # they sit behind the same terminal-only session code as decision
+        # approval. Browsing, drafting and composing are open.
+
+        def _library_list(self, query: dict) -> None:
+            from .library import LibraryView
+
+            def one(key):
+                return (query.get(key) or [None])[0] or None
+
+            view = LibraryView(root)
+            self._json({"assets": view.list(type=one("type"), tag=one("tag"),
+                                            status=one("status"), scope=one("scope"),
+                                            q=one("q")),
+                        "types": list(_ASSET_TYPES), "scopes": [s.scope for s in view.stores]})
+
+        def _library_asset(self, query: dict) -> None:
+            from .library import LibraryError, LibraryView
+
+            asset_id = (query.get("id") or [""])[0]
+            raw_version = (query.get("version") or [""])[0]
+            try:
+                version = int(raw_version) if raw_version else None
+                asset = LibraryView(root).get(asset_id, version)
+            except (LibraryError, ValueError) as exc:
+                self._error(404, str(exc))
+                return
+            annotations = []
+            try:
+                from .annotations import AnnotationStore
+                annotations = AnnotationStore(memory_dir, root=root).list(
+                    target=f"asset:{asset_id}")
+            except Exception:
+                pass
+            self._json({"asset": asset, "annotations": annotations})
+
+        def _library_export(self, query: dict) -> None:
+            from .library import LibraryError, export_asset
+
+            asset_id = (query.get("id") or [""])[0]
+            raw_version = (query.get("version") or [""])[0]
+            try:
+                version = int(raw_version) if raw_version else None
+                text = export_asset(root, asset_id, version)
+            except (LibraryError, ValueError) as exc:
+                self._error(404, str(exc))
+                return
+            self._send(200, text.encode("utf-8"), "text/markdown; charset=utf-8")
+
+        def _library_post(self, path: str, body: dict) -> None:
+            from .library import (
+                LibraryError,
+                LibraryView,
+                compose_context,
+                import_asset,
+                serialize_asset,
+                slugify,
+                validate_meta,
+            )
+
+            scope = str(body.get("scope") or "project")
+            try:
+                if path.endswith("/compose"):
+                    selection = [str(r) for r in (body.get("selection") or [])]
+                    self._json(compose_context(
+                        root, selection,
+                        include_drafts=bool(body.get("include_drafts"))))
+                    return
+
+                if path.endswith(("/publish", "/status")):
+                    # deprecate/publish rewrite what agents will be handed;
+                    # enable/disable is a local view toggle and stays open.
+                    gated = path.endswith("/publish") or \
+                        str(body.get("status") or "") == "deprecated"
+                    if gated and str(body.get("token") or "") != approval_token:
+                        self._error(403, "publishing requires the session code shown "
+                                         "in the terminal that launched Atlas")
+                        return
+
+                view = LibraryView(root)
+                store = view.store(scope)
+                if path.endswith("/publish"):
+                    rec = store.publish(str(body.get("id") or ""),
+                                        str(body.get("published_by") or ""))
+                elif path.endswith("/status"):
+                    status = str(body.get("status") or "")
+                    asset_id = str(body.get("id") or "")
+                    if status == "deprecated":
+                        rec = store.deprecate(asset_id)
+                    elif status in ("enabled", "disabled"):
+                        rec = store.set_enabled(asset_id, status == "enabled")
+                    else:
+                        self._error(400, "status must be deprecated | enabled | disabled")
+                        return
+                elif path.endswith("/import"):
+                    rec = import_asset(root, str(body.get("content") or ""),
+                                       scope=scope,
+                                       filename=str(body.get("filename") or ""),
+                                       created_by={"kind": "user", "identity": "viewer",
+                                                   "via": "http"})
+                else:  # create / update a draft
+                    text = body.get("text")
+                    if not text:
+                        meta = validate_meta({
+                            "id": body.get("id") or slugify(str(body.get("name") or "")),
+                            "name": body.get("name"), "type": body.get("type"),
+                            "description": body.get("description"),
+                            "tags": body.get("tags") or [],
+                            "requires": body.get("requires") or [],
+                            "conflicts_with": body.get("conflicts_with") or [],
+                            "assets": body.get("assets") or [],
+                        })
+                        text = serialize_asset(meta, str(body.get("content") or ""))
+                    rec = store.save_draft(
+                        str(text),
+                        created_by={"kind": "user", "identity": "viewer", "via": "http"})
+            except LibraryError as exc:
+                self._error(400, str(exc))
+                return
+            self._json({"asset": rec})
 
         def _serve_memory_file(self, name: str) -> None:
             path = memory_dir / name
