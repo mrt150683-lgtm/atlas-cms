@@ -17,7 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40"]
-dev = ["pytest>=8", "coverage>=7"]
+dev = ["pytest>=8", "coverage>=7.15.1"]
 
 [project.scripts]
 cms = "cms.cli:app"
