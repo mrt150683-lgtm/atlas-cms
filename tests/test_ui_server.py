@@ -486,9 +486,12 @@ def test_projects_endpoint_lists_mapped_with_current_flag(tmp_path, monkeypatch)
 def test_header_nav_consistent_and_switcher_present() -> None:
     html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
             ).read_text(encoding="utf-8")
-    # all three header links share the pill style (Discovery was unstyled once)
-    for link in ("discoveryLink", "setupLink", "sentinelLink"):
-        assert f'id="{link}" class="navlink"' in html, f"{link} missing .navlink"
+    # the three screen links are folded into ONE header menu (declutter),
+    # each keeping its id, target and description
+    assert 'id="navMenu"' in html and 'id="navBtn"' in html and 'id="navPop"' in html
+    for link, href in (("discoveryLink", "/discovery"), ("setupLink", "/setup"),
+                       ("sentinelLink", "/sentinel")):
+        assert f'id="{link}" href="{href}"' in html, f"{link} missing from the menu"
     # fast project switcher wired to the live endpoints
     assert 'id="projectSwitch"' in html and 'id="projectMenu"' in html
     assert '"/api/projects"' in html and '"/api/switch-root"' in html
@@ -606,6 +609,13 @@ def test_human_view_toggle_and_resolution_slider_markup(server) -> None:
     # deep-link + persistence contract
     assert 'localStorage.getItem("cms.human.on")' in html
     assert 'params.get("human")' in html
+    # layout contract: collapsible inspector, folded screens menu, and the
+    # resolution popover always has a way OUT (mouseleave close + Escape)
+    for token in ("has-inspector", "syncInspectorPane", "inspClose",
+                  "navBtn", "navPop", "humanPopTimer", '"Escape"'):
+        assert token in html, f"missing {token}"
+    for el in ("discoveryLink", "setupLink", "sentinelLink"):
+        assert f'id="{el}"' in html, f"missing {el}"  # folded, never lost
 
 
 def test_decisions_endpoints_and_intent_panel(server) -> None:
