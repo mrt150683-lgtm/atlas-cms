@@ -216,9 +216,13 @@ run `cms run-all`".
   its scope (flows/steps reviewed vs traced). `proven` is reserved for
   AST-exact facts; heuristic call edges read `static`. Also on the CLI as
   `cms flow <Feature>`.
-- **Feature discovery**: `discover_feature`. A plain-language behaviour
-  description becomes an evidence-backed candidate mapping; humans confirm in
-  the UI.
+- **Feature discovery**: `discover_feature`, the feature hunt. Describe a
+  behaviour the automatic mapping may have missed and Atlas checks whether it
+  is already stated (deterministic overlap against existing features), hunts
+  the graph with one-hop neighbourhood expansion, validates every proposed
+  member and connection against real edges, and returns an ordered
+  explanation of the mechanism. Verdicts: already_covered, partial_overlap,
+  new, not_found. Humans confirm in the UI.
 - **Session control**: `switch_project` (flip the server to another project
   root mid-session; unmapped targets get the exact build command back).
 - **Constellation**: `list_projects`, `get_fusion_report`, `refine_fusion`.
@@ -353,9 +357,17 @@ the agents query, rendered for humans at whatever depth and wording fits them.
   dimension table, and the **Exact flow** panel (`cms flow <Feature>` on the
   CLI): evidence-classified execution steps with a computed verification
   status that never claims more than the evidence supports.
-- **Describe a feature**: the "＋ Describe a feature…" row maps a plain-language
-  behaviour description to code with per-member evidence; you confirm or
-  reject the candidate.
+- **Describe a feature (the hunt)**: the "＋ Describe a feature…" row takes a
+  plain-language description of behaviour you believe exists but the model
+  may not have mapped. Atlas first flags it if it is already stated (with a
+  link straight to the existing feature), then hunts the graph, walks the
+  neighbourhood around the evidence, and returns the candidate members (each
+  tagged entry/core/support with its reason), the feature's connections
+  (each chip marked `graph` when grounded in a real edge, `llm` when
+  inferred), and a step-by-step "How it works" explanation. The explanation
+  is lens-aware: it reads at whatever comprehension level you have selected,
+  so the same hunt serves a schoolchild and a specialist. You confirm,
+  rename, or reject; nothing is recorded without you.
 - Deep-link a file with `?file=cms/scanner.py` (add `&lens=tldr` for a lens
   level, or `&human=1&res=2` for a Human View resolution). Serves on
   localhost only.

@@ -723,6 +723,11 @@ def test_feature_discovery_endpoints(server, monkeypatch) -> None:
     for el in ("fdisc", "fdiscBtn", "fdiscForm", "fdiscOut"):
         assert f'id="{el}"' in html, f"missing {el}"
     assert "/api/feature/discover" in html and "/api/feature/confirm" in html
+    # the hunt panel: already-stated banner, lens-aware explanation,
+    # provenance-chipped connections, jump links to existing features
+    for token in ("fdiscExisting", "fdiscExpl", "fdiscConn", "data-huntfeat",
+                  "Already stated"):
+        assert token in html, f"missing {token}"
 
 
 def test_feature_flags_gate_endpoints(server, monkeypatch) -> None:

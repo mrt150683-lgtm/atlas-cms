@@ -2461,30 +2461,65 @@ function wireFeatureDiscovery() {
   $("fdiscGo").onclick = async () => {
     const description = $("fdiscText").value.trim();
     if (!description) return;
-    out.innerHTML = `<span class="lens-wait">searching the canonical graph…</span>`;
+    out.innerHTML = `<span class="lens-wait">hunting the canonical graph… (ranked search, neighbourhood walk, overlap check)</span>`;
     try {
       const r = await fetch("/api/feature/discover", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ description }) });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || "failed");
+
+      // already stated? flag it and link straight to the existing feature
+      const existingHtml = (data.existing || []).length ? `
+        <div id="fdiscExisting" style="border:1px solid #c98500;border-left:3px solid #c98500;border-radius:8px;padding:7px 9px;margin-bottom:6px">
+          <b style="color:#c98500;font-size:11px">${data.verdict === "already_covered" ? "Already stated in the map" : "Overlaps existing feature(s)"}</b>
+          ${(data.existing || []).slice(0, 3).map(e =>
+            `<div style="padding:2px 0"><a href="#" data-huntfeat="${esc(e.feature)}" style="color:var(--ink-1);font-weight:600">${esc(e.feature)}</a>
+             <span class="ann-chip" style="margin-left:4px" title="${e.provenance === "graph" ? "found by deterministic overlap (names + shared members)" : "model judgment"}">${esc(e.provenance || "graph")}</span>
+             <div style="color:var(--ink-3);font-size:10.5px" data-lens>${esc(e.why || e.description || (e.member_overlap ? e.member_overlap + " shared member(s) with the evidence" : ""))}</div></div>`).join("")}
+        </div>` : "";
+
+      // the mechanism, step by step — data-lens so it reads at the level the
+      // user selected on the comprehension slider
+      const explHtml = (data.explanation || []).length ? `
+        <div id="fdiscExpl" style="margin:6px 0"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px">How it works</div>
+        <div data-lens style="color:var(--ink-2);line-height:1.55;font-size:11.5px">${data.explanation.map((s, i) => `${i + 1}. ${esc(s)}`).join("<br>")}</div></div>` : "";
+
+      const connHtml = (data.connections || []).length ? `
+        <div id="fdiscConn" style="margin:6px 0"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px">Connections</div>
+        ${data.connections.map(c =>
+          `<div style="padding:1.5px 0;font-size:11px"><a href="#" data-huntfeat="${esc(c.feature)}" style="color:var(--ink-1)">${esc(c.feature)}</a>
+           <span class="ann-chip" style="margin-left:3px" title="${c.provenance === "graph" ? "grounded in a real graph edge" : "model-inferred"}">${esc(c.provenance)}</span>
+           <span style="color:var(--ink-3)"> ${esc(c.via)}</span></div>`).join("")}</div>` : "";
+
+      const wireHuntLinks = () => out.querySelectorAll("[data-huntfeat]").forEach(el => {
+        el.onclick = ev => { ev.preventDefault(); selectFeature("feature:" + el.dataset.huntfeat); };
+      });
+
       if (!data.candidate) {
-        out.innerHTML = `<div style="color:var(--ink-2)">${esc(data.note || "no confident mapping")}</div>` +
+        out.innerHTML = existingHtml + explHtml + connHtml +
+          `<div style="color:var(--ink-2)">${esc(data.note || "no confident mapping")}</div>` +
           (data.hits || []).slice(0, 6).map(h =>
             `<div style="color:var(--ink-3);padding:2px 0">· ${esc(h.id)} <span style="opacity:.7">(${esc(String(h.score))})</span></div>`).join("");
+        wireHuntLinks();
         return;
       }
       const c = data.candidate;
-      out.innerHTML = `
+      const roleColor = { entry: "#3987e5", core: "#79c795", support: "var(--ink-3)" };
+      out.innerHTML = existingHtml + `
         <div style="border:1px solid var(--line);border-radius:8px;padding:8px">
           <input id="fdiscName" value="${esc(c.name)}" style="width:100%;background:var(--bg-2);border:1px solid var(--line);border-radius:6px;color:var(--ink-1);font:12px var(--font);padding:4px 7px;font-weight:600">
           <div style="color:var(--ink-2);margin:5px 0" data-lens>${esc(c.description)}</div>
-          ${c.members.map(m => `<div style="color:var(--ink-3);padding:2px 0" title="${esc(m.why)}">· ${esc(m.id)}</div>`).join("")}
-          ${data.note ? `<div style="color:#cfc06a;margin-top:4px">${esc(data.note)}</div>` : ""}
+          ${explHtml}
+          ${c.members.map(m => `<div style="color:var(--ink-3);padding:2px 0" title="${esc(m.why)}">
+            <span class="ann-chip" style="border-color:${roleColor[m.role] || "var(--line)"};color:${roleColor[m.role] || "var(--ink-3)"}">${esc(m.role || "core")}</span> ${esc(m.id)}</div>`).join("")}
+          ${connHtml}
+          ${data.note ? `<div style="color:#cfc06a;margin-top:4px">uncertain: ${esc(data.note)}</div>` : ""}
           <div style="display:flex;gap:6px;margin-top:7px">
             <button class="ann-btn primary" id="fdiscConfirm">Confirm feature</button>
             <button class="ann-btn" id="fdiscReject">Reject</button>
           </div>
         </div>`;
+      wireHuntLinks();
       $("fdiscReject").onclick = () => { out.innerHTML = ""; };
       $("fdiscConfirm").onclick = async () => {
         const r2 = await fetch("/api/feature/confirm", { method: "POST",

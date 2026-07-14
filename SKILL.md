@@ -127,12 +127,17 @@ the human can literally watch you think). Tools:
   notes are merged in read-only). Check a feature's open contradictions and
   bug suspicions before editing it; archived/superseded stay out by default.
 
-**Discover**
-- `discover_feature(description)` — map a plain-language behaviour description
-  to a candidate feature: intent-ranked evidence plus one proposed mapping
-  with per-member reasons (real provider). Keyword overlap is never
-  auto-accepted; a human confirms/renames in the UI feature list, which makes
-  it a durable discovered feature.
+**Discover (the feature hunt)**
+- `discover_feature(description)` — hunt the graph for behaviour the mapping
+  may have missed. Returns a verdict (`already_covered | partial_overlap |
+  new | not_found`), the overlapping existing features (deterministic
+  name/member overlap always included, provenance-tagged), a candidate
+  mapping with per-member roles (entry/core/support) and reasons, connections
+  to existing features (`provenance: graph` when grounded in a real edge,
+  `llm` when inferred), and an ordered step-by-step mechanism explanation.
+  Check `existing` before proposing anything — never duplicate a mapped
+  feature. Proposals are never auto-accepted; a human confirms/renames in the
+  UI feature list, which makes it a durable discovered feature.
 
 **Verify flows**
 - `review_exact_flow(feature, force=False)` — the evidence-classified account
