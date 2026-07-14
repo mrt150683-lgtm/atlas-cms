@@ -830,6 +830,7 @@
 #resRange{width:100%;accent-color:var(--accent)}
 #humanPop .hp-scale{display:flex;justify-content:space-between;font-size:9.5px;color:var(--ink-3);margin-top:1px}
 #humanPop .hp-name{font-size:12.5px;color:var(--accent);font-weight:600;margin-top:8px}
+#humanPop .hp-keys{margin-top:9px;padding-top:8px;border-top:1px solid var(--line);font-size:10.5px;color:var(--ink-3);letter-spacing:.04em;text-align:center}
 #humanPop .hp-blurb{font-size:11px;color:var(--ink-2);line-height:1.45;margin-top:2px}
 #humanPop .hp-note{font-size:10.5px;color:var(--ink-3);margin-top:7px;line-height:1.4}
 #trail{left:50%;transform:translateX(-50%);top:12px;right:auto;bottom:auto;display:flex;gap:2px;align-items:center;flex-wrap:wrap;font:11.5px var(--font);background:rgba(13,13,13,.82);border:1px solid var(--line);border-radius:9px;padding:5px 10px;max-width:70%}
@@ -903,7 +904,7 @@
       </div>
     </div>
     <div id="humanCtl">
-      <button id="humanBtn" title="Human view — the same canonical map at an adjustable abstraction level">◉ Human</button>
+      <button id="humanBtn" title="Human view — the same canonical map at an adjustable abstraction level (← / → to change resolution)">◉ Human</button>
       <div id="humanPop">
         <div class="hp-title">Human view</div>
         <div class="hp-sub">How much structural detail should the map show?</div>
@@ -913,6 +914,7 @@
         <div class="hp-name" id="resName"></div>
         <div class="hp-blurb" id="resBlurb"></div>
         <div class="hp-note" id="resNote"></div>
+        <div class="hp-keys">← broader · deeper →</div>
       </div>
     </div>
     <div class="search">
@@ -1916,6 +1918,50 @@ $("resRange").oninput = () => {
   history.replaceState(null, "", "?" + params.toString());
   setResolution(+$("resRange").value);
 };
+/* ← / → step the resolution: the map's primary dial, on the keyboard.
+   Left = broader (toward System), right = deeper (toward Source). Pressing an
+   arrow while the AI view is showing turns Human View on and steps in that
+   direction — the resolution is the thing being asked for, so give it.
+   These keys never touch the comprehension lens; that is a separate control. */
+function nudgeResolution(step) {
+  const next = Math.max(0, Math.min(5, S.human.res + step));
+  if (!S.human.on) {
+    S.human.res = next;
+    setHumanMode(true, false);
+  } else if (next !== S.human.res) {
+    setResolution(next);
+  } else {
+    return;  // already at an end — don't flash the popover for nothing
+  }
+  flashHumanPop();  // name the level you just landed on
+}
+
+let humanFlashTimer = null;
+function flashHumanPop() {
+  clearTimeout(humanFlashTimer);
+  $("humanPop").classList.add("open");
+  humanFlashTimer = setTimeout(() => $("humanPop").classList.remove("open"), 1400);
+}
+
+function typingInField(el) {
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName);
+}
+
+window.addEventListener("keydown", e => {
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  // the slider itself already moves on arrows when focused; a text field, the
+  // file reader and the chat are all places arrows mean something else
+  if (typingInField(document.activeElement)) return;
+  if ($("viewer").classList.contains("open")) return;
+  if ($("chatBox").classList.contains("open")) return;
+  if ($("activityPanel").classList.contains("open")) return;
+  e.preventDefault();
+  nudgeResolution(e.key === "ArrowRight" ? 1 : -1);
+});
+
 /* the resolution popover behaves like a dropdown: hover to open while Human
    View is on, and it always leaves again — mouseleave (unless mid-drag on the
    slider), any outside click, or Escape */

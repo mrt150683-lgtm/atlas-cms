@@ -361,7 +361,9 @@ the agents query, rendered for humans at whatever depth and wording fits them.
   bottom. System/component nodes are derived once per feature-set change (one
   LLM call; labelled structural grouping without a key), selections map
   between levels via a clickable breadcrumb trail, and double-click descends
-  one level. The AI View (toggle off) always keeps full fidelity: resolution
+  one level. **`←` / `→` step the resolution** from anywhere on the map (left =
+  broader, right = deeper; the first press turns Human View on), which is the
+  fastest way to walk the pyramid. The AI View (toggle off) always keeps full fidelity: resolution
   never touches the stored graph, so agents never lose detail because a human
   simplified their screen. Cached per-node explanations
   (`.memory/explain.json`) invalidate dependency-aware: a file change refreshes

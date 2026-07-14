@@ -974,3 +974,23 @@ def test_library_picks_up_dropped_files_and_registers_them(server) -> None:
 
     status, _ = client.post("/api/library/register", {"id": "broken-skill"})
     assert status == 400   # an unusable file cannot be adopted
+
+
+def test_arrow_keys_drive_resolution_not_the_lens() -> None:
+    """Left/right on the map step the Human View resolution (System..Source).
+    They must never touch the comprehension lens (schoolchild/tech/...), and
+    must stay out of the way while the user is typing or reading a file."""
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    start = html.index("function nudgeResolution")
+    handler = html[start:html.index("/* the resolution popover", start)]
+
+    assert "ArrowLeft" in handler and "ArrowRight" in handler
+    assert "setResolution" in handler and "setHumanMode" in handler
+    assert "Lens" not in handler          # the lens is a separate control
+    # guards: typing, the file reader, the chat, the activity drawer
+    assert "typingInField(document.activeElement)" in handler
+    for guard in ("viewer", "chatBox", "activityPanel"):
+        assert f'$("{guard}").classList.contains("open")' in handler
+    # the shortcut is discoverable, not folklore
+    assert "broader" in html and "deeper" in html

@@ -45,6 +45,14 @@ rendering path.
 - Selection maps across levels via `S.parentOf`-style chains
   (`humanParent`/`trailChain`/`projectSelection`); the `#trail` breadcrumb is
   clickable. Double-click descends one level.
+- **`←`/`→` step the resolution** (`nudgeResolution`): left broader, right
+  deeper, clamped to 0–5; the first press turns Human View on, and the popover
+  flashes so the level you landed on is named. The keys are deliberately bound
+  to *resolution*, never to the comprehension lens — the lens is a separate
+  control with its own slider. Guards: ignored while typing in a field, while
+  the file viewer or chat is open, and while the activity drawer is open (the
+  `#resRange` slider handles its own arrows natively when focused, so the
+  window handler skips focused inputs to avoid double-stepping).
 - Persistence: `localStorage cms.human.on/.res`, URL `?human=1&res=N`.
 
 ## Human explanation cache — `.memory/explain.json`
