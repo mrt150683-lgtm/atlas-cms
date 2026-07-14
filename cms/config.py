@@ -112,6 +112,8 @@ DEFAULT_IGNORES: list[str] = [
     ".claude/",
     "cms.workspace.json",
     ".cmsscope.json",
+    # Library published-version snapshots (immutable copies, not source)
+    ".versions/",
 ]
 
 # extension -> language name; also acts as the inclusion whitelist
@@ -203,3 +205,25 @@ OPENAI_MODEL = os.environ.get("CMS_OPENAI_MODEL", "llama3.1")
 MAX_TOKENS = 1024
 # Source larger than this gets head+tail truncated before being sent to the LLM.
 MAX_SOURCE_CHARS = 16_000
+
+# --- Library (reusable agent-context assets) --------------------------------
+
+# Project-scope assets live in a visible, git-tracked dir at the project root.
+LIBRARY_DIR_NAME = "skills"
+# User-scope assets are shared across every project on this machine.
+LIBRARY_USER_DIR = Path.home() / ".cms" / "library"
+# Composed context larger than this raises the `oversized` warning (~6k tokens).
+LIBRARY_WARN_CHARS = 24_000
+
+
+def library_builtin_dir() -> Path:
+    """The read-only built-in asset dir shipped with Atlas.
+
+    Resolves to the Atlas checkout's own skills/ dir; CMS_LIBRARY_BUILTIN
+    overrides (tests, packaged installs). A missing dir simply yields an
+    empty built-in scope.
+    """
+    override = os.environ.get("CMS_LIBRARY_BUILTIN")
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent / LIBRARY_DIR_NAME

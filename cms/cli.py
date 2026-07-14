@@ -1139,5 +1139,249 @@ def bundle_open(
         typer.echo(f"Opened at {out}. View with:  cms ui --root {out}")
 
 
+library_app = typer.Typer(
+    help="Library — reusable, versioned skills/strategies/preferences/constraints "
+         "composed into agent context.",
+    no_args_is_help=True)
+app.add_typer(library_app, name="library")
+
+
+@library_app.command("list")
+def library_list(
+    root: Path = RootOption,
+    type: str = typer.Option(None, "--type", help="Filter by asset type."),
+    tag: str = typer.Option(None, "--tag", help="Filter by tag."),
+    status: str = typer.Option(None, "--status", help="draft | published | deprecated."),
+    scope: str = typer.Option(None, "--scope", help="built-in | user | project."),
+    q: str = typer.Option(None, "--q", help="Substring over id/name/description/tags."),
+) -> None:
+    """List library assets across all scopes (shadowing marked)."""
+    from .library import LibraryView
+
+    rows = LibraryView(root.resolve()).list(type=type, tag=tag, status=status,
+                                            scope=scope, q=q)
+    if not rows:
+        typer.echo("No assets. Create one with `cms library new <id> --type skill`.")
+        return
+    for r in rows:
+        version = f"v{r['current_version']}" if r.get("current_version") else "draft"
+        marks = "".join([
+            " [shadowed by " + r["shadowed_by"] + "]" if r.get("shadowed_by") else "",
+            " [disabled]" if not r.get("enabled_effective", True) else "",
+            " [modified]" if r.get("dirty") else "",
+            " [unregistered]" if r.get("registered") is False else "",
+        ])
+        typer.echo(f"  {r['id']}@{version}  [{r.get('type')}] {r.get('name')} "
+                   f"({r.get('scope')}, {r.get('trust')}, {r.get('status')}){marks}")
+
+
+@library_app.command("show")
+def library_show(
+    asset_id: str = typer.Argument(..., help="Asset id."),
+    root: Path = RootOption,
+    version: int = typer.Option(None, "--version", help="A specific published version."),
+) -> None:
+    """Print an asset: metadata, versions, then canonical content."""
+    from .library import LibraryError, LibraryView
+
+    try:
+        a = LibraryView(root.resolve()).get(asset_id, version)
+    except LibraryError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"{a['id']}  [{a['type']}] {a['name']}  "
+               f"({a['scope']}, {a['trust']}, {a['status']})")
+    typer.echo(f"  {a['description']}")
+    for v in a.get("versions") or []:
+        typer.echo(f"  v{v['version']}  {v['content_hash']}  "
+                   f"{v.get('published_at') or ''} {v.get('published_by') or ''}".rstrip())
+    if a.get("dirty"):
+        typer.echo("  (draft file modified since last publish)")
+    typer.echo("")
+    typer.echo(a["content"])
+
+
+@library_app.command("new")
+def library_new(
+    asset_id: str = typer.Argument(..., help="New asset id (lowercase slug)."),
+    type: str = typer.Option("skill", "--type", help="skill | strategy | preference | constraint."),
+    name: str = typer.Option("", "--name", help="Human title (default: from the id)."),
+    scope: str = typer.Option("project", "--scope", help="project | user."),
+    root: Path = RootOption,
+) -> None:
+    """Create a draft asset file + index record, ready to edit and publish."""
+    from .library import LibraryError, LibraryView, new_asset_template
+
+    try:
+        view = LibraryView(root.resolve())
+        store = view.store(scope)
+        if store.get(asset_id) is not None:
+            typer.echo(f"{asset_id!r} already exists in the {scope} scope.", err=True)
+            raise typer.Exit(1)
+        rec = store.save_draft(new_asset_template(asset_id, type, name))
+    except LibraryError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Draft created: {store.asset_path(asset_id)}")
+    typer.echo(f"Edit the file, then publish:  cms library publish {rec['id']} --by <your name>")
+
+
+@library_app.command("publish")
+def library_publish(
+    asset_id: str = typer.Argument(..., help="Asset id to publish."),
+    by: str = typer.Option(..., "--by", help="Your name — publishing is a human act."),
+    scope: str = typer.Option("project", "--scope", help="project | user."),
+    root: Path = RootOption,
+) -> None:
+    """Freeze the current draft as the next published, immutable version."""
+    from .library import LibraryError, LibraryView
+
+    try:
+        rec = LibraryView(root.resolve()).store(scope).publish(asset_id, by)
+    except LibraryError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Published {rec['id']} v{rec['current_version']} "
+               f"({rec['versions'][-1]['content_hash']}).")
+
+
+@library_app.command("enable")
+def library_enable(
+    asset_id: str = typer.Argument(...),
+    scope: str = typer.Option("project", "--scope", help="Scope whose view to change."),
+    root: Path = RootOption,
+) -> None:
+    """Re-enable an asset (or clear a disable override)."""
+    from .library import LibraryError, LibraryView
+
+    try:
+        LibraryView(root.resolve()).store(scope).set_enabled(asset_id, True)
+    except LibraryError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"{asset_id} enabled at {scope} scope.")
+
+
+@library_app.command("disable")
+def library_disable(
+    asset_id: str = typer.Argument(...),
+    scope: str = typer.Option("project", "--scope", help="Scope whose view to change."),
+    root: Path = RootOption,
+) -> None:
+    """Disable an asset without deleting it (records an override for
+    assets inherited from lower scopes)."""
+    from .library import LibraryError, LibraryView
+
+    try:
+        LibraryView(root.resolve()).store(scope).set_enabled(asset_id, False)
+    except LibraryError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"{asset_id} disabled at {scope} scope (not deleted).")
+
+
+@library_app.command("deprecate")
+def library_deprecate(
+    asset_id: str = typer.Argument(...),
+    scope: str = typer.Option("project", "--scope"),
+    root: Path = RootOption,
+) -> None:
+    """Deprecate a published asset — pinned refs keep resolving, unpinned
+    composition warns and skips it."""
+    from .library import LibraryError, LibraryView
+
+    try:
+        LibraryView(root.resolve()).store(scope).deprecate(asset_id)
+    except LibraryError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"{asset_id} deprecated at {scope} scope.")
+
+
+@library_app.command("compose")
+def library_compose(
+    refs: list[str] = typer.Argument(..., help="Asset refs: `id` or `id@N` (profiles expand)."),
+    root: Path = RootOption,
+    include_drafts: bool = typer.Option(False, "--include-drafts",
+                                        help="Allow unpublished drafts into the preview."),
+    as_json: bool = typer.Option(False, "--json", help="Print the raw compose result."),
+) -> None:
+    """Preview the composed context for a selection: content, warnings,
+    conflicts, and size — exactly what a task pack would embed."""
+    import json as _json
+
+    from .library import compose_context, render_assets
+
+    result = compose_context(root.resolve(), refs, include_drafts=include_drafts)
+    if as_json:
+        typer.echo(_json.dumps(result, indent=2))
+        return
+    for w in result["warnings"]:
+        detail = ", ".join(f"{k}={v}" for k, v in w.items() if k != "kind")
+        typer.echo(f"WARNING [{w['kind']}] {detail}")
+    for c in result["conflicts"]:
+        typer.echo(f"CONFLICT: {c['a']} vs {c['b']} (declared by {', '.join(c['declared_by'])})")
+    typer.echo(f"{len(result['assets'])} asset(s), ~{result['est_tokens']} tokens"
+               + ("  ** OVERSIZED **" if result["oversized"] else ""))
+    typer.echo("")
+    typer.echo(render_assets(result))
+
+
+@library_app.command("import")
+def library_import(
+    file: Path = typer.Argument(..., help="Markdown skill file (name + description frontmatter)."),
+    scope: str = typer.Option("project", "--scope", help="project | user."),
+    root: Path = RootOption,
+) -> None:
+    """Import a markdown skill file as a DRAFT with trust `imported` —
+    imported content never publishes itself."""
+    from .library import LibraryError, import_asset
+
+    try:
+        rec = import_asset(root.resolve(), file.read_text(encoding="utf-8"),
+                           scope=scope, filename=file.name)
+    except (OSError, LibraryError) as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Imported {rec['id']} as a draft (trust: imported). Review, then "
+               f"publish:  cms library publish {rec['id']} --by <your name>")
+
+
+@library_app.command("export")
+def library_export(
+    asset_id: str = typer.Argument(...),
+    root: Path = RootOption,
+    version: int = typer.Option(None, "--version"),
+    out: Path = typer.Option(None, "--out", "-o", help="Write to a file instead of stdout."),
+) -> None:
+    """Export an asset's canonical markdown (round-trips through import)."""
+    from .library import LibraryError, export_asset
+
+    try:
+        text = export_asset(root.resolve(), asset_id, version)
+    except LibraryError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    if out:
+        out.write_text(text, encoding="utf-8")
+        typer.echo(f"Written to {out}")
+    else:
+        typer.echo(text)
+
+
+@library_app.command("verify")
+def library_verify(root: Path = RootOption) -> None:
+    """Re-hash every published snapshot against its recorded hash."""
+    from .library import LibraryView
+
+    problems = LibraryView(root.resolve()).verify_integrity()
+    if not problems:
+        typer.echo("Library integrity OK — every snapshot matches its recorded hash.")
+        return
+    for p in problems:
+        typer.echo(f"  {p['scope']}/{p['id']} v{p.get('version')}: {p['problem']}")
+    raise typer.Exit(1)
+
+
 if __name__ == "__main__":
     app()

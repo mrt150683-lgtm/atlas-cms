@@ -121,6 +121,7 @@ cms scan                    # just the clean tree (subset of run-all)
 cms build-graph             # scan + knowledge graph only
 cms summarize               # (re)generate AI summaries only
 cms prompt "add rate limiting"    # export a memory-grounded task brief
+cms library list             # the Library: reusable, versioned agent-context assets
 cms align --scan             # compare the current diff with captured/inferred intent and refresh Sentinel
 cms scope show               # show which paths Atlas is currently processing
 cms bundle export --out atlas.cmsbundle  # share the generated memory without re-processing
@@ -511,6 +512,39 @@ cms sentinel export -f json # report to .memory/sentinel/reports/
 The viewer serves a full Sentinel screen at `/sentinel` (run scan, inspect
 findings, change statuses, export). Gate thresholds live in
 `sentinel.config.json`. Full guide: `docs/HERMES_SENTINEL.md`.
+
+## The Library (`cms library`)
+
+Reusable, versioned, inspectable **assets** that Atlas composes into an agent's
+working context — instead of one oversized prompt or the same generic
+instructions for every agent. Five types: `skill`, `strategy`, `preference`,
+`constraint`, and `profile` (a composite that *references* member assets by
+pinned `id@version`, never copies them).
+
+Canonical content is a markdown file with a small frontmatter block; lifecycle
+state (versions, hashes, trust, enablement) lives in an `index.json` beside it.
+Assets layer over three scopes with ascending precedence — **built-in** (Atlas's
+own `skills/`, read-only) → **user** (`~/.cms/library/`) → **project**
+(`<repo>/skills/`) — so the same id at a higher scope shadows the lower one.
+
+```bash
+cms library list                          # every asset, shadowing + trust marked
+cms library new my-style --type preference
+cms library publish my-style --by "Alex"  # freeze the draft as an immutable version
+cms library compose atlas-default         # preview the composed context (+ warnings, size)
+cms library import ./some-skill.md        # markdown skill file -> draft, trust: imported
+cms library verify                        # re-hash every snapshot against its record
+```
+
+Rules that hold: **published content is frozen** (changes ship as a new
+version; pinned `id@N` keeps resolving the old one), dependencies and conflicts
+are **declared and warned about, never silently resolved**, agents may propose
+drafts and attach notes but **publishing is a human act**, and imported or
+agent-generated assets stay visibly untrusted until a human publishes them.
+Composition records the exact `{id, version, content_hash}` of every asset used,
+so an agent run's context is reproducible and auditable.
+
+Plan and design rationale: [`PLAN.md`](PLAN.md).
 
 ## Development
 
