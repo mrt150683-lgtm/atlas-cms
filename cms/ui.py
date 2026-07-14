@@ -284,7 +284,7 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._feature_confirm(body)
                 elif url.path in ("/api/library/asset", "/api/library/publish",
                                   "/api/library/status", "/api/library/compose",
-                                  "/api/library/import"):
+                                  "/api/library/import", "/api/library/register"):
                     self._library_post(url.path, body)
                 elif url.path == "/api/scope":
                     self._scope_set(body)
@@ -909,6 +909,11 @@ def make_handler(root: Path, cache: _MemoryCache):
                     else:
                         self._error(400, "status must be deprecated | enabled | disabled")
                         return
+                elif path.endswith("/register"):
+                    # adopt a file the human dropped into the library folder
+                    rec = store.register_file(
+                        str(body.get("id") or ""),
+                        created_by={"kind": "user", "identity": "viewer", "via": "http"})
                 elif path.endswith("/import"):
                     rec = import_asset(root, str(body.get("content") or ""),
                                        scope=scope,

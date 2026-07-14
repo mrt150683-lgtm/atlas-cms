@@ -945,3 +945,32 @@ def test_library_rejects_invalid_assets(server) -> None:
         "id": "bad-type", "name": "Bad", "type": "sorcery",
         "description": "x", "content": "y"})
     assert status == 400 and "unknown asset type" in json.loads(body)["error"]
+
+
+def test_library_picks_up_dropped_files_and_registers_them(server) -> None:
+    """A plain skill file dropped into the library folder shows up on its own;
+    an unusable one shows up with the reason instead of vanishing."""
+    client, root = server
+    lib = root / "skills"
+    lib.mkdir(exist_ok=True)
+    (lib / "dropped-skill.md").write_text(
+        "---\nname: dropped-skill\ndescription: Dropped in by hand.\n"
+        "license: MIT\n---\n\nDo the thing.", encoding="utf-8")
+    (lib / "broken-skill.md").write_text("no frontmatter at all", encoding="utf-8")
+
+    rows = {a["id"]: a for a in json.loads(client.get("/api/library")[1])["assets"]}
+    dropped = rows["dropped-skill"]
+    assert dropped["type"] == "skill" and dropped["status"] == "draft"
+    assert dropped["registered"] is False          # visible without any command
+    broken = rows["broken-skill"]
+    assert broken["status"] == "unreadable" and broken["problem"]  # never silent
+
+    status, body = client.post("/api/library/register", {"id": "dropped-skill"})
+    assert status == 200
+    rec = json.loads(body)["asset"]
+    assert rec["type"] == "skill" and rec["status"] == "draft"
+    text = (lib / "dropped-skill.md").read_text(encoding="utf-8")
+    assert "id: dropped-skill" in text and "license: MIT" in text  # nothing destroyed
+
+    status, _ = client.post("/api/library/register", {"id": "broken-skill"})
+    assert status == 400   # an unusable file cannot be adopted

@@ -182,6 +182,91 @@ def test_unregistered_files_visible_and_registrable(env):
     assert store.get("hand-made").get("registered") is not False
 
 
+# --- dropping a plain skill file into the folder --------------------------------
+
+CLAUDE_SKILL = ("---\n"
+                "name: skill-creator\n"
+                "description: Create new skills and improve existing ones.\n"
+                "license: Complete terms in LICENSE.txt\n"
+                "---\n\nHow to write a skill.")
+
+
+def test_plain_skill_file_is_picked_up_without_atlas_frontmatter(env):
+    """A Claude-style skill file (name + description, no id/type) dropped in the
+    folder is a first-class asset — the filename is the id, type defaults to skill."""
+    lib = env.project / "skills"
+    lib.mkdir()
+    (lib / "skill-creator.md").write_text(CLAUDE_SKILL, encoding="utf-8")
+
+    row = next(r for r in LibraryView(env.project).list() if r["id"] == "skill-creator")
+    assert row["type"] == "skill" and row["status"] == "draft"
+    assert row["registered"] is False
+    assert row["description"].startswith("Create new skills")
+
+    # it can be adopted, and adoption preserves frontmatter Atlas does not model
+    store = LibraryView(env.project).store("project")
+    store.register_file("skill-creator")
+    text = (lib / "skill-creator.md").read_text(encoding="utf-8")
+    assert "id: skill-creator" in text and "type: skill" in text
+    assert "license: Complete terms in LICENSE.txt" in text  # never destroyed
+    assert (lib / "skill-creator.md").read_text(encoding="utf-8").endswith(
+        "How to write a skill.\n")
+
+    # and published straight from the folder
+    rec = store.publish("skill-creator", "alex")
+    assert rec["current_version"] == 1
+    composed = LibraryView(env.project).compose(["skill-creator"])
+    assert composed["assets"][0]["content"] == "How to write a skill."
+
+
+def test_publish_direct_from_a_dropped_file(env):
+    lib = env.project / "skills"
+    lib.mkdir()
+    (lib / "dropped-in.md").write_text(
+        "---\nname: dropped-in\ndescription: Dropped straight in.\n---\n\nBody.",
+        encoding="utf-8")
+    store = LibraryView(env.project).store("project")
+    rec = store.publish("dropped-in", "alex")   # auto-registers, no separate step
+    assert rec["status"] == "published" and rec["type"] == "skill"
+
+
+def test_unreadable_files_are_surfaced_never_silently_skipped(env):
+    """A file we cannot use must say why. A silently skipped file is
+    indistinguishable from a bug — which is exactly how this was found."""
+    lib = env.project / "skills"
+    lib.mkdir()
+    (lib / "no-frontmatter.md").write_text("Just prose, no fence.", encoding="utf-8")
+    (lib / "wrong-name.md").write_text(_asset("other-id"), encoding="utf-8")
+    (lib / "bad-type.md").write_text(_asset("bad-type", type="sorcery"), encoding="utf-8")
+
+    rows = {r["id"]: r for r in LibraryView(env.project).list()}
+    assert set(rows) == {"no-frontmatter", "wrong-name", "bad-type"}
+    for row in rows.values():
+        assert row["status"] == "unreadable" and row["problem"]
+        assert row["enabled"] is False        # can never reach an agent
+    assert "frontmatter" in rows["no-frontmatter"]["problem"]
+    assert "the filename is the id" in rows["wrong-name"]["problem"]
+    assert "unknown asset type" in rows["bad-type"]["problem"]
+
+    # a description is never invented from the name — it is what a reader uses
+    # to decide whether to load the asset, so its absence is stated plainly
+    (lib / "no-desc.md").write_text("---\nname: No Desc\n---\n\nBody.", encoding="utf-8")
+    row = next(r for r in LibraryView(env.project).list() if r["id"] == "no-desc")
+    assert row["status"] == "unreadable" and "description" in row["problem"]
+
+    # unusable files stay out of composed context, with a warning
+    result = LibraryView(env.project).compose(["no-frontmatter"])
+    assert result["assets"] == []
+    assert result["warnings"]
+
+
+def test_unknown_frontmatter_keys_survive_a_round_trip(env):
+    meta, body, canon = canonical_text(CLAUDE_SKILL, fallback_id="skill-creator")
+    assert meta["license"] == "Complete terms in LICENSE.txt"
+    again, body2, canon2 = canonical_text(canon)
+    assert again == meta and body2 == body and canon2 == canon
+
+
 # --- precedence / shadowing / disable -------------------------------------------
 
 def test_project_shadows_user_shadows_builtin(env):

@@ -299,6 +299,10 @@ provider only; all output is LLM plan material.
 **Library — reusable agent-context assets**
 - `cms library list|show <id>` — browse assets (shadowing, trust and version
   marked); `cms library new <id> --type skill|strategy|preference|constraint`.
+- **Drop a `name`+`description` markdown file into `skills/` and it is picked
+  up** (filename = id, type defaults to `skill`); `cms library register <id>`
+  adopts it, or publish it straight away. Unreadable files are listed with the
+  reason, never silently skipped.
 - `cms library publish <id> --by "<name>"` — freeze the draft as an immutable
   version. Human act: the MCP surface cannot publish.
 - `cms library compose <ref…>` — preview the composed context for a selection
@@ -507,6 +511,11 @@ Three scopes layer, highest wins: **built-in** (Atlas's own `skills/`,
 read-only) → **user** (`~/.cms/library/`) → **project** (`<repo>/skills/`).
 The same id at a higher scope *shadows* the lower one — that is the override
 mechanism (a project sharpening a user preference pack).
+
+The folder is the interface: a markdown file with `name` + `description` (the
+format skills are already written in) is a complete asset — the filename is the
+id, the type defaults to `skill`, and unmodelled frontmatter is preserved. Files
+that can't be read are surfaced with the reason, not skipped.
 
 Composition (`export_task_prompt(assets=…)`, `declare_intent(assets=…)`,
 `cms library compose`) expands profiles, walks `requires`, and **reports

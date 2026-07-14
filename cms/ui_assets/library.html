@@ -77,6 +77,10 @@
              padding-left: 10px; }
   .row.shadow { opacity: .45; }
   .row.off .rname { text-decoration: line-through; }
+  .row.bad { border-left: 2px solid var(--bad); padding-left: 10px; }
+  .row.bad .rdesc { color: #e08a8a; }
+  .st-bad { color: var(--bad); border-color: rgba(208,82,82,.35); }
+  .st-unreadable { color: var(--bad); border-color: rgba(208,82,82,.35); }
   .rname { color: var(--ink); font-weight: 500; }
   .rmeta { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 3px; }
   .rdesc { color: var(--ink-3); font-size: 11px; margin-top: 3px;
@@ -343,6 +347,14 @@ function trustChip(t) {
   return `<span class="tag ${cls}" title="Trust level: ${esc(t)}">${icon}${esc(t)}</span>`;
 }
 function rowHtml(a) {
+  if (a.problem) {   // a file we can't use is shown with the reason, never hidden
+    return `<div class="row bad" data-id="${esc(a.id)}" data-scope="${esc(a.scope)}">
+      <div class="rname">${esc(a.id)}.md</div>
+      <div class="rmeta"><span class="tag st-bad">unreadable</span>
+        <span class="tag">${esc(a.scope)}</span></div>
+      <div class="rdesc">${esc(a.problem)}</div>
+    </div>`;
+  }
   const ver = a.current_version ? "v" + a.current_version : "draft";
   const cls = [a.effective ? "" : "shadow", a.enabled_effective ? "" : "off",
                S.sel === a.id + "|" + a.scope ? "sel" : ""].join(" ");
@@ -355,7 +367,7 @@ function rowHtml(a) {
       ${trustChip(a.trust)}
       <span class="tag st-${esc(a.status)}">${esc(a.status)}</span>
       ${a.dirty ? '<span class="tag st-draft" title="The file changed since the last publish">modified</span>' : ""}
-      ${a.registered === false ? '<span class="tag st-draft" title="On disk but not registered in the index">unregistered</span>' : ""}
+      ${a.registered === false ? '<span class="tag st-draft" title="A file in the library folder that is not registered yet">unregistered</span>' : ""}
       ${a.shadowed_by ? `<span class="tag" title="Overridden by the ${esc(a.shadowed_by)} scope">shadowed</span>` : ""}
       ${a.enabled_effective ? "" : '<span class="tag st-deprecated">disabled</span>'}
     </div>
@@ -395,6 +407,18 @@ function renderChips() {
 
 /* ---- detail ---- */
 async function open(id) {
+  const listed = S.assets.find(x => x.id === id);
+  if (listed && listed.problem) {   // unusable file: say why, don't pretend
+    S.sel = id + "|" + listed.scope;
+    $("pane").innerHTML = `<h1>${esc(id)}.md</h1>
+      <div class="banner bad" style="margin-top:12px"><b>This file is in the library folder
+      but Atlas cannot use it.</b><br>${esc(listed.problem)}</div>
+      <div class="note">Fix the file and it is picked up automatically — nothing to re-run.
+      Assets are plain markdown: a <code>---</code> frontmatter block with at least
+      <code>name</code> and <code>description</code>, and the filename is the id.</div>`;
+    loadList();
+    return;
+  }
   const r = await fetch("/api/library/asset?id=" + encodeURIComponent(id));
   if (!r.ok) { $("pane").innerHTML = `<div class="banner bad">${esc((await r.json()).error)}</div>`; return; }
   const data = await r.json();
@@ -410,6 +434,8 @@ async function open(id) {
     ${a.trust === "agent" ? `<div class="banner warn">🤖 Proposed by an agent. Review the content before publishing —
       until you do, no agent will load it.</div>` : ""}
     ${a.trust === "imported" ? `<div class="banner warn">⇩ Imported from outside this project and not yet reviewed.</div>` : ""}
+    ${a.registered === false ? `<div class="banner info">Found in the library folder but not registered yet.
+      Registering fills in the <code>id</code>/<code>type</code> frontmatter it omits — publishing does it for you.</div>` : ""}
     ${a.dirty ? `<div class="banner info">The draft file has changed since v${a.current_version} was published.
       Publishing will freeze it as v${a.current_version + 1}; the published version is untouched until then.</div>` : ""}
     ${!published ? `<div class="banner info">Draft — not published, so it stays out of every agent's composed context.</div>` : ""}
@@ -425,6 +451,8 @@ async function open(id) {
 
     <div class="actions">
       <button class="btn" id="aPick">${S.picked.includes(a.id) ? "In compose ✓" : "+ Add to compose"}</button>
+      ${a.registered === false && a.scope !== "built-in"
+        ? `<button class="btn" id="aReg">Register</button>` : ""}
       ${a.scope !== "built-in" ? `<button class="btn" id="aEdit">Edit draft</button>` : ""}
       ${a.scope !== "built-in" && (!published || a.dirty)
         ? `<button class="btn primary" id="aPub">Publish${published ? " v" + (a.current_version + 1) : ""}</button>` : ""}
@@ -471,6 +499,10 @@ async function open(id) {
 
   $("aPick").onclick = () => { togglePick(a.id); open(a.id); };
   const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+  on("aReg", async () => {
+    try { await post("/api/library/register", { id: a.id, scope: a.scope }); open(a.id); }
+    catch (e) { alert(e.message); }
+  });
   on("aEdit", () => openEdit(a));
   on("aPub", () => publish(a));
   on("aDep", () => setStatus(a, "deprecated"));

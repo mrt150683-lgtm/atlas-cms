@@ -129,8 +129,12 @@ def parse_asset_text(text: str) -> tuple[dict, str]:
 
 
 def validate_meta(meta: dict) -> dict:
-    """Validate + normalize frontmatter. Unknown keys are dropped (import
-    tolerance); required keys fail loudly. Returns the clean meta."""
+    """Validate + normalize frontmatter; required keys fail loudly.
+
+    Frontmatter keys Atlas does not model (``license``, ``compatibility``,
+    ``allowed-tools``…) are carried through untouched — an imported skill file
+    must survive a round trip without losing what its author wrote.
+    """
     asset_id = str(meta.get("id") or "").strip()
     if not _ID_RE.match(asset_id):
         raise LibraryError(f"invalid asset id {asset_id!r} — lowercase slug, 3-64 chars "
@@ -166,14 +170,46 @@ def validate_meta(meta: dict) -> dict:
         clean["assets"] = members[:40]
     elif members:
         raise LibraryError("only profiles carry an `assets` member list")
+    for key, value in meta.items():
+        if key not in _FRONT_ORDER and isinstance(value, (str, list)):
+            clean[key] = value  # preserved verbatim, never interpreted
     return clean
+
+
+# @memory:feature:AtlasLibrary
+# @memory:summary:Applies Claude-skill-compatible defaults so a plain `name`+`description` markdown file dropped in the library folder is a first-class asset — the filename supplies the id, the type defaults to skill.
+def normalize_meta(meta: dict, *, fallback_id: str = "") -> dict:
+    """Fill in what a Claude-style skill file legitimately omits, then validate.
+
+    The library folder is the same format agents already publish skills in:
+    ``name`` + ``description`` and nothing else. Those files are complete
+    assets — the filename supplies the id and the type defaults to ``skill``.
+    Requiring Atlas-specific keys up front would make the folder convention a
+    lie, so the defaults live here and every entry point shares them.
+
+    ``description`` is never invented. It is what a human (or an agent) reads to
+    decide whether to load the asset at all, so a missing one fails loudly
+    rather than becoming an echo of the name.
+    """
+    meta = dict(meta)
+    if not str(meta.get("id") or "").strip():
+        source = fallback_id or str(meta.get("name") or "")
+        if not str(source).strip():
+            raise LibraryError("an asset needs an `id`, a `name`, or a usable filename")
+        meta["id"] = slugify(source)
+    if not str(meta.get("type") or "").strip():
+        meta["type"] = "skill"
+    if not str(meta.get("name") or "").strip():
+        meta["name"] = str(meta["id"]).replace("-", " ").title()
+    return validate_meta(meta)
 
 
 def serialize_asset(meta: dict, body: str) -> str:
     """Canonical text form: frontmatter in fixed key order + body. Hashing
     and snapshots always use this form, so key order never causes drift."""
     lines = ["---"]
-    for key in _FRONT_ORDER:
+    extras = [k for k in meta if k not in _FRONT_ORDER]
+    for key in [*_FRONT_ORDER, *sorted(extras)]:
         value = meta.get(key)
         if value is None or value == [] or value == "":
             continue
@@ -187,10 +223,10 @@ def serialize_asset(meta: dict, body: str) -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def canonical_text(text: str) -> tuple[dict, str, str]:
+def canonical_text(text: str, *, fallback_id: str = "") -> tuple[dict, str, str]:
     """Parse raw asset text -> (meta, body, canonical serialization)."""
     meta, body = parse_asset_text(text)
-    clean = validate_meta(meta)
+    clean = normalize_meta(meta, fallback_id=fallback_id)
     return clean, body, serialize_asset(clean, body)
 
 
@@ -258,9 +294,14 @@ class LibraryStore:
     # -- reads -----------------------------------------------------------------
 
     def records(self) -> list[dict]:
-        """Every asset this scope knows: index records plus unregistered
-        ``*.md`` files (visible as drafts, one publish away from real).
-        In a read-only scope without an index, files ARE published v1."""
+        """Every asset this scope knows: index records plus any ``*.md`` file
+        sitting in the folder.
+
+        Dropping a skill file into the library folder is the whole point of the
+        convention, so an unregistered file is listed as a draft (inert until
+        published), not ignored. A file we cannot read is listed with the reason
+        — a silently skipped file is indistinguishable from a bug.
+        """
         index = self._read_index()
         by_id = {r["id"]: dict(r) for r in index["assets"] if r.get("id")}
         rows: list[dict] = []
@@ -275,20 +316,35 @@ class LibraryStore:
             files = []
         for path in files:
             stem = path.stem
-            if stem in by_id or not _ID_RE.match(stem):
+            if stem in by_id:
                 continue
             try:
-                meta, body, canon = canonical_text(path.read_text(encoding="utf-8"))
-            except (OSError, LibraryError):
+                meta, _body, canon = canonical_text(path.read_text(encoding="utf-8"),
+                                                    fallback_id=stem)
+                if meta["id"] != stem:
+                    raise LibraryError(
+                        f"declares id {meta['id']!r} but the file is named {stem!r} — "
+                        "the filename is the id; rename one to match")
+            except (OSError, LibraryError) as exc:
+                rows.append(self._unreadable(stem, exc))
                 continue
-            if meta["id"] != stem:
-                continue  # the filename is the id; a mismatched file is not served
             if self.read_only and not self.index_path.is_file():
                 rows.append(self._synthesized(meta, canon))
             else:
                 rows.append({**self._blank_record(meta), "scope": self.scope,
                              "registered": False, "dirty": False, "missing_file": False})
         return sorted(rows, key=lambda r: r["id"])
+
+    def _unreadable(self, stem: str, exc: Exception) -> dict:
+        """A file in the folder that is not a usable asset — shown, with why."""
+        return {
+            "id": stem, "type": "unknown", "name": stem, "description": "",
+            "tags": [], "path": f"{stem}.md", "status": "unreadable",
+            "problem": str(exc), "enabled": False, "trust": self.scope,
+            "current_version": None, "versions": [], "created_by": {},
+            "created_at": None, "updated_at": None, "scope": self.scope,
+            "registered": False, "dirty": False, "missing_file": False,
+        }
 
     def get(self, asset_id: str) -> dict | None:
         for rec in self.records():
@@ -306,7 +362,8 @@ class LibraryStore:
         if not versions:
             return False
         try:
-            _, _, canon = canonical_text(self.asset_path(rec["id"]).read_text(encoding="utf-8"))
+            _, _, canon = canonical_text(self.asset_path(rec["id"]).read_text(encoding="utf-8"),
+                                         fallback_id=rec["id"])
         except (OSError, LibraryError):
             return True
         return _hash_text(canon) != versions[-1].get("content_hash")
@@ -345,7 +402,8 @@ class LibraryStore:
         if draft or not rec.get("versions"):
             path = self.asset_path(rec["id"])
             try:
-                meta, body, canon = canonical_text(path.read_text(encoding="utf-8"))
+                meta, body, canon = canonical_text(path.read_text(encoding="utf-8"),
+                                                   fallback_id=rec["id"])
             except OSError as exc:
                 raise LibraryError(f"asset file missing for {rec['id']!r}: {exc}") from exc
             return {"meta": meta, "body": body, "content": canon,
@@ -361,7 +419,8 @@ class LibraryStore:
         if not snap.is_file():  # synthesized built-in: snapshot IS the file
             snap = self.dir / vrec.get("snapshot", f"{rec['id']}.md")
         try:
-            meta, body, canon = canonical_text(snap.read_text(encoding="utf-8"))
+            meta, body, canon = canonical_text(snap.read_text(encoding="utf-8"),
+                                               fallback_id=rec["id"])
         except OSError as exc:
             raise LibraryError(f"snapshot missing for {rec['id']!r} v{vrec['version']}") from exc
         return {"meta": meta, "body": body, "content": canon,
@@ -375,7 +434,7 @@ class LibraryStore:
         """Create or update a draft from raw asset text. The working file is
         the draft surface; published snapshots are untouched."""
         self._guard_writable()
-        meta, body, canon = canonical_text(text)
+        meta, body, canon = canonical_text(text, fallback_id=expect_id or "")
         if expect_id and meta["id"] != expect_id:
             raise LibraryError(f"asset text declares id {meta['id']!r}, expected {expect_id!r}")
         author = dict(created_by or {})
@@ -403,8 +462,10 @@ class LibraryStore:
 
     def register_file(self, asset_id: str, *, created_by: dict | None = None,
                       trust: str | None = None) -> dict:
-        """Adopt an unregistered on-disk file into the index (as a draft).
-        Adoption is always explicit — never silent."""
+        """Adopt a file already sitting in the folder into the index, as a
+        draft. Listing a file is read-only; adopting it normalizes the
+        frontmatter on disk (filling in id/type), so adoption stays an explicit
+        act with a visible result."""
         path = self.asset_path(asset_id)
         if not path.is_file():
             raise LibraryError(f"no file {path.name} in the {self.scope} scope")
@@ -425,7 +486,8 @@ class LibraryStore:
             rec = next((r for r in index["assets"] if r.get("id") == asset_id), None)
         path = self.asset_path(asset_id)
         try:
-            meta, body, canon = canonical_text(path.read_text(encoding="utf-8"))
+            meta, body, canon = canonical_text(path.read_text(encoding="utf-8"),
+                                               fallback_id=asset_id)
         except OSError as exc:
             raise LibraryError(f"no draft file for {asset_id!r}") from exc
         chash = _hash_text(canon)
@@ -774,16 +836,8 @@ def import_asset(root: Path, text: str, *, scope: str = "project",
     view = LibraryView(root)
     store = view.store(scope)
     meta, body = parse_asset_text(text)
-    name = str(meta.get("name") or "").strip() or Path(filename).stem.replace("_", " ").strip()
-    if not name:
-        raise LibraryError("imported asset needs a `name` (frontmatter or filename)")
-    meta.setdefault("description", name)
-    meta["name"] = name
-    if not meta.get("id"):
-        meta["id"] = slugify(name)
-    if str(meta.get("type") or "") not in ASSET_TYPES:
-        meta["type"] = "skill"
-    clean = validate_meta(meta)
+    stem = Path(filename).stem.replace("_", "-") if filename else ""
+    clean = normalize_meta(meta, fallback_id=stem)
     if store.get(clean["id"]) is not None:
         raise LibraryError(f"asset {clean['id']!r} already exists in the {scope} scope — "
                            "delete it or import under a different id")

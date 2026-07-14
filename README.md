@@ -536,11 +536,30 @@ Assets layer over three scopes with ascending precedence — **built-in** (Atlas
 own `skills/`, read-only) → **user** (`~/.cms/library/`) → **project**
 (`<repo>/skills/`) — so the same id at a higher scope shadows the lower one.
 
+**Drop a skill file in the folder and it is picked up.** The format is the one
+agents already write — `name` and `description` in the frontmatter, nothing
+else required:
+
+```markdown
+---
+name: react-conventions
+description: How we write React here. Load for any component work.
+---
+Prefer function components…
+```
+
+The filename is the id and the type defaults to `skill`; frontmatter Atlas
+doesn't model (`license`, `compatibility`, …) is carried through untouched.
+Dropped files are listed immediately as unregistered drafts — inert until you
+publish them — and a file Atlas *can't* read is listed with the reason rather
+than silently ignored.
+
 ```bash
 cms library list                          # every asset, shadowing + trust marked
+cms library register react-conventions    # adopt a file you dropped in the folder
 cms library new my-style --type preference
 cms library publish my-style --by "Alex"  # freeze the draft as an immutable version
-cms library compose atlas-default         # preview the composed context (+ warnings, size)
+cms library compose atlas-frontend-specialist  # preview the composed context (+ warnings, size)
 cms library import ./some-skill.md        # markdown skill file -> draft, trust: imported
 cms library verify                        # re-hash every snapshot against its record
 ```

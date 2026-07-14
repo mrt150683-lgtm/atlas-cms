@@ -1167,6 +1167,9 @@ def library_list(
         typer.echo("No assets. Create one with `cms library new <id> --type skill`.")
         return
     for r in rows:
+        if r.get("problem"):
+            typer.echo(f"  {r['id']}  [unreadable] {r['problem']}")
+            continue
         version = f"v{r['current_version']}" if r.get("current_version") else "draft"
         marks = "".join([
             " [shadowed by " + r["shadowed_by"] + "]" if r.get("shadowed_by") else "",
@@ -1176,6 +1179,9 @@ def library_list(
         ])
         typer.echo(f"  {r['id']}@{version}  [{r.get('type')}] {r.get('name')} "
                    f"({r.get('scope')}, {r.get('trust')}, {r.get('status')}){marks}")
+    if any(r.get("registered") is False and not r.get("problem") for r in rows):
+        typer.echo("\nUnregistered files were found in the library folder. Adopt one with "
+                   "`cms library register <id>` (or publish it directly).")
 
 
 @library_app.command("show")
@@ -1227,6 +1233,34 @@ def library_new(
         raise typer.Exit(1)
     typer.echo(f"Draft created: {store.asset_path(asset_id)}")
     typer.echo(f"Edit the file, then publish:  cms library publish {rec['id']} --by <your name>")
+
+
+@library_app.command("register")
+def library_register(
+    asset_id: str = typer.Argument(..., help="Id of a file already in the library folder."),
+    type: str = typer.Option(None, "--type", help="Set the asset type (default: skill)."),
+    scope: str = typer.Option("project", "--scope", help="project | user."),
+    root: Path = RootOption,
+) -> None:
+    """Adopt a markdown file you dropped into the library folder as a draft
+    asset (fills in the id/type frontmatter it omits)."""
+    from .library import LibraryError, LibraryView, canonical_text, serialize_asset
+
+    try:
+        store = LibraryView(root.resolve()).store(scope)
+        path = store.asset_path(asset_id)
+        if not path.is_file():
+            typer.echo(f"No {path.name} in the {scope} library folder ({store.dir}).", err=True)
+            raise typer.Exit(1)
+        meta, body, _ = canonical_text(path.read_text(encoding="utf-8"), fallback_id=asset_id)
+        if type:
+            meta["type"] = type
+        rec = store.save_draft(serialize_asset(meta, body), expect_id=asset_id)
+    except LibraryError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Registered {rec['id']} as a [{rec['type']}] draft.")
+    typer.echo(f"Publish it when you're happy:  cms library publish {rec['id']} --by <your name>")
 
 
 @library_app.command("publish")
