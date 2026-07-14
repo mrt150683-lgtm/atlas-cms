@@ -709,6 +709,8 @@ def prompt(
     root: Path = RootOption,
     as_json: bool = typer.Option(False, "--json", help="Full data pack as JSON instead of markdown."),
     top_k: int = typer.Option(8, "--top-k", "-k", help="How many code targets to include."),
+    asset: list[str] = typer.Option(None, "--asset", "-a",
+                                    help="Library asset/profile to load (id or id@N). Repeatable."),
 ) -> None:
     """Export an ultra-detailed, ready-to-paste task prompt built from the memory."""
     from .prompt_export import export_prompt
@@ -717,7 +719,8 @@ def prompt(
     if not (_memory_dir(root) / "graph.json").is_file():
         typer.echo("No graph.json — run `cms run-all` first.", err=True)
         raise typer.Exit(1)
-    content, out = export_prompt(root, task, as_json=as_json, top_k=top_k)
+    content, out = export_prompt(root, task, as_json=as_json, top_k=top_k,
+                                 assets=list(asset or []))
     typer.echo(content)
     typer.echo(f"\n--- written to {out}", err=True)
 

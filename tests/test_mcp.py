@@ -323,3 +323,121 @@ def test_discover_feature_tool_mock_degrades(tmp_path: Path, monkeypatch) -> Non
     assert out["hits"]  # ranked evidence still served
     bad = _tool(server, "discover_feature", {"description": "hi"})
     assert "error" in bad
+
+
+# --- Library tools ---------------------------------------------------------
+
+def _library_server(tmp_path: Path, monkeypatch) -> MCPServer:
+    from cms import config
+
+    monkeypatch.setenv("CMS_LIBRARY_BUILTIN", str(tmp_path / "no-builtins"))
+    monkeypatch.setattr(config, "LIBRARY_USER_DIR", tmp_path / "no-userlib")
+    return _server(tmp_path)
+
+
+def test_library_tools_browse_and_load(tmp_path: Path, monkeypatch) -> None:
+    from cms.library import LibraryView
+
+    server = _library_server(tmp_path, monkeypatch)
+    store = LibraryView(tmp_path).store("project")
+    store.save_draft("---\nid: tdd-flow\nname: TDD Flow\ntype: strategy\n"
+                     "description: Test first.\ntags: [testing]\n---\n\nWrite the test first.")
+    store.publish("tdd-flow", "alex")
+
+    listed = _tool(server, "list_assets", {"type": "strategy"})
+    assert [a["id"] for a in listed["assets"]] == ["tdd-flow"]
+    assert listed["assets"][0]["version"] == 1
+    assert _tool(server, "list_assets", {"q": "nothing-matches"})["assets"] == []
+
+    got = _tool(server, "get_asset", {"id": "tdd-flow"})["asset"]
+    assert got["content"] == "Write the test first."   # canonical content, verbatim
+    assert got["version"] == 1 and got["status"] == "published"
+    assert len(got["versions"][0]["content_hash"]) == 24
+    assert "error" in _tool(server, "get_asset", {"id": "ghost-asset"})
+
+
+def test_propose_asset_drafts_only_never_publishes(tmp_path: Path, monkeypatch) -> None:
+    from cms.library import LibraryView
+    from cms.mcp import TOOLS
+
+    server = _library_server(tmp_path, monkeypatch)
+    _call(server, "initialize", {"clientInfo": {"name": "Claude Code"}})
+    out = _tool(server, "propose_asset", {
+        "name": "React Conventions", "type": "skill",
+        "description": "How we write React here.",
+        "content": "Prefer function components.", "tags": ["react"]})
+    assert out["asset"]["id"] == "react-conventions"
+    assert out["asset"]["status"] == "draft"       # never published by an agent
+    assert out["asset"]["trust"] == "agent"        # visibly untrusted
+    assert "human must review and publish" in out["next_step"]
+
+    rec = LibraryView(tmp_path).store("project").get("react-conventions")
+    assert rec["created_by"]["kind"] == "model"
+    assert rec["created_by"]["identity"] == "Claude Code"  # provenance from clientInfo
+    assert rec["created_by"]["via"] == "mcp"
+
+    # a draft is invisible to composed context until a human publishes it
+    composed = LibraryView(tmp_path).compose(["react-conventions"])
+    assert composed["assets"] == []
+    assert any(w["kind"] == "unpublished-asset" for w in composed["warnings"])
+
+    # there is deliberately NO publish tool on the MCP surface
+    assert not any("publish" in t["name"] for t in TOOLS)
+    assert "error" in _tool(server, "propose_asset", {
+        "name": "Bad", "type": "sorcery", "description": "x", "content": "y"})
+
+
+def test_propose_asset_revision_leaves_published_content_untouched(
+        tmp_path: Path, monkeypatch) -> None:
+    from cms.library import LibraryView
+
+    server = _library_server(tmp_path, monkeypatch)
+    _call(server, "initialize", {"clientInfo": {"name": "Codex"}})
+    store = LibraryView(tmp_path).store("project")
+    store.save_draft("---\nid: house-rules\nname: House Rules\ntype: constraint\n"
+                     "description: The rules.\n---\n\nOriginal rule.")
+    store.publish("house-rules", "alex")
+
+    out = _tool(server, "propose_asset", {
+        "id": "house-rules", "name": "House Rules", "type": "constraint",
+        "description": "The rules.", "content": "Agent's revised rule."})
+    assert out["asset"]["revision_of_published"] is True
+    assert "published version is unchanged" in out["next_step"]
+
+    # composition still serves the published v1 — the agent's draft is inert
+    composed = LibraryView(tmp_path).compose(["house-rules"])
+    assert composed["assets"][0]["content"] == "Original rule."
+    assert composed["assets"][0]["version"] == 1
+    assert LibraryView(tmp_path).store("project").get("house-rules")["dirty"] is True
+
+
+def test_task_prompt_and_intent_record_asset_versions(tmp_path: Path, monkeypatch) -> None:
+    from cms.library import LibraryView
+
+    server = _library_server(tmp_path, monkeypatch)
+    store = LibraryView(tmp_path).store("project")
+    store.save_draft("---\nid: memory-first\nname: Memory First\ntype: strategy\n"
+                     "description: Query before grep.\n---\n\nConsult memory before grep.")
+    store.publish("memory-first", "alex")
+
+    brief = _tool(server, "export_task_prompt",
+                  {"task": "improve greet", "assets": ["memory-first"]})
+    assert "Consult memory before grep." in brief["content"]
+    assert "memory-first@v1" in brief["content"]
+
+    declared = _tool(server, "declare_intent",
+                     {"goal": "improve greet", "assets": ["memory-first"]})
+    used = declared["library"]["assets"]
+    assert used[0]["id"] == "memory-first" and used[0]["version"] == 1
+    assert len(used[0]["content_hash"]) == 24  # reproducible: exact content pinned
+
+
+def test_annotations_can_target_a_library_asset(tmp_path: Path, monkeypatch) -> None:
+    server = _library_server(tmp_path, monkeypatch)
+    _call(server, "initialize", {"clientInfo": {"name": "Claude Code"}})
+    out = _tool(server, "add_annotation", {
+        "target": "asset:memory-first", "type": "observation",
+        "body": "This asset needs an example for TS repos."})
+    assert out["annotation"]["target_kind"] == "asset"
+    listed = _tool(server, "list_annotations", {"target": "asset:memory-first"})
+    assert listed["annotations"][0]["body"].startswith("This asset needs")

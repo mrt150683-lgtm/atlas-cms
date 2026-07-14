@@ -70,6 +70,10 @@ def normalize_target(target) -> tuple[str, str]:
             return t, "edge"
         if t.startswith("range:"):
             return t, "source_range"
+        if t.startswith("asset:"):
+            # a Library asset — notes about reusable knowledge live beside the
+            # asset, never inside its canonical content
+            return t, "asset"
         return t, "node"
     if isinstance(target, dict):
         if target.get("edge") and isinstance(target["edge"], (list, tuple)) and len(target["edge"]) == 2:

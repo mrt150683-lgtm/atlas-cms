@@ -103,12 +103,13 @@ TOOLS = [
     },
     {
         "name": "export_task_prompt",
-        "description": "Turn a plan ('what I intend to do') into an ultra-detailed task brief from the memory: relevant code with file:line + summaries, owning feature traces, blast radius, gaps to respect, conventions, verification steps. Use before starting any non-trivial change.",
+        "description": "Turn a plan ('what I intend to do') into an ultra-detailed task brief from the memory: relevant code with file:line + summaries, owning feature traces, blast radius, gaps to respect, conventions, verification steps. Pass `assets` to compose Library skills/strategies/preferences/constraints into the brief (their exact versions are recorded). Use before starting any non-trivial change.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "task": {"type": "string", "description": "The planned work, in plain words."},
                 "as_json": {"type": "boolean", "default": False},
+                "assets": {"type": "array", "items": {"type": "string"}, "description": "Library asset refs to load: 'id' or 'id@N'; profiles expand to their members (see list_assets)."},
             },
             "required": ["task"],
         },
@@ -138,11 +139,12 @@ TOOLS = [
     },
     {
         "name": "declare_intent",
-        "description": "Record what the current change is meant to do BEFORE you start. Returns a memory-grounded brief (relevant code, features, blast radius, how to verify). Call this first, then check_alignment when done.",
+        "description": "Record what the current change is meant to do BEFORE you start. Returns a memory-grounded brief (relevant code, features, blast radius, how to verify). Pass `assets` to load Library context for the change — the exact asset versions are recorded in the intent, so the alignment history shows what you were working from. Call this first, then check_alignment when done.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "goal": {"type": "string", "description": "What you plan to do, in plain words. If omitted, inferred from the git branch or last commit."},
+                "assets": {"type": "array", "items": {"type": "string"}, "description": "Library asset refs to work under: 'id' or 'id@N'; profiles expand (see list_assets)."},
             },
         },
     },
@@ -195,7 +197,7 @@ TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "target": {"type": "string", "description": "Canonical target: a node id (feature:Name, file:path, func:path::qualname, component:Name, system:Name), 'edge:src|dst', or 'range:path#start-end'."},
+                "target": {"type": "string", "description": "Canonical target: a node id (feature:Name, file:path, func:path::qualname, component:Name, system:Name), 'edge:src|dst', 'range:path#start-end', or 'asset:<library-asset-id>'."},
                 "type": {"type": "string", "description": "One of: note, observation, intended_change, instruction, bug_suspicion, contradiction, security_concern, performance_concern, architecture_concern, question, decision_link, verification_result."},
                 "body": {"type": "string", "description": "The annotation text — concrete and evidence-grounded."},
                 "confidence": {"type": "number", "description": "0-1 confidence in the claim (optional)."},
@@ -277,6 +279,49 @@ TOOLS = [
                 "base": {"type": "string", "description": "Git base to diff against (default HEAD; use e.g. main for a branch)."},
                 "scan": {"type": "boolean", "description": "Refresh Sentinel before judging (default false)."},
             },
+        },
+    },
+    {
+        "name": "list_assets",
+        "description": "The Library: reusable, versioned agent-context assets (skills, strategies, preferences, constraints, and profiles that compose them). Use it to find the right specialist context for a task instead of guessing — then load it with get_asset, or pass the ids to export_task_prompt/declare_intent so your working context (and its exact versions) is recorded.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "type": {"type": "string", "description": "Filter: skill | strategy | preference | constraint | profile."},
+                "tag": {"type": "string", "description": "Filter by tag."},
+                "status": {"type": "string", "description": "Filter: draft | published | deprecated."},
+                "q": {"type": "string", "description": "Substring over id/name/description/tags."},
+            },
+        },
+    },
+    {
+        "name": "get_asset",
+        "description": "One Library asset in full: canonical agent-facing content, metadata, declared dependencies and conflicts, trust level, and version history. The canonical content is what you follow — read it before acting on an asset you were told to load.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "Asset id (see list_assets)."},
+                "version": {"type": "integer", "description": "A specific published version (default: latest)."},
+            },
+            "required": ["id"],
+        },
+    },
+    {
+        "name": "propose_asset",
+        "description": "Propose a NEW Library asset (or a revision of one, by reusing its id) as a DRAFT — reusable knowledge you learned that is worth keeping: a skill, strategy, preference or constraint. Drafts are provenance-stamped as agent-authored and never enter an agent's context until a human publishes them in the Library screen. You cannot publish: publishing is human-only. To comment on an existing asset instead, use add_annotation with target 'asset:<id>'.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "Human title, e.g. 'React Component Conventions'."},
+                "type": {"type": "string", "description": "skill | strategy | preference | constraint."},
+                "description": {"type": "string", "description": "One line: what it does and when to load it."},
+                "content": {"type": "string", "description": "The canonical agent-facing content (markdown) — the instructions an agent would follow verbatim."},
+                "id": {"type": "string", "description": "Asset id (lowercase slug). Omit for a new asset (derived from the name); pass an existing id to propose a revision of it."},
+                "tags": {"type": "array", "items": {"type": "string"}, "description": "Tags for search (optional)."},
+                "requires": {"type": "array", "items": {"type": "string"}, "description": "Asset ids this depends on (optional)."},
+                "conflicts_with": {"type": "array", "items": {"type": "string"}, "description": "Asset ids this must not be combined with (optional)."},
+            },
+            "required": ["name", "type", "description", "content"],
         },
     },
 ]
@@ -419,19 +464,23 @@ class MCPServer:
         node = graph.nodes["suggestions:app"]
         return {"provider": node.get("provider"), "items": node.get("items") or []}
 
-    def export_task_prompt(self, task: str, as_json: bool = False) -> dict:
+    def export_task_prompt(self, task: str, as_json: bool = False,
+                           assets: list | None = None) -> dict:
         from .prompt_export import export_prompt
 
-        content, out = export_prompt(self.root, task, as_json=as_json)
+        content, out = export_prompt(self.root, task, as_json=as_json,
+                                     assets=[str(a) for a in (assets or [])])
         return {"path": str(out), "content": content}
 
     # @memory:feature:ChangeAlignment
     # @memory:connects:AgentMemoryAccess, ImpactAnalysis, HermesSentinel, PromptExport
     # @memory:summary:Agent intent-input channel — records the goal of the current change and returns a memory-grounded brief to work against.
-    def declare_intent(self, goal: str | None = None) -> dict:
+    def declare_intent(self, goal: str | None = None, assets: list | None = None) -> dict:
         from .intent import capture_intent
 
-        pack = capture_intent(self.root, goal=goal)
+        pack = capture_intent(self.root, goal=goal,
+                              assets=[str(a) for a in (assets or [])])
+        library = pack.get("library") or {}
         return {
             "intent": pack.get("task"),
             "source": pack.get("intent_source"),
@@ -441,6 +490,14 @@ class MCPServer:
             ],
             "features": [f["name"] for f in pack.get("features", [])],
             "impact": pack.get("impact"),
+            "library": {
+                "assets": [{"id": a["id"], "version": a["version"],
+                            "content_hash": a["content_hash"], "type": a["type"],
+                            "scope": a["scope"], "trust": a["trust"]}
+                           for a in library.get("assets", [])],
+                "warnings": library.get("warnings", []),
+                "conflicts": library.get("conflicts", []),
+            } if library else None,
             "verification": pack.get("verification", []),
         }
 
@@ -647,6 +704,94 @@ class MCPServer:
 
         store = DecisionStore(self.root / config.MEMORY_DIR_NAME, root=self.root)
         return {"decisions": store.list(feature=feature, active_only=active_only)}
+
+    # @memory:feature:AtlasLibrary
+    # @memory:summary:Agents browse the Library over MCP to find the right reusable context for a task.
+    def list_assets(self, type: str | None = None, tag: str | None = None,
+                    status: str | None = None, q: str | None = None) -> dict:
+        from .library import LibraryError, LibraryView
+
+        try:
+            rows = LibraryView(self.root).list(type=type, tag=tag, status=status, q=q)
+        except LibraryError as exc:
+            return {"error": str(exc)}
+        return {"assets": [
+            {"id": r["id"], "name": r.get("name"), "type": r.get("type"),
+             "description": r.get("description"), "tags": r.get("tags") or [],
+             "version": r.get("current_version"), "status": r.get("status"),
+             "scope": r.get("scope"), "trust": r.get("trust"),
+             "effective": r.get("effective"), "enabled": r.get("enabled_effective", True)}
+            for r in rows]}
+
+    # @memory:feature:AtlasLibrary
+    # @memory:summary:Full canonical content of one Library asset for the agent that must follow it.
+    def get_asset(self, id: str, version: int | None = None) -> dict:
+        from .library import LibraryError, LibraryView
+
+        try:
+            asset = LibraryView(self.root).get(id, version)
+        except LibraryError as exc:
+            return {"error": str(exc)}
+        meta = asset.get("meta") or {}
+        return {"asset": {
+            "id": asset["id"], "name": asset.get("name"), "type": asset.get("type"),
+            "description": asset.get("description"), "tags": asset.get("tags") or [],
+            "requires": meta.get("requires") or [],
+            "conflicts_with": meta.get("conflicts_with") or [],
+            "members": meta.get("assets") or [],
+            "status": asset.get("status"), "scope": asset.get("scope"),
+            "trust": asset.get("trust"), "version": asset.get("resolved_version"),
+            "draft": asset.get("draft"),
+            "versions": [{"version": v["version"], "content_hash": v["content_hash"],
+                          "published_at": v.get("published_at"),
+                          "published_by": v.get("published_by")}
+                         for v in asset.get("versions") or []],
+            "content": asset.get("body"),
+        }}
+
+    # @memory:feature:AtlasLibrary
+    # @memory:connects:StructuredAnnotations
+    # @memory:summary:Agents propose Library assets as drafts only — provenance-stamped agent authorship, human publishing; canonical published content is never touched by a model.
+    def propose_asset(self, name: str, type: str, description: str, content: str,
+                      id: str | None = None, tags: list | None = None,
+                      requires: list | None = None,
+                      conflicts_with: list | None = None) -> dict:
+        from .library import (
+            LibraryError,
+            LibraryView,
+            serialize_asset,
+            slugify,
+            validate_meta,
+        )
+        from .providers import provider_identity
+
+        ident = provider_identity()
+        author = {"kind": "model", "identity": self._client or "mcp-agent",
+                  "provider": ident.get("name"), "model": ident.get("model"),
+                  "via": "mcp"}
+        try:
+            meta = validate_meta({
+                "id": id or slugify(name), "name": name, "type": type,
+                "description": description, "tags": tags or [],
+                "requires": requires or [], "conflicts_with": conflicts_with or [],
+            })
+            store = LibraryView(self.root).store("project")
+            existing = store.get(meta["id"])
+            rec = store.save_draft(serialize_asset(meta, str(content)),
+                                   created_by=author, trust="agent")
+        except LibraryError as exc:
+            return {"error": str(exc)}
+        revision = bool(existing and existing.get("versions"))
+        return {
+            "asset": {"id": rec["id"], "type": rec["type"], "status": rec["status"],
+                      "trust": rec["trust"], "scope": rec["scope"],
+                      "revision_of_published": revision},
+            "next_step": ("this is a DRAFT revision — the published version is unchanged; "
+                          "a human reviews the diff and publishes it in the Library screen"
+                          if revision else
+                          "a human must review and publish this draft in the Library "
+                          "screen before any agent loads it"),
+        }
 
     # @memory:feature:FeatureDiscoveryByDescription
     # @memory:summary:discover_feature over MCP — NL behaviour description to evidence-backed candidate mapping; confirmation stays human-only in the UI.

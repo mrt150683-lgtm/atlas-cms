@@ -33,8 +33,14 @@ def _infer_goal(root: Path) -> tuple[str, str]:
     return "", "none"
 
 
-def capture_intent(root: Path, goal: str | None = None, base: str = "HEAD", top_k: int = 8) -> dict:
-    """Resolve, enrich and persist the active intent; return the task pack."""
+def capture_intent(root: Path, goal: str | None = None, base: str = "HEAD", top_k: int = 8,
+                   assets: list[str] | None = None) -> dict:
+    """Resolve, enrich and persist the active intent; return the task pack.
+
+    ``assets`` names the Library refs this change runs under; their exact
+    versions are recorded in the intent, so the alignment history answers
+    "which reusable context was this agent working from?".
+    """
     root = root.resolve()
     source = "explicit"
     if not goal:
@@ -45,7 +51,7 @@ def capture_intent(root: Path, goal: str | None = None, base: str = "HEAD", top_
 
     memory_dir = root / config.MEMORY_DIR_NAME
     mem = CodebaseMemory.load(memory_dir / "graph.json")
-    pack = build_task_pack(mem, root, goal, top_k=top_k)
+    pack = build_task_pack(mem, root, goal, top_k=top_k, assets=assets)
     pack["intent_source"] = source
     pack["base"] = base
 

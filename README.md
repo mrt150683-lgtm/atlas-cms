@@ -198,7 +198,7 @@ nearest project holding `.memory/graph.json`, so one global entry serves every
 repo. In an un-mapped repo it stays alive and tools answer "no memory layer:
 run `cms run-all`".
 
-25 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
+28 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
 
 - **Grounding / read**: `query_codebase`, `get_file_summary`, `get_source`,
   `get_feature_trace`, `list_features`, `who_calls`, `who_imports`, `get_impact`.
@@ -234,6 +234,14 @@ run `cms run-all`".
   surviving evidence, and keeps only mechanism steps whose backticked code
   references resolve to prompt evidence. Verdicts: already_covered,
   partial_overlap, new, not_found. Humans confirm in the UI.
+- **Library**: `list_assets`, `get_asset`, `propose_asset`. Reusable, versioned
+  agent-context assets (skills, strategies, preferences, constraints, profiles).
+  Agents browse and load them, and may propose new ones or revisions as
+  **drafts** — provenance-stamped agent-authored, invisible to any agent's
+  context until a human publishes them. There is deliberately no publish tool:
+  publishing, like decision approval, is human-only. `export_task_prompt` and
+  `declare_intent` take an `assets` selection and record the exact versions
+  used. See [The Library](#the-library-cms-library).
 - **Session control**: `switch_project` (flip the server to another project
   root mid-session; unmapped targets get the exact build command back).
 - **Constellation**: `list_projects`, `get_fusion_report`, `refine_fusion`.

@@ -51,7 +51,7 @@ attached or a `.memory/` dir exists, use the tools below first.
 This is the loop Atlas exists to serve. `declare_intent` + `check_alignment` are
 the input and the honest-finish of a change; everything else is grounding.
 
-## 3. MCP tools (25) — the primary agent surface
+## 3. MCP tools (28) — the primary agent surface
 
 Server id `cms` (stdio JSON-RPC). Every call is logged to
 `.memory/activity.jsonl` and rendered live in the UI (glow pulses + a badge —
@@ -87,9 +87,11 @@ the human can literally watch you think). Tools:
 - `get_sentinel_report(severity=None)` — latest quality-gate scan: gate status,
   workflow checks, and active findings (bugs/risks). Check this before claiming
   done.
-- `export_task_prompt(task, as_json=False)` — assemble a full, memory-grounded
-  task brief (where to work, features involved, blast radius, related planned
-  work, verification steps) for a described task.
+- `export_task_prompt(task, as_json=False, assets=None)` — assemble a full,
+  memory-grounded task brief (where to work, features involved, blast radius,
+  related planned work, verification steps) for a described task. `assets`
+  composes Library context into the brief (§12) and records the exact versions
+  used.
 
 **Discuss**
 - `ask_codebase(question)` — plain-language Q&A over the WHOLE memory layer:
@@ -174,12 +176,31 @@ the human can literally watch you think). Tools:
   approved decision for a feature is the ground truth to implement and verify
   against; `check_alignment` reports it for touched features.
 
+**Library (reusable agent-context assets)**
+- `list_assets(type=None, tag=None, status=None, q=None)` — the Library: skills,
+  strategies, preferences, constraints, and profiles (composites that pin
+  members by `id@N`). Find the right specialist context for the task instead of
+  loading one oversized prompt.
+- `get_asset(id, version=None)` — one asset in full: canonical agent-facing
+  content, declared `requires`/`conflicts_with`, trust, scope, version history.
+  The canonical content is what you follow.
+- `propose_asset(name, type, description, content, id=None, tags=None,
+  requires=None, conflicts_with=None)` — propose reusable knowledge worth
+  keeping, as a **draft** (reuse an existing id to propose a revision — the
+  published version is untouched). Drafts are stamped agent-authored and never
+  enter any agent's context until a human publishes them. **You cannot publish**
+  — that is human-only, like decision approval. To comment on an asset instead
+  of changing it, use `add_annotation` with `target="asset:<id>"`.
+
 **The alignment loop (intent → verdict)**
-- `declare_intent(goal=None)` — record what the current change is meant to do
-  (if `goal` omitted, inferred from git branch / last commit). Returns a grounded
-  brief and stores the active intent. Paths written literally in the goal are
-  recorded as mandatory targets; semantic hits and blast-radius files are
-  related context, not an instruction to edit every match. **Call this first.**
+- `declare_intent(goal=None, assets=None)` — record what the current change is
+  meant to do (if `goal` omitted, inferred from git branch / last commit).
+  Returns a grounded brief and stores the active intent. Paths written literally
+  in the goal are recorded as mandatory targets; semantic hits and blast-radius
+  files are related context, not an instruction to edit every match. `assets`
+  names the Library refs the change runs under — their exact versions are
+  recorded in the intent, so the trail shows what you worked from. **Call this
+  first.**
 - `check_alignment(base="HEAD", scan=False)` — judge the working diff against the
   declared intent. Returns `verdict` (aligned/partial/drift/unverified),
   `headline`, `changed` files, `touched_features`, `feature_reviews`, `impact`
@@ -274,6 +295,19 @@ following batch (liked = more such directions, disliked = never again).
 Standing goals (revealed by clicking the Atlas logo 7× inside the tab)
 are injected into every generation. State at `~/.cms/brainstorm/`; real
 provider only; all output is LLM plan material.
+
+**Library — reusable agent-context assets**
+- `cms library list|show <id>` — browse assets (shadowing, trust and version
+  marked); `cms library new <id> --type skill|strategy|preference|constraint`.
+- `cms library publish <id> --by "<name>"` — freeze the draft as an immutable
+  version. Human act: the MCP surface cannot publish.
+- `cms library compose <ref…>` — preview the composed context for a selection
+  (`id` or `id@N`; profiles expand): ordered content, warnings, conflicts, size.
+- `cms library import <file>` / `export <id>` — markdown skill files in and out
+  (imports land as drafts, trust `imported`).
+- `cms library enable|disable|deprecate <id>` — disable never deletes; deprecate
+  keeps pinned refs resolving. `cms library verify` re-hashes every snapshot.
+- `cms prompt "<plan>" --asset <ref>` — compose assets into a task brief.
 
 **Scope / share**
 - `cms scope show|set <paths…>|clear` — limit which subdirs/files get processed
@@ -460,10 +494,43 @@ it; `GET /api/semantic` serves it).
   `attention` (a stage failed; retries on input change or cooldown). Derived
   from stage evidence, never a stored flag.
 
-## 12. Quick recipes
+## 12. The Library — reusable context, composed per task
+
+Instead of one oversized prompt (or the same generic instructions for every
+agent), Atlas keeps **assets**: `skill`, `strategy`, `preference`, `constraint`,
+and `profile` (a composite that references members by pinned `id@N` — it never
+copies them). Canonical content is markdown with a small frontmatter block;
+lifecycle state (versions, hashes, trust, enablement) lives in an `index.json`
+beside it, and every published version is frozen under `.versions/<id>/vN.md`.
+
+Three scopes layer, highest wins: **built-in** (Atlas's own `skills/`,
+read-only) → **user** (`~/.cms/library/`) → **project** (`<repo>/skills/`).
+The same id at a higher scope *shadows* the lower one — that is the override
+mechanism (a project sharpening a user preference pack).
+
+Composition (`export_task_prompt(assets=…)`, `declare_intent(assets=…)`,
+`cms library compose`) expands profiles, walks `requires`, and **reports
+conflicts rather than resolving them** — both sides land in your context with a
+CONFLICT banner, and reconciling them deliberately is your job. Deduped,
+ordered constraints → preferences → strategies → skills, size-estimated, and
+stamped with each asset's exact `{id, version, content_hash}` so the run is
+reproducible.
+
+Rules that bind you:
+- **Published content is frozen.** Never edit a published asset; propose a
+  revision (`propose_asset` with the existing id) and let a human publish it.
+- **You cannot publish.** Drafts you create are agent-trust and invisible to
+  other agents' context until a human approves them in the Library screen.
+- **Comment beside, not inside:** `add_annotation(target="asset:<id>", …)` for
+  observations, gaps, failure cases — never smuggle notes into canonical text.
+
+## 13. Quick recipes
 
 - **Understand an unfamiliar area:** `query_codebase("<topic>")` →
   `get_file_summary(path)` → `get_source(path, a, b)`.
+- **Load the right context for a task:** `list_assets(q="react")` →
+  `declare_intent("<goal>", assets=["atlas-default", "react-skill"])` — the
+  brief comes back with those assets composed in and their versions recorded.
 - **Explain something to the human (or sanity-check a feature):**
   `ask_codebase("is <Feature> doing what it's supposed to?")` — grounded
   intent-vs-reality answer in plain words, evidence named.

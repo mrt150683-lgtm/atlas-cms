@@ -40,8 +40,32 @@ def _declared_paths(task: str) -> list[str]:
     return sorted({p.strip("`'\"") for p in paths if "://" not in p})
 
 
-def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8) -> dict:
-    """Everything an AI (or human) needs to approach `task`, as structured data."""
+# @memory:feature:TaskPromptExport
+# @memory:connects:AtlasLibrary
+# @memory:summary:Assembles a memory-grounded task pack; selected Library assets are composed in with exact id/version/content_hash provenance, so intents and alignment inherit which reusable context an agent actually ran on.
+def _library_section(root: Path, assets: list[str] | None) -> dict | None:
+    """Compose the selected Library assets. A composition failure must never
+    take down the brief — the pack records the problem instead."""
+    if not assets:
+        return None
+    from .library import compose_context
+
+    try:
+        result = compose_context(root, list(assets))
+    except Exception as exc:  # keep the brief useful even if the library errs
+        return {"selection": list(assets), "error": f"{type(exc).__name__}: {exc}",
+                "assets": [], "warnings": [], "conflicts": []}
+    return {"selection": list(assets), **result}
+
+
+def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8,
+                    assets: list[str] | None = None) -> dict:
+    """Everything an AI (or human) needs to approach `task`, as structured data.
+
+    ``assets`` selects Library refs (`id` or `id@N`; profiles expand) whose
+    composed context joins the pack. The provenance of every asset used is
+    recorded, so a run can be reproduced and audited later.
+    """
     graph = mem.graph
     hits = mem.query_intent(task, top_k=top_k)
 
@@ -114,11 +138,14 @@ def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8) 
             if words & set(re.findall(r"[a-z0-9]+", text)):
                 suggestions.append(s)
 
+    library = _library_section(root, assets)
+
     return {
         "task": task,
         "declared_paths": _declared_paths(task),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project": root.name,
+        "library": library,
         "relevant_code": targets,
         "features": features,
         "impact": impact,
@@ -142,6 +169,39 @@ def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8) 
     }
 
 
+def _render_library(library: dict | None) -> list[str]:
+    """The composed Library context: the reusable rules, preferences and skills
+    this task runs under, with their exact versions named."""
+    if not library:
+        return []
+    lines = ["## Library context (the assets this task runs under)"]
+    if library.get("error"):
+        return lines + [f"> WARNING: the library could not be composed — "
+                        f"{library['error']}", ""]
+    used = ", ".join(f"{a['id']}@{'v' + str(a['version']) if a['version'] else 'draft'}"
+                     for a in library["assets"]) or "(nothing resolved)"
+    lines.append(f"Loaded from the selection `{', '.join(library['selection'])}`: {used}.")
+    if library.get("oversized"):
+        lines.append(f"> WARNING: this context is large (~{library['est_tokens']} tokens) — "
+                     "consider a narrower selection.")
+    for w in library.get("warnings") or []:
+        detail = ", ".join(f"{k}={v}" for k, v in w.items() if k != "kind")
+        lines.append(f"> WARNING [{w['kind']}] {detail}")
+    for c in library.get("conflicts") or []:
+        lines.append(f"> CONFLICT: `{c['a']}` and `{c['b']}` declare each other "
+                     f"incompatible (by {', '.join(c['declared_by'])}). Both are included "
+                     "below — reconcile them deliberately, do not silently pick one.")
+    lines.append("")
+    for asset in library.get("assets") or []:
+        version = f"v{asset['version']}" if asset.get("version") else "draft"
+        lines.append(f"### [{asset['type']}] {asset['name']} "
+                     f"({asset['id']}@{version} · {asset['scope']} · {asset['trust']})")
+        if asset.get("content"):
+            lines.append(asset["content"])
+        lines.append("")
+    return lines
+
+
 def render_prompt(pack: dict) -> str:
     lines = [
         f"# Task: {pack['task']}",
@@ -150,8 +210,9 @@ def render_prompt(pack: dict) -> str:
         "generated from its live memory layer (structure, summaries, features, tests) — "
         "treat it as ground truth and read the referenced lines before editing.",
         "",
-        "## Where to work",
     ]
+    lines += _render_library(pack.get("library"))
+    lines.append("## Where to work")
     for t in pack["relevant_code"]:
         loc = f"{t['path']}:{t['lines']}" if t.get("lines") else t["path"]
         lines.append(f"### [{t['kind']}] `{t['name']}` — {loc}")
@@ -214,12 +275,13 @@ def render_prompt(pack: dict) -> str:
     return "\n".join(lines)
 
 
-def export_prompt(root: Path, task: str, as_json: bool = False, top_k: int = 8) -> tuple[str, Path]:
+def export_prompt(root: Path, task: str, as_json: bool = False, top_k: int = 8,
+                  assets: list[str] | None = None) -> tuple[str, Path]:
     """Build and persist the prompt; returns (content, written_path)."""
     root = root.resolve()
     memory_dir = root / config.MEMORY_DIR_NAME
     mem = CodebaseMemory.load(memory_dir / "graph.json")
-    pack = build_task_pack(mem, root, task, top_k=top_k)
+    pack = build_task_pack(mem, root, task, top_k=top_k, assets=assets)
     content = json.dumps(pack, indent=2) if as_json else render_prompt(pack)
     out_dir = memory_dir / "prompts"
     out_dir.mkdir(parents=True, exist_ok=True)
