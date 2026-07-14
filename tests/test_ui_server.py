@@ -1,5 +1,6 @@
 import http.client
 import json
+import os
 import threading
 import time
 import urllib.error
@@ -84,6 +85,9 @@ class _Client:
                 return resp.status, resp.read()
 
 
+APPROVAL_TOKEN = "test-approval-code"
+
+
 @pytest.fixture(scope="module")
 def server(tmp_path_factory):
     root = tmp_path_factory.mktemp("uiproj")
@@ -96,7 +100,12 @@ def server(tmp_path_factory):
     export_graph(graph, memory_dir)
 
     cache = _MemoryCache(memory_dir / "graph.json")
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(root, cache))
+    os.environ["CMS_APPROVAL_TOKEN"] = APPROVAL_TOKEN  # deterministic gate for tests
+    try:
+        handler = make_handler(root, cache)
+    finally:
+        del os.environ["CMS_APPROVAL_TOKEN"]
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     client = _Client(httpd.server_address[1])
@@ -240,7 +249,7 @@ def test_semantic_endpoint_reports_stage_evidence(server) -> None:
     assert status == 200
     sem = json.loads(body)
     assert sem["project"] == root.name and sem["root"] == str(root)
-    assert set(sem["stages"]) == {"summaries", "features", "review", "suggestions"}
+    assert set(sem["stages"]) == {"summaries", "features", "hierarchy", "review", "suggestions"}
     assert sem["stages"]["features"]["status"] == "skipped"
     assert sem["stages"]["review"]["status"] == "never_run"
     assert "provider" in sem and "real" in sem["provider"]
@@ -532,3 +541,247 @@ def test_chat_endpoint_and_popup_markup(tmp_path, monkeypatch) -> None:
     for el in ("chatFab", "chatBox", "chatMsgs", "chatInput", "chatSend"):
         assert f'id="{el}"' in html, f"missing {el}"
     assert '"/api/chat"' in html
+
+
+def test_annotations_endpoints_and_panel_markup(server) -> None:
+    """Structured annotations round-trip over HTTP and the inspector ships
+    the panel + fetch wiring (Sentinel's UI<->HTTP contract)."""
+    client, _ = server
+
+    status, body = client.post("/api/annotations", {
+        "target": "feature:Greeting", "type": "question",
+        "body": "does greet handle unicode?", "feature": "Greeting"})
+    assert status == 200
+    ann = json.loads(body)["annotation"]
+    assert ann["status"] == "open" and ann["target"] == "feature:Greeting"
+
+    status, body = client.get("/api/annotations?feature=Greeting")
+    rows = json.loads(body)["annotations"]
+    assert status == 200 and [a["id"] for a in rows] == [ann["id"]]
+
+    status, body = client.post("/api/annotations/update",
+                               {"id": ann["id"], "status": "resolved"})
+    assert status == 200 and json.loads(body)["annotation"]["resolved_at"]
+
+    status, body = client.post("/api/annotations/archive", {"id": ann["id"]})
+    assert status == 200
+    status, body = client.get("/api/annotations?feature=Greeting")
+    assert json.loads(body)["annotations"] == []  # archived out by default
+
+    status, body = client.post("/api/annotations", {"target": "", "type": "note", "body": "x"})
+    assert status == 400
+
+    # transport provenance is server-stamped, never caller-controlled: even a
+    # body claiming to be a user carries via=http for later judgment
+    status, body = client.post("/api/annotations", {
+        "target": "feature:Greeting", "type": "note", "body": "claimed-user note",
+        "author": {"kind": "user", "identity": "totally-a-human", "via": "forged"}})
+    assert status == 200
+    assert json.loads(body)["annotation"]["author"]["via"] == "http"
+
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    for el in ("annSec", "annList", "annForm", "annAddBtn"):
+        assert f'id="{el}"' in html, f"missing {el}"
+    assert '"/api/annotations"' in html and "/api/annotations/update" in html
+
+
+def test_human_view_toggle_and_resolution_slider_markup(server) -> None:
+    """The Human View control, resolution slider, mapping trail and the
+    projection/selection machinery ship in the UI."""
+    client, _ = server
+    status, body = client.get("/")
+    html = body.decode("utf-8")
+    assert status == 200
+    for el in ("humanBtn", "humanPop", "resRange", "resName", "resBlurb", "resNote", "trail"):
+        assert f'id="{el}"' in html, f"missing {el}"
+    # the six semantic levels and the projection seam
+    for token in ("RES_LEVELS", "buildHumanView", "buildPyramidView", "rebuildView",
+                  "projectSelection", "trailChain", "selectSemantic", "NODE_LEVEL"):
+        assert token in html, f"missing {token}"
+    for level in ("System", "Component", "Feature", "Module", "Function", "Source"):
+        assert f'name: "{level}"' in html, f"missing level {level}"
+    # canonical traceability: the PART_OF pyramid is indexed client-side
+    assert "featComp" in html and "compSys" in html
+    # deep-link + persistence contract
+    assert 'localStorage.getItem("cms.human.on")' in html
+    assert 'params.get("human")' in html
+
+
+def test_decisions_endpoints_and_intent_panel(server) -> None:
+    """Propose -> approve -> locked over HTTP; UI ships the Intent panel."""
+    client, _ = server
+
+    status, body = client.post("/api/decisions", {
+        "feature": "Greeting", "title": "Greet politely",
+        "intent": {"behaviour": "greet returns the given name unchanged"}})
+    assert status == 200
+    dec = json.loads(body)["decision"]
+    assert dec["status"] == "proposed"
+
+    # the human-only gate: no/wrong session code -> 403, never approved
+    status, body = client.post("/api/decisions/approve",
+                               {"id": dec["id"], "approved_by": "alex"})
+    assert status == 403 and "session code" in json.loads(body)["error"]
+    status, body = client.post("/api/decisions/approve",
+                               {"id": dec["id"], "approved_by": "alex",
+                                "token": "wrong-guess"})
+    assert status == 403
+
+    status, body = client.post("/api/decisions/approve",
+                               {"id": dec["id"], "approved_by": "alex",
+                                "token": APPROVAL_TOKEN})
+    assert status == 200 and json.loads(body)["decision"]["status"] == "approved"
+
+    status, body = client.get("/api/decisions?feature=Greeting")
+    rows = json.loads(body)["decisions"]
+    assert [d["id"] for d in rows] == [dec["id"]]
+
+    status, body = client.post("/api/decisions/approve",
+                               {"id": dec["id"], "approved_by": "alex",
+                                "token": APPROVAL_TOKEN})
+    assert status == 400  # cannot re-approve
+
+    status, body = client.post("/api/decisions", {"title": "", "intent": {}})
+    assert status == 400
+
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    for el in ("intSec", "intBody"):
+        assert f'id="{el}"' in html, f"missing {el}"
+    for route in ("/api/decisions/approve", "/api/decisions/close"):
+        assert route in html
+    assert "initIntentPanel" in html
+
+
+def test_flowreview_endpoints_and_panel(server, monkeypatch) -> None:
+    """GET serves null before generation; POST builds the mock skeleton and
+    persists it; the UI ships the panel."""
+    monkeypatch.setenv("CMS_PROVIDER", "mock")
+    client, _ = server
+
+    status, body = client.get("/api/flowreview?feature=Greeting")
+    assert status == 200 and json.loads(body)["review"] is None
+
+    status, body = client.post("/api/flowreview", {"feature": "Greeting"})
+    assert status == 200
+    rv = json.loads(body)["review"]
+    assert rv["status"] == "static_only" and rv["flows"]
+
+    status, body = client.get("/api/flowreview?feature=Greeting")
+    rv = json.loads(body)["review"]
+    assert rv is not None and rv["stale"] is False  # persisted to graph.json
+
+    status, body = client.post("/api/flowreview", {"feature": "Ghost"})
+    assert status == 400
+
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    for el in ("flowSec", "flowBody"):
+        assert f'id="{el}"' in html, f"missing {el}"
+    assert '"/api/flowreview"' in html and "initFlowPanel" in html
+    assert "FLOW_STATUS_UI" in html  # non-color-only status labels
+
+
+def test_fidelity_endpoint_and_panel(server) -> None:
+    client, _ = server
+    status, body = client.get("/api/fidelity?feature=Greeting")
+    f = json.loads(body)
+    assert status == 200 and f["overall"] in ("on_track", "attention", "insufficient_evidence")
+    assert f["explanations"]["implemented"]
+    status, _ = client.get("/api/fidelity?feature=Ghost")
+    assert status == 400
+
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    assert '"/api/fidelity"' not in html or True
+    for el in ("fidSec", "fidBody"):
+        assert f'id="{el}"' in html, f"missing {el}"
+    assert "/api/fidelity" in html
+
+
+def test_feature_discovery_endpoints(server, monkeypatch) -> None:
+    monkeypatch.setenv("CMS_PROVIDER", "mock")
+    client, _ = server
+    status, body = client.post("/api/feature/discover",
+                               {"description": "greeting people by their given name"})
+    data = json.loads(body)
+    assert status == 200 and data["real"] is False and data["candidate"] is None
+
+    status, body = client.post("/api/feature/discover", {"description": "hi"})
+    assert status == 400
+
+    status, body = client.post("/api/feature/confirm", {
+        "name": "PoliteGreeting", "description": "greets politely",
+        "members": ["func:app.py::greet"]})
+    assert status == 200 and json.loads(body)["confirmed"] is True
+    status, body = client.get("/api/graph")
+    assert '"feature:PoliteGreeting"' in body.decode("utf-8")
+
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    for el in ("fdisc", "fdiscBtn", "fdiscForm", "fdiscOut"):
+        assert f'id="{el}"' in html, f"missing {el}"
+    assert "/api/feature/discover" in html and "/api/feature/confirm" in html
+
+
+def test_feature_flags_gate_endpoints(server, monkeypatch) -> None:
+    client, _ = server
+    status, body = client.get("/api/meta")
+    flags = json.loads(body)["flags"]
+    assert flags == {"human_view": True, "annotations": True, "flow_review": True}
+
+    monkeypatch.setenv("CMS_ANNOTATIONS", "0")
+    status, _ = client.get("/api/annotations")
+    assert status == 403
+    monkeypatch.setenv("CMS_FLOW_REVIEW", "0")
+    status, _ = client.get("/api/flowreview?feature=Greeting")
+    assert status == 403
+    monkeypatch.delenv("CMS_ANNOTATIONS")
+    monkeypatch.delenv("CMS_FLOW_REVIEW")
+    status, _ = client.get("/api/annotations")
+    assert status == 200
+
+
+def test_explain_endpoint_degrades_honestly_and_ui_wires_it(server, monkeypatch) -> None:
+    monkeypatch.setenv("CMS_PROVIDER", "mock")
+    client, _ = server
+    status, body = client.post("/api/explain", {"items": [{"id": "feature:Greeting"}]})
+    data = json.loads(body)
+    assert status == 200 and data["real"] is False
+    res = data["results"]["feature:Greeting"]
+    assert res["status"] == "structural" and "no AI explanation" in res["text"]
+
+    status, body = client.post("/api/explain", {"items": [{"id": "file:missing.py"}]})
+    assert status == 400 and "unknown node" in json.loads(body)["error"]
+
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    assert '"/api/explain"' in html
+    for el in ("explSec", "explBody", "explRegen"):
+        assert f'id="{el}"' in html, f"missing {el}"
+
+
+def test_lens_endpoint_and_slider_wiring(server, monkeypatch) -> None:
+    """POST /api/lens rewrites narrative text at an audience level (honest
+    mock degradation here) and the UI ships the slider + lensed targets."""
+    monkeypatch.setenv("CMS_PROVIDER", "mock")
+    client, _ = server
+
+    long_text = ("This module builds the knowledge graph from scanned source "
+                 "records. It resolves imports across files.")
+    status, body = client.post("/api/lens", {
+        "level": "tldr", "items": [{"id": "x", "text": long_text}]})
+    data = json.loads(body)
+    assert status == 200 and data["real"] is False
+    assert data["results"]["x"].endswith("source records.")  # deterministic fallback
+
+    status, body = client.post("/api/lens", {"level": "wizard", "items": []})
+    assert status == 400 and "unknown lens level" in json.loads(body)["error"]
+
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
+            ).read_text(encoding="utf-8")
+    for el in ("lensBtn", "lensPop", "lensRange", "lensName", "lensNote"):
+        assert f'id="{el}"' in html, f"missing {el}"
+    assert '"/api/lens"' in html
+    assert html.count("data-lens") >= 12  # summaries/features/review/suggestions/chat

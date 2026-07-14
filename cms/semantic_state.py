@@ -30,7 +30,7 @@ from . import config
 
 SCHEMA_VERSION = 1
 STATE_FILENAME = "semantic_state.json"
-STAGES = ("summaries", "features", "review", "suggestions")
+STAGES = ("summaries", "features", "hierarchy", "review", "suggestions")
 # bump when DISCOVERY_PROMPT / feature semantics change enough that old
 # discovery output should be considered non-current
 DISCOVERY_SCHEMA_VERSION = 1

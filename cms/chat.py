@@ -190,6 +190,40 @@ def build_evidence(root: Path, question: str) -> tuple[dict, list[str]]:
         "ranked_hits": hits,
     }
 
+    # approved decisions: the locked intended behaviour for matched features
+    try:
+        from .decisions import DecisionStore
+
+        dstore = DecisionStore(memory_dir, root=root)
+        decs = []
+        for m in matched:
+            dec = dstore.approved_for(m["feature"])
+            if dec:
+                decs.append({"feature": m["feature"], "title": dec["title"],
+                             "behaviour": _trim(dec["intent"]["behaviour"], 300),
+                             "prohibited": dec["intent"].get("prohibited", [])[:4]})
+        if decs:
+            evidence["approved_decisions"] = decs
+    except Exception:
+        pass
+
+    # active structured annotations on matched features / hit targets — open
+    # contradictions and bug suspicions are part of the honest answer; archived
+    # and resolved history stays out of default context by design
+    try:
+        from .annotations import AnnotationStore
+
+        store = AnnotationStore(memory_dir, root=root)
+        ann: list[dict] = []
+        for m in matched:
+            ann.extend(store.active_for_context(feature=m["feature"], limit=4))
+        if not ann and hits:
+            ann = store.active_for_context(targets=[h["node"] for h in hits], limit=6)
+        if ann:
+            evidence["active_annotations"] = ann[:8]
+    except Exception:
+        pass
+
     if graph.has_node("review:app"):
         app = graph.nodes["review:app"]
         evidence["app_review"] = {"verdict": app.get("verdict"),

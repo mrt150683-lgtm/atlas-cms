@@ -1,30 +1,93 @@
 <h1>▲ Atlas</h1>
 
-**Every codebase, mapped. Ground truth for AI agents.**
+**Every codebase, mapped. One ground truth that AI agents and people read the same way.**
 
-*(Atlas is the product; `cms` is the command line and Python package — `pip install`, `cms run-all`, `cms mcp`.)*
+*(Atlas is the product; `cms` is the command line and Python package: `pip install`, `cms run-all`, `cms mcp`.)*
 
-![The knowledge-graph map — files sized by lines, edges are imports, live feature discovery in the sidebar](docs/images/map.png)
+## Why I built Atlas
 
-![Click any node for its inspector: lines, git history, AI summary and components — mapping Atlas's own MCP server here](docs/images/inspector.png)
+I built Atlas after seeing the same problem again and again: AI agents can be
+very good at writing code, but every new task begins with an incomplete picture
+of the codebase. They search for fragments, read large files, burn through
+context, miss important connections, and can confidently say a change is
+finished without proving that it fits what the project was meant to do.
+
+As codebases and agents become more capable, I do not think the answer is simply
+giving them a larger context window. Agents need a living map of the project:
+its structure, relationships, intent, decisions, and evidence, kept current as
+the code changes. The people working with those agents also need to see what
+they see, correct what they misunderstand, and know where their claims came
+from.
+
+That is how I see Atlas helping. It gives every agent shared, inspectable ground
+truth before it touches the code, then checks the result against the original
+intent afterward. That means less time rediscovering a project, fewer
+hallucinated assumptions and accidental knock-on changes, faster onboarding,
+and more continuity between agents and sessions. Most importantly, it gives us
+a credible answer to: **"Did this change actually do what we meant it to do?"**
+
+**I did not build Atlas to help AI write more code. I built it to help AI
+understand the code it changes, and to help people trust the result.**
+
+![The knowledge-graph map: files sized by lines, edges are imports, live feature discovery in the sidebar](docs/images/map.png)
+
+![Click any node for its inspector: lines, git history, AI summary and components. Here Atlas is mapping its own MCP server](docs/images/inspector.png)
 
 ---
 
-Atlas is a self-bootstrapping structural + semantic memory layer for codebases, built for AI
-agents. It scans a project (ignoring junk like `node_modules/`, `__pycache__/`,
-build output), parses the source into a knowledge graph of files, classes, and
-functions, generates low-resolution AI summaries for each, and exposes a query
-interface so an agent can ask *"where is the auth logic?"* and get precise answers —
-file paths, line ranges, call connections, and intent summaries — instead of grepping.
+## What Atlas does
 
-Beyond finding things, Atlas **keeps the codebase honest**: it traces features, audits
-built-vs-intended alignment, runs a completion quality gate (Hermes Sentinel), and — with
-the Change-Alignment loop — answers *"did this change do what it was meant to?"* So agents
-consult memory before grep, ground every edit, and prove they finished.
+Atlas is a self-bootstrapping structural + semantic memory layer for codebases,
+built for AI agents and the people who work with them. It scans a project
+(ignoring junk like `node_modules/`, `__pycache__/`, build output), parses the
+source into a knowledge graph of files, classes, and functions, generates
+low-resolution AI summaries for each, and exposes a query interface so an agent
+can ask *"where is the auth logic?"* and get precise answers: file paths, line
+ranges, call connections, and intent summaries, instead of grepping.
+
+Beyond finding things, Atlas **keeps the codebase honest**. It traces features,
+audits built-vs-intended alignment, runs a completion quality gate (Hermes
+Sentinel), and, with the Change-Alignment loop, answers *"did this change do
+what it was meant to?"* Agents consult memory before grep, ground every edit,
+and prove they finished.
 
 Full design rationale: [`codebase_memory_system_design_spec.md`](codebase_memory_system_design_spec.md).
 Project credits and contribution provenance: [`CONTRIBUTORS.md`](CONTRIBUTORS.md).
-License: [AGPL-3.0](LICENSE) — free to use and study; ship it (or host it) modified and your changes must be open too.
+License: [AGPL-3.0](LICENSE). Free to use and study; ship it (or host it) modified and your changes must be open too.
+
+## One map, every reader
+
+The core idea behind Atlas's newest layer: **the model and the human look at
+the same canonical map, never at two different stories.**
+
+There is exactly one knowledge graph. AI agents read it at full fidelity
+through the MCP tools (the *AI View*: every node, every edge, every piece of
+evidence). Humans read the very same graph through two independent dials in
+the viewer, so anyone, from a project owner who has never programmed to the
+specialist who wrote the code, sees what the agent sees at the depth and in
+the language that fits them:
+
+- **The resolution slider (Human View)** controls *how much structure* is
+  shown. Six notches walk the semantic pyramid: System, Component, Feature,
+  Module, Function, Source. The big-picture end shows the whole codebase as a
+  handful of named systems; the far end opens the annotated raw source. Every
+  level is a projection of the same canonical nodes, and a clickable
+  breadcrumb trail maps any selection up and down the pyramid, so a feature
+  you click at the "big picture" level traces down to the exact functions the
+  agent reasons about.
+- **The comprehension lens** controls *how things are worded*. The same facts
+  can be re-explained for a schoolchild, a technician, a university student,
+  a domain specialist, as a one-line TL;DR, or as short focus-friendly
+  bullets. Rewrites keep every fact and identifier and never touch the stored
+  data.
+
+The two dials compose: a non-technical stakeholder can set the map to
+"Component" and the lens to "schoolchild" and still be looking at the exact
+same ground truth the agent uses, traceable node for node. Annotations,
+approved decisions, flow verdicts, and evidence chips attach to canonical
+objects, so a note written at any level follows the object across every level,
+whether a human or a model wrote it. Nobody works from a private picture, and
+nothing shown to the human is ever simplified away from the model.
 
 ## Install
 
@@ -45,6 +108,7 @@ cms impact cms/scanner.py::scan   # blast radius of a change
 cms verify                  # map tests to features via coverage
 cms verify CleanDirectoryScanner  # run exactly the tests mapped as exercising a feature
 cms verify --refresh               # force fresh per-test coverage instead of using a current cache
+cms flow CleanDirectoryScanner    # exact-flow review: evidence-classified execution account
 cms mcp                     # MCP server for AI agents (see below)
 cms sentinel                # Hermes Sentinel: bug finding + completion quality gate
 cms fuse                    # Constellation: cross-project integration/conflict report
@@ -62,7 +126,7 @@ cms bundle export --out atlas.cmsbundle  # share the generated memory without re
 
 ## App mode (`cms app` / CMS.exe)
 
-Everything in motion with one command — or one double-click:
+Everything in motion with one command, or one double-click:
 
 ```bash
 cms app        # sync memory -> start file watcher -> serve UI -> open browser
@@ -102,7 +166,7 @@ CMS uses none of them.
 
 **Installer-style first run:** double-click `CMS.exe` anywhere and it asks which
 codebase this copy should work on, then saves the choice to `cms.workspace.json`
-next to the exe. Every launch after that goes straight to that project — so you
+next to the exe. Every launch after that goes straight to that project, so you
 can keep one copy of CMS.exe per codebase, each linked to its own root. Delete
 `cms.workspace.json` (or pass `--root`) to re-link. If the exe sits inside a
 project root already, that project is used directly with no prompt.
@@ -113,7 +177,7 @@ Note: `CMS.exe verify` shells out to your installed Python for pytest/coverage.
 
 ## MCP server (`cms mcp`)
 
-Expose the memory to AI agents as native tools — memory consulted before grep:
+Expose the memory to AI agents as native tools, so memory is consulted before grep:
 
 ```bash
 claude mcp add cms -- cms mcp        # Claude Code
@@ -122,27 +186,47 @@ codex mcp add cms -- cms mcp         # Codex
 
 No `--root` needed: the server walks up from its launch directory to the
 nearest project holding `.memory/graph.json`, so one global entry serves every
-repo. In an un-mapped repo it stays alive and tools answer "no memory layer —
+repo. In an un-mapped repo it stays alive and tools answer "no memory layer:
 run `cms run-all`".
 
-19 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
+25 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
 
-- **Grounding / read** — `query_codebase`, `get_file_summary`, `get_source`,
+- **Grounding / read**: `query_codebase`, `get_file_summary`, `get_source`,
   `get_feature_trace`, `list_features`, `who_calls`, `who_imports`, `get_impact`.
-- **Discuss** — `ask_codebase`: plain-language Q&A over the whole memory
+- **Discuss**: `ask_codebase`, plain-language Q&A over the whole memory
   (flows, features, connections, intent-vs-reality), evidence named. Also in
-  the UI as the Ask Atlas chat popup and on the CLI as `cms ask "…"`.
-- **Judgment / plan** — `get_review`, `get_suggestions`, `get_sentinel_report`,
+  the UI as the Ask Atlas chat popup and on the CLI as `cms ask "..."`.
+- **Judgment / plan**: `get_review`, `get_suggestions`, `get_sentinel_report`,
   `export_task_prompt`.
-- **Alignment loop** — `declare_intent`, `check_alignment`.
-- **Session control** — `switch_project` (flip the server to another project
+- **Alignment loop**: `declare_intent`, `check_alignment`.
+- **Annotations**: `add_annotation`, `list_annotations`. Typed, lifecycled
+  annotations on canonical graph objects (features, files, functions, edges,
+  source ranges) with author provenance; model-authored entries are immutable
+  and corrected by supersession.
+- **Decisions**: `propose_decision`, `get_decisions`. Versioned
+  intended-behaviour statements. Approval is human-only (the UI asks for a
+  per-session code printed only to the launching terminal) and locks the
+  intent; changing an approved decision means superseding it (a second,
+  unlinked approval for the same feature is refused), so the agreed word is
+  never silently rewritten or shadowed.
+- **Flow verification**: `review_exact_flow`. Evidence-classified execution
+  flows (static edges + step-granular coverage + bounded source reads);
+  `verified` is computed from evidence (every in-feature step's own lines
+  must be exercised), never asserted by the model, and every status carries
+  its scope (flows/steps reviewed vs traced). `proven` is reserved for
+  AST-exact facts; heuristic call edges read `static`. Also on the CLI as
+  `cms flow <Feature>`.
+- **Feature discovery**: `discover_feature`. A plain-language behaviour
+  description becomes an evidence-backed candidate mapping; humans confirm in
+  the UI.
+- **Session control**: `switch_project` (flip the server to another project
   root mid-session; unmapped targets get the exact build command back).
-- **Constellation** — `list_projects`, `get_fusion_report`, `refine_fusion`:
-  multi-project discovery — read and conversationally refine the
+- **Constellation**: `list_projects`, `get_fusion_report`, `refine_fusion`.
+  Multi-project discovery: read and conversationally refine the
   cross-codebase fusion report (see `cms fuse`).
 
 Every call is logged to `.memory/activity.jsonl`, and the UI renders live glow
-pulses on the touched nodes plus an `MCP · tool` badge — you can watch your
+pulses on the touched nodes plus an `MCP · tool` badge, so you can watch your
 agent think.
 
 ## Git history layer
@@ -150,23 +234,25 @@ agent think.
 Inside a git repo, `run-all`/`update` enrich file nodes with commits, authors,
 churn and age, and detect **hidden coupling**: file pairs that repeatedly change
 together without any import relationship (CO_CHANGES edges). In the UI, hit
-`heat` — nodes recolor by change frequency (calm→hot), co-change pairs draw as
-dashed amber links, and the inspector gains a History section.
+`heat` and nodes recolor by change frequency (calm to hot), co-change pairs draw
+as dashed amber links, and the inspector gains a History section.
 
 ## Verification loop
 
 `cms verify` runs your tests under coverage with per-test contexts and maps each
-feature to the tests that actually execute its code (`exercised_by` — named
-deliberately: coverage proves execution, not behavioural correctness). Then
-`cms verify <Feature>` runs exactly those tests, turning the feature trace's
-checklist into runnable evidence.
+feature to the tests that actually execute its code (`exercised_by`, named
+deliberately: coverage proves execution, not behavioural correctness). The
+mapping is honest at two granularities: it also lands on each individual
+function and class, and a file's import-time lines never count as evidence.
+Then `cms verify <Feature>` runs exactly those tests, turning the feature
+trace's checklist into runnable evidence.
 
 ## Feature tracing (`cms trace`)
 
 Features are first-class: declare them with `@memory:feature:Name` anchors (the
 LLM also discovers undeclared ones from file summaries). For every feature CMS
-computes its members, entry points, and *flows* — call chains walked through the
-graph with `file:line` at each step — then writes a trace with Purpose, Flow,
+computes its members, entry points, and *flows*: call chains walked through the
+graph with `file:line` at each step. It then writes a trace with Purpose, Flow,
 Inputs & Outputs, and a **Verification Checklist** of concrete checks to confirm
 the implementation does what you intended.
 
@@ -177,12 +263,12 @@ cms trace CleanDirectoryScanner   # print one trace
 ```
 
 Traces live in `.memory/features/*.md`, in the graph (`feature:` nodes, so
-`cms query` finds them), and in the UI — pick a feature in the explorer to see
+`cms query` finds them), and in the UI: pick a feature in the explorer to see
 its flow rail and light up its member files on the graph.
 
 Features connect to each other two ways: **declared** links from `@memory:connects:`
 anchors, and **inferred** RELATES edges derived from the code (a member of one
-feature imports or calls a member of another) — so even LLM-discovered features
+feature imports or calls a member of another), so even LLM-discovered features
 join the web. Hit the `feat` button in the UI (or open `?view=features`) for the
 feature-level architecture map: amber nodes are declared features, green are
 discovered, solid edges declared, dashed inferred. Click any node for its trace.
@@ -191,8 +277,8 @@ discovered, solid edges declared, dashed inferred. Click any node for its trace.
 
 The alignment audit: for every feature the AI compares what you *expect* (the
 declared intent) against what was actually *built* (traced flows, member
-summaries, mapped exercising tests) and hands down a verdict — **aligned / partial /
-drift / unverified** — with a one-line plain-English headline, an
+summaries, mapped exercising tests) and hands down a verdict, **aligned /
+partial / drift / unverified**, with a one-line plain-English headline, an
 expected-vs-built explanation, concrete gaps, and an education note teaching
 you how it really works under the hood. Plus an app-level rollup.
 
@@ -203,47 +289,85 @@ cms review CleanDirectoryScanner   # print one feature's review
 
 Results live in `.memory/review.md`, on the graph (agents get them via the
 `get_review` MCP tool), and in the UI: hit the `review` button (or `?review=1`)
-for the overlay — one line per feature, expand for detail, "zoom into this
+for the overlay, one line per feature, expand for detail, "zoom into this
 feature on the map" for the full evidence.
 
 ## Suggestions (`cms suggest`)
 
-CMS plans what's worth building next. It studies its own memory — review
-verdicts and gaps, features with no mapped exercising tests, git churn hotspots, hidden
-coupling — and proposes suggestions each scored **value (1–5) vs effort (1–5)**,
-ranked by **ROI = value/effort**, highest return on investment first.
+CMS plans what's worth building next. It studies its own memory (review
+verdicts and gaps, features with no mapped exercising tests, git churn
+hotspots, hidden coupling) and proposes suggestions each scored **value (1–5)
+vs effort (1–5)**, ranked by **ROI = value/effort**, highest return on
+investment first.
 
 ```bash
 cms suggest          # ranked plan -> terminal + .memory/suggestions.md
 ```
 
 Suggestions also appear in the review overlay ("Suggested next") and are served
-to agents via the `get_suggestions` MCP tool — so your AI can pick its own next
+to agents via the `get_suggestions` MCP tool, so your AI can pick its own next
 task by ROI.
 
 ## Memory viewer (`cms ui`)
 
-A local, zero-dependency web UI over the memory layer at `http://127.0.0.1:7717`:
+A local, zero-dependency web UI over the memory layer at `http://127.0.0.1:7717`.
+This is where the "one map, every reader" idea lives: the same canonical graph
+the agents query, rendered for humans at whatever depth and wording fits them.
 
-- **Explorer** — clean file tree, junk-free, colored by top-level directory.
-- **Knowledge graph** — force-directed canvas; node size = lines, edges = imports.
+- **Explorer**: clean file tree, junk-free, colored by top-level directory.
+- **Knowledge graph**: force-directed canvas; node size = lines, edges = imports.
   Hover for a summary tooltip, click to inspect, drag/pan/zoom, `ext` toggles
   external modules, `fit` reframes.
-- **Inspector** — file stats, anchor chips, the AI summary, every component with
+- **Inspector**: file stats, anchor chips, the AI summary, every component with
   line ranges, caller/callee counts and expandable source snippets, plus
   imports/imported-by navigation.
-- **Search** — press `/` and ask in plain language; results rank via the same
+- **Search**: press `/` and ask in plain language; results rank via the same
   intent engine as `cms query`.
-- Deep-link a file with `?file=cms/scanner.py`. Serves on localhost only.
+- **Human View**: the ◉ Human view toggle renders the same canonical graph at
+  an adjustable abstraction level. Its 6-notch resolution slider walks the
+  semantic pyramid (System, Component, Feature, Module, Function, Source), from
+  whole-architecture shapes at the top to the annotated raw source at the
+  bottom. System/component nodes are derived once per feature-set change (one
+  LLM call; labelled structural grouping without a key), selections map
+  between levels via a clickable breadcrumb trail, and double-click descends
+  one level. The AI View (toggle off) always keeps full fidelity: resolution
+  never touches the stored graph, so agents never lose detail because a human
+  simplified their screen. Cached per-node explanations
+  (`.memory/explain.json`) invalidate dependency-aware: a file change refreshes
+  only that file's, its feature's and its ancestors' explanations.
+- **Comprehension lens**: the ◐ Lens slider re-explains every summary, feature,
+  review and suggestion for a chosen audience: schoolchild, technician, uni
+  student, specialist, TL;DR (one bold sentence) or ADHD/low focus (short
+  bullets); Default shows the raw data. Rewrites are LLM-generated on demand,
+  cached per text+level in `.memory/lens/`, and never alter the stored data.
+  TL;DR/ADHD degrade to built-in shortening without an API key. The lens
+  composes with Human View, so any reader meets the same facts at their own
+  level.
+- **Annotations**: every inspector has an Annotations panel with typed,
+  lifecycled notes on canonical objects (features, files, functions, systems).
+  Model entries are visually distinct and immutable (superseded, never
+  rewritten). Viewer quote-notes are merged into the same read surface, so
+  humans and models annotate the same objects and read one shared record.
+- **Intent & verification**: feature inspectors show the decision trail
+  (propose, human approve, locked), an evidence-backed intent-fidelity
+  dimension table, and the **Exact flow** panel (`cms flow <Feature>` on the
+  CLI): evidence-classified execution steps with a computed verification
+  status that never claims more than the evidence supports.
+- **Describe a feature**: the "＋ Describe a feature…" row maps a plain-language
+  behaviour description to code with per-member evidence; you confirm or
+  reject the candidate.
+- Deep-link a file with `?file=cms/scanner.py` (add `&lens=tldr` for a lens
+  level, or `&human=1&res=2` for a Human View resolution). Serves on
+  localhost only.
 
 ### Screenshots
 
 | | |
 |---|---|
-| ![Feature map — declared vs AI-discovered features with their connections](docs/images/feature-map.png) *Feature map: declared (amber) vs AI-discovered (green) features and their connections* | ![Heat view — commit-frequency coloring with co-change coupling](docs/images/heat-view.png) *Heat view: churn coloring, dashed amber = files that change together without imports* |
+| ![Feature map: declared vs AI-discovered features with their connections](docs/images/feature-map.png) *Feature map: declared (amber) vs AI-discovered (green) features and their connections* | ![Heat view: commit-frequency coloring with co-change coupling](docs/images/heat-view.png) *Heat view: churn coloring, dashed amber = files that change together without imports* |
 | ![Hover tooltips with per-file summaries and git stats](docs/images/map-tooltip.png) *Hover any node for its summary, lines, commits and provenance* | ![Annotated file reader](docs/images/file-reader.png) *Built-in reader: markdown rendering, source view, quote-anchored notes* |
-| ![Discovery — Constellation fusion report](docs/images/discovery.png) *Discovery: cross-project integrations, emergent features and conflicts (Constellation)* | ![Brainstorm — taste-learning idea generation](docs/images/brainstorm.png) *Brainstorm: temperature-dialed new concepts that learn from 👍/👎* |
-| ![Hermes Sentinel quality gate](docs/images/sentinel.png) *Hermes Sentinel: findings, workflow checks and the completion quality gate* | ![Setup — sources & exclusions transparency](docs/images/setup.png) *Setup: what gets analysed, what's skipped, and why — with evidence* |
+| ![Discovery: Constellation fusion report](docs/images/discovery.png) *Discovery: cross-project integrations, emergent features and conflicts (Constellation)* | ![Brainstorm: taste-learning idea generation](docs/images/brainstorm.png) *Brainstorm: temperature-dialed new concepts that learn from 👍/👎* |
+| ![Hermes Sentinel quality gate](docs/images/sentinel.png) *Hermes Sentinel: findings, workflow checks and the completion quality gate* | ![Setup: sources & exclusions transparency](docs/images/setup.png) *Setup: what gets analysed, what's skipped, and why, with evidence* |
 
 Everything lands in `.memory/` inside the analysed project:
 
@@ -283,7 +407,7 @@ Environment variables always take precedence over the config file. Other keys:
 
 ## Memory anchors
 
-Guide the memory layer with `# @memory:` comments — developer-curated intent the
+Guide the memory layer with `# @memory:` comments, developer-curated intent the
 AST can't infer. Anchors land on graph nodes, enrich LLM prompts, and get a
 ranking boost in queries.
 
@@ -301,31 +425,31 @@ class MemoryEngine:
 ```
 
 Line-form anchors attach to the next `def`/`class`; `module` tags (and anchors not
-followed by a definition) attach to the file. Only real comments count — anchor-like
+followed by a definition) attach to the file. Only real comments count; anchor-like
 text inside strings or docstrings is ignored.
 
 ## Summary providers
 
 Selected via `--provider` or the `CMS_PROVIDER` env var (`anthropic` | `openai` | `mock`):
 
-- **anthropic** — default when `ANTHROPIC_API_KEY` is set; uses `claude-haiku-4-5`
+- **anthropic**: default when `ANTHROPIC_API_KEY` is set; uses `claude-haiku-4-5`
   (override with `CMS_ANTHROPIC_MODEL`).
-- **openai** — any OpenAI-compatible endpoint (Ollama, LM Studio, xAI, OpenAI).
+- **openai**: any OpenAI-compatible endpoint (Ollama, LM Studio, xAI, OpenAI).
   Configure `CMS_OPENAI_BASE_URL` (default `http://localhost:11434/v1`),
   `CMS_OPENAI_MODEL`, and `CMS_OPENAI_API_KEY`/`OPENAI_API_KEY` if needed.
-- **mock** — deterministic structural summaries from AST facts, no network.
+- **mock**: deterministic structural summaries from AST facts, no network.
   Automatic fallback when no key is configured, so the pipeline always runs.
 
 ## Ignore rules
 
-Three layers, in increasing precedence: **built-in defaults** (see `cms/config.py`
-— VCS, virtualenvs, `node_modules/`, build output incl. `dist/` and the `dist-*/`
+Three layers, in increasing precedence: **built-in defaults** (see `cms/config.py`;
+VCS, virtualenvs, `node_modules/`, build output incl. `dist/` and the `dist-*/`
 convention, dependency lockfiles, IDE/OS junk), then the project's own
-**`.gitignore`** (Atlas honours what *you* already declared as generated — no
+**`.gitignore`** (Atlas honours what *you* already declared as generated, no
 guessing), then **`.cmsignore`** (project-specific overrides; gitignore syntax,
 and `!pattern` can re-include something the defaults or `.gitignore` excluded).
 Only whitelisted source extensions are included (`.py`, `.md`, `.json`, `.ts`,
-`.tsx`, ... — see `LANGUAGE_BY_EXTENSION`). Prefer the Setup screen's scope
+`.tsx`, ... see `LANGUAGE_BY_EXTENSION`). Prefer the Setup screen's scope
 picker for a per-build selection without editing files.
 
 ## File viewer & notes
@@ -333,7 +457,7 @@ picker for a per-build selection without editing files.
 In the memory viewer (`cms ui` / `cms app`), selecting a file shows a **View file**
 button in the inspector. It opens a full-screen reader: markdown renders formatted,
 code is syntax-highlighted with line numbers. Select any text to **copy** it or pin a
-colour-tagged **note** — highlights and notes persist in `.memory/notes.json` and
+colour-tagged **note**; highlights and notes persist in `.memory/notes.json` and
 reappear when you reopen the file. Deep-link straight to a file with
 `/?view=<path>&viewmode=reader|source`.
 
@@ -367,8 +491,8 @@ cms run-all   # self-hosting check: CMS analysing its own code
 cms sentinel  # quality gate: fails on active critical findings
 ```
 
-Current scope: **Python** (full AST — classes/functions/imports/calls/inheritance)
-and **TypeScript/JavaScript** (`.ts/.tsx/.js/.jsx` via a lightweight parser —
+Current scope: **Python** (full AST: classes/functions/imports/calls/inheritance)
+and **TypeScript/JavaScript** (`.ts/.tsx/.js/.jsx` via a lightweight parser:
 top-level declarations as components, import/require/export-from resolved to
 connections, plus best-effort CALLS and `extends` INHERITS edges resolved
 through named imports, tagged `provenance: heuristic`); other whitelisted files
@@ -380,7 +504,7 @@ semantic search.
 ## License
 
 Atlas is licensed under the **GNU Affero General Public License v3.0**
-([LICENSE](LICENSE)). You are free to use, study, modify and share it — but if
+([LICENSE](LICENSE)). You are free to use, study, modify and share it, but if
 you distribute it or run a modified version as a network service, your changes
 must be published under the same license.
 

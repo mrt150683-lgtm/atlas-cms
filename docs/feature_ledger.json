@@ -1168,6 +1168,204 @@
    },
    "known_limitations": [],
    "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "ComprehensionLens",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/lens.py"
+    ],
+    "database": [
+     ".memory/lens/"
+    ],
+    "api": [
+     "/api/lens"
+    ],
+    "ui": [
+     "index.html #lensRange"
+    ],
+    "tests": [
+     "tests/test_lens.py::test_rewrite_batch_generates_then_serves_from_cache",
+     "tests/test_ui_server.py::test_lens_endpoint_and_slider_wiring"
+    ],
+    "manual_verification": "headless-Edge screenshots ?lens=tldr / ?lens=adhd (2026-07-13)"
+   },
+   "known_limitations": [
+    "persona levels need a real provider (tldr/adhd degrade deterministically)"
+   ],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "StructuredAnnotations",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/annotations.py"
+    ],
+    "database": [
+     ".memory/annotations.json"
+    ],
+    "api": [
+     "/api/annotations",
+     "/api/annotations/update",
+     "/api/annotations/archive"
+    ],
+    "ui": [
+     "index.html #annSec"
+    ],
+    "tests": [
+     "tests/test_annotations.py::test_supersession_keeps_audit_history",
+     "tests/test_ui_server.py::test_annotations_endpoints_and_panel_markup",
+     "tests/test_mcp.py::test_annotation_tools_roundtrip"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "legacy viewer notes are merged read-only, not migrated"
+   ],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "HumanViewResolution",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/hierarchy.py",
+     "cms/explain.py"
+    ],
+    "database": [
+     ".memory/graph.json",
+     ".memory/explain.json"
+    ],
+    "api": [
+     "/api/explain"
+    ],
+    "ui": [
+     "index.html #humanBtn #resRange #trail"
+    ],
+    "tests": [
+     "tests/test_hierarchy.py::test_hierarchy_survives_incremental_update",
+     "tests/test_explain.py::test_content_change_invalidates_only_affected",
+     "tests/test_ui_server.py::test_human_view_toggle_and_resolution_slider_markup"
+    ],
+    "manual_verification": "headless-Edge screenshots ?human=1&res=0 and res=1 (2026-07-13)"
+   },
+   "known_limitations": [
+    "system/component grouping is one LLM pass per feature-set change; structural fallback under mock"
+   ],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "ApprovedDecisions",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/decisions.py"
+    ],
+    "database": [
+     ".memory/decisions.json"
+    ],
+    "api": [
+     "/api/decisions",
+     "/api/decisions/approve",
+     "/api/decisions/close"
+    ],
+    "ui": [
+     "index.html #intSec"
+    ],
+    "tests": [
+     "tests/test_decisions.py::test_intent_is_immutable_after_approval",
+     "tests/test_decisions.py::test_supersession_versions_and_preserves_history",
+     "tests/test_ui_server.py::test_decisions_endpoints_and_intent_panel"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "approval identity is self-reported in the local UI (no auth layer)"
+   ],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "ExactFlowReview",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/flowreview.py"
+    ],
+    "database": [
+     ".memory/graph.json (flow_review attr)"
+    ],
+    "api": [
+     "/api/flowreview"
+    ],
+    "ui": [
+     "index.html #flowSec"
+    ],
+    "tests": [
+     "tests/test_flowreview.py::test_verified_is_computed_never_asserted",
+     "tests/test_flowreview.py::test_flow_review_survives_incremental_update",
+     "tests/test_ui_server.py::test_flowreview_endpoints_and_panel"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "runtime evidence = coverage contexts (execution proof, not tracing)"
+   ],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "IntentFidelity",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/fidelity.py"
+    ],
+    "database": [],
+    "api": [
+     "/api/fidelity"
+    ],
+    "ui": [
+     "index.html #fidSec"
+    ],
+    "tests": [
+     "tests/test_fidelity.py::test_insufficient_evidence_when_thin",
+     "tests/test_fidelity.py::test_attention_on_contradiction"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "computed on demand; only as good as the evidence artifacts feeding it"
+   ],
+   "last_verified": "2026-07-13"
+  },
+  {
+   "feature": "FeatureDiscoveryByDescription",
+   "status": "complete",
+   "evidence": {
+    "files": [
+     "cms/feature_discovery.py"
+    ],
+    "database": [
+     ".memory/semantic_state.json"
+    ],
+    "api": [
+     "/api/feature/discover",
+     "/api/feature/confirm"
+    ],
+    "ui": [
+     "index.html #fdisc"
+    ],
+    "tests": [
+     "tests/test_feature_discovery.py::test_confirm_writes_durable_feature",
+     "tests/test_ui_server.py::test_feature_discovery_endpoints"
+    ],
+    "manual_verification": ""
+   },
+   "known_limitations": [
+    "merge/split of candidate mappings deferred (dedup exists in prepare_known)"
+   ],
+   "last_verified": "2026-07-13"
   }
  ]
 }

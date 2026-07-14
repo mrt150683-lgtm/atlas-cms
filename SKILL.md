@@ -51,7 +51,7 @@ attached or a `.memory/` dir exists, use the tools below first.
 This is the loop Atlas exists to serve. `declare_intent` + `check_alignment` are
 the input and the honest-finish of a change; everything else is grounding.
 
-## 3. MCP tools (19) — the primary agent surface
+## 3. MCP tools (25) — the primary agent surface
 
 Server id `cms` (stdio JSON-RPC). Every call is logged to
 `.memory/activity.jsonl` and rendered live in the UI (glow pulses + a badge —
@@ -114,6 +114,54 @@ the human can literally watch you think). Tools:
   discuss it with the user, consolidate their steer into one direction,
   refine, repeat. Real provider required; every refinement is recorded;
   failures never clobber the last good report.
+
+**Annotate (structured, canonical-target)**
+- `add_annotation(target, type, body, confidence=None, evidence=None,
+  feature=None, supersedes=None)` — attach a typed annotation (observation,
+  bug_suspicion, contradiction, question, intended_change, …) to any canonical
+  object: node id, `edge:src|dst`, or `range:path#start-end`. Model authorship
+  is provenance-stamped (client + provider/model) and **immutable** — correct a
+  model claim by superseding it, never rewriting it.
+- `list_annotations(target=None, feature=None, include_archived=False)` — read
+  what humans and models have recorded about an object (the viewer's quote
+  notes are merged in read-only). Check a feature's open contradictions and
+  bug suspicions before editing it; archived/superseded stay out by default.
+
+**Discover**
+- `discover_feature(description)` — map a plain-language behaviour description
+  to a candidate feature: intent-ranked evidence plus one proposed mapping
+  with per-member reasons (real provider). Keyword overlap is never
+  auto-accepted; a human confirms/renames in the UI feature list, which makes
+  it a durable discovered feature.
+
+**Verify flows**
+- `review_exact_flow(feature, force=False)` — the evidence-classified account
+  of how a feature actually executes: static CALLS skeleton with per-step
+  evidence (static edges + STEP-granular coverage: only tests executing that
+  step's own lines count), plus (real provider) a step-by-step read of the
+  actual source: inputs, outputs, side effects, async boundaries, error paths
+  — each claim classified `proven | static | observed | inferred | intended`
+  (`proven` is reserved for AST-exact facts; heuristic name-resolved edges are
+  `static`). The overall status (`verified | partially_verified |
+  differs_from_intent | insufficient_runtime_evidence | static_only |
+  verification_failed`) is computed from evidence — `verified` requires every
+  in-feature step's own lines exercised — and carries a `scope` (flows/steps
+  reviewed vs traced) so it never reads wider than it is. The model can never
+  assert `verified`. Cached per content hash; a drifted review is served
+  flagged `stale`, never as current.
+
+**Decide (versioned approved intent)**
+- `propose_decision(title, behaviour, feature=None, constraints=None,
+  prohibited=None, supersedes=None)` — propose a structured intended-behaviour
+  statement. Once a human approves it in the UI the intent is **locked**:
+  change means proposing a successor (`supersedes`), never editing, and a
+  feature's approved intent can never be shadowed — approving a second,
+  unlinked decision is refused. You cannot approve your own proposals —
+  approval is human-only and gated by a per-session code printed only to the
+  terminal that launched Atlas (not merely absent from this tool surface).
+- `get_decisions(feature=None, active_only=True)` — the decision trail. The
+  approved decision for a feature is the ground truth to implement and verify
+  against; `check_alignment` reports it for touched features.
 
 **The alignment loop (intent → verdict)**
 - `declare_intent(goal=None)` — record what the current change is meant to do

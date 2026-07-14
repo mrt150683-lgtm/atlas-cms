@@ -173,6 +173,26 @@ def build_alignment(
         for g in (review.get("gaps") or [])[:4]:
             feature_gaps.append(f"{name}: {g}")
 
+    # approved intent (decision lock) for touched features — the durable word
+    # the change is supposed to serve; surfaced so the verdict reader can
+    # compare behaviour against what was actually agreed
+    approved_intent = []
+    try:
+        from .decisions import DecisionStore
+
+        store = DecisionStore(root / config.MEMORY_DIR_NAME, root=root)
+        for name in sorted(touched_features):
+            dec = store.approved_for(name)
+            if dec:
+                approved_intent.append({
+                    "feature": name, "decision_id": dec["id"],
+                    "title": dec["title"], "behaviour": dec["intent"]["behaviour"],
+                    "prohibited": dec["intent"].get("prohibited", []),
+                    "approved_at": dec.get("approved_at"),
+                })
+    except Exception:
+        pass
+
     # sentinel findings landing on changed files
     findings = _findings_on_change(root, changed_set, scan=scan)
     critical_on_change = any(f.get("severity") == CRITICAL for f in findings)
@@ -226,6 +246,7 @@ def build_alignment(
         "impact": radius,
         "tests_to_run": radius["test_files"],
         "findings": findings,
+        "approved_intent": approved_intent,
         "gaps": gaps,
     }
 

@@ -76,6 +76,20 @@ def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8) 
                 "features": result.features, "tests": result.tests[:12],
             }
 
+    annotations: list[dict] = []
+    try:
+        from . import config
+        from .annotations import AnnotationStore
+
+        store = AnnotationStore(root / config.MEMORY_DIR_NAME, root=root)
+        for name in sorted(feature_names):
+            annotations.extend(store.active_for_context(feature=name, limit=3))
+        if not annotations and targets:
+            node_ids = [f"file:{t['path']}" for t in targets if t.get("path")]
+            annotations = store.active_for_context(targets=node_ids, limit=6)
+    except Exception:
+        pass
+
     words = set(re.findall(r"[a-z0-9]+", task.lower()))
     suggestions = []
     if graph.has_node("suggestions:app"):
@@ -91,6 +105,7 @@ def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8) 
         "relevant_code": targets,
         "features": features,
         "impact": impact,
+        "active_annotations": annotations[:8],
         "related_suggestions": suggestions[:4],
         "conventions": [
             "Tag significant new functions/classes with @memory: anchors "
@@ -161,6 +176,13 @@ def render_prompt(pack: dict) -> str:
             f"- Tests covering the chain: {', '.join(imp['tests']) or '(none — add some)'}",
             "",
         ]
+
+    if pack.get("active_annotations"):
+        lines.append("## Open annotations on this area (address or respect)")
+        for a in pack["active_annotations"]:
+            who = "model" if a.get("author") == "model" else "user"
+            lines.append(f"- [{a['type']} · {who} · {a['status']}] {a['target']}: {a['body']}")
+        lines.append("")
 
     if pack.get("related_suggestions"):
         lines.append("## Related planned work (align, don't duplicate)")

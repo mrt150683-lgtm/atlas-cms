@@ -51,6 +51,9 @@ class SemanticProvider:
             return GOOD_SUGGEST
         if "FEATURE TRACE" in prompt:
             return "## Purpose\nx\n## Flow\nx\n## Verification Checklist\n- x"
+        if "semantic pyramid" in prompt:
+            return ('{"systems": [{"name": "TestSys", "description": "d", "components":'
+                    ' [{"name": "Core", "description": "d", "features": [], "dirs": ["."]}]}]}')
         return "Summary: real-looking file summary."
 
 

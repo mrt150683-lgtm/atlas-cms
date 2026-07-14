@@ -174,6 +174,22 @@ def apply_user_config() -> None:
 
 apply_user_config()
 
+# --- Feature flags -----------------------------------------------------------
+# Comprehension-layer surfaces can be disabled at runtime without code changes
+# (rollback lever). Unset or anything but 0/false/off means enabled.
+
+FEATURE_FLAGS: dict[str, str] = {
+    "human_view": "CMS_HUMAN_VIEW",
+    "annotations": "CMS_ANNOTATIONS",
+    "flow_review": "CMS_FLOW_REVIEW",
+}
+
+
+def flags() -> dict[str, bool]:
+    return {name: os.environ.get(env, "1").strip().lower() not in ("0", "false", "off")
+            for name, env in FEATURE_FLAGS.items()}
+
+
 # --- LLM / summary settings ------------------------------------------------
 
 # Provider selection: "anthropic" | "openai" | "mock".

@@ -345,6 +345,14 @@ def verify(
         for t in tests:
             typer.echo(f"  - {t}")
         passed, output = verify_feature(root, tests)
+        # persist the outcome as durable evidence (intent-fidelity input)
+        import time as _time
+
+        mem.graph.nodes[f"feature:{matches[0]['name']}"]["verify_result"] = {
+            "passed": passed, "tests": len(tests),
+            "at": _time.strftime("%Y-%m-%dT%H:%M:%SZ", _time.gmtime()),
+        }
+        mem.save(graph_path)
         typer.echo("\n" + output)
         if passed:
             typer.echo(
@@ -364,6 +372,52 @@ def verify(
     for name, tests in sorted(mapping.items()):
         typer.echo(f"  {name:<32} {len(tests)} test(s)")
     typer.echo("Saved to graph. Try:  cms verify <FeatureName>")
+
+
+@app.command()
+def flow(
+    feature: str = typer.Argument(..., help="Feature whose exact execution flow to review."),
+    root: Path = RootOption,
+    provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai | mock"),
+    force: bool = typer.Option(False, "--force", help="Regenerate even when a current cached review exists."),
+) -> None:
+    """Exact-flow review: evidence-classified account of how a feature executes."""
+    from .flowreview import FlowReviewError, build_flow_review
+
+    root = root.resolve()
+    graph_path = _memory_dir(root) / "graph.json"
+    if not graph_path.is_file():
+        typer.echo("No graph.json — run `cms run-all` first.", err=True)
+        raise typer.Exit(1)
+    mem = CodebaseMemory.load(graph_path)
+    try:
+        review_data = build_flow_review(root, mem.graph, get_provider(provider),
+                                        feature, force=force)
+    except FlowReviewError as exc:
+        typer.echo(f"flow review failed: {exc}", err=True)
+        raise typer.Exit(1)
+    mem.save(graph_path)
+
+    sc = review_data.get("scope") or {}
+    scope_txt = (f"  ({sc['flows_reviewed']} of {sc['flows_traced']} traced flow(s), "
+                 f"{sc['steps_reviewed']} step(s))" if sc else "")
+    typer.echo(f"\nExact flow: {review_data['feature']}   "
+               f"[{review_data['status']}]{scope_txt}"
+               + ("  (cached)" if review_data.get("reused") else ""))
+    if review_data.get("narrative"):
+        typer.echo("\n" + review_data["narrative"])
+    for fi, steps in enumerate(review_data.get("flows") or [], 1):
+        typer.echo(f"\nFlow {fi}:")
+        for s in steps:
+            marks = ",".join(sorted({e["kind"] for e in s.get("evidence") or []}))
+            typer.echo(f"  {s['seq'] + 1}. {s['name']}  ({s['path']}:{s.get('line')})"
+                       f"  [{s.get('classification')}: {marks or 'none'}]")
+            if s.get("explanation"):
+                typer.echo(f"     {s['explanation']}")
+            if s.get("error_path"):
+                typer.echo(f"     error path: {s['error_path']}")
+            if s.get("uncertainty"):
+                typer.echo(f"     uncertain: {s['uncertainty']}")
 
 
 @app.command()

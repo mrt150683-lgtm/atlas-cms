@@ -406,7 +406,13 @@ def build_graph(records: list[FileRecord]) -> nx.DiGraph:
     return graph
 
 
+# v2: system:/component: hierarchy nodes + their PART_OF edges may be present.
+# Purely additive — v1 readers ignore them, and absence of the field means v1.
+GRAPH_SCHEMA_VERSION = 2
+
+
 def graph_to_json(graph: nx.DiGraph) -> dict:
+    graph.graph["schema_version"] = GRAPH_SCHEMA_VERSION
     try:
         return nx.node_link_data(graph, edges="links")
     except TypeError:  # older networkx without the `edges` kwarg

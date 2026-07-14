@@ -67,8 +67,12 @@ def _carry_over(old: nx.DiGraph, new: nx.DiGraph, upgrade_mock: bool = False) ->
             attrs["summary_meta"] = old_attrs["summary_meta"]
         for other_id, other in new.nodes(data=True):
             if other.get("path") == path and other.get("type") in ("func", "class"):
-                if old.has_node(other_id) and old.nodes[other_id].get("summary"):
-                    other["summary"] = old.nodes[other_id]["summary"]
+                if old.has_node(other_id):
+                    if old.nodes[other_id].get("summary"):
+                        other["summary"] = old.nodes[other_id]["summary"]
+                    # step-granular coverage evidence survives with its file
+                    if old.nodes[other_id].get("exercised_by"):
+                        other["exercised_by"] = old.nodes[other_id]["exercised_by"]
     return changed
 
 
@@ -187,7 +191,7 @@ def incremental_update(
         # members didn't change (same freshness rule as narratives)
         for feat in feats:
             if old.has_node(feat.node_id) and feat.name in narrative_cache:
-                for attr in ("exercised_by", "review"):
+                for attr in ("exercised_by", "review", "flow_review", "verify_result"):
                     value = old.nodes[feat.node_id].get(attr)
                     if value:
                         graph.nodes[feat.node_id][attr] = value
@@ -195,6 +199,12 @@ def incremental_update(
         for node_id in ("review:app", "suggestions:app"):
             if old.has_node(node_id) and not graph.has_node(node_id):
                 graph.add_node(node_id, **dict(old.nodes[node_id]))
+
+    # semantic pyramid above features (system/component nodes) — evidence-gated,
+    # re-applied from durable state when unchanged, one LLM call otherwise
+    from .hierarchy import ensure_hierarchy
+
+    ensure_hierarchy(memory_dir, graph, provider, echo=echo)
 
     git_info = enrich_graph_with_git(graph, root)
     if git_info:
@@ -205,6 +215,12 @@ def incremental_update(
     export_summaries(graph, memory_dir)
     export_features(graph, memory_dir)
     export_index(graph, memory_dir, file_count=len(records))
+
+    from .explain import prune_explanations
+
+    pruned = prune_explanations(root, graph)
+    if pruned:
+        echo(f"  explain: {pruned} stale explanation(s) invalidated")
 
     if discovery_ran:
         # finalize the evidence with what actually landed on disk

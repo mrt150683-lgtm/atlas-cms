@@ -141,8 +141,9 @@ def _wf_mcp_unknown_tool(tmp: Path) -> str:
 
 
 def _wf_carry_over(tmp: Path) -> str:
-    """Feature-node data (exercised_by, review) must survive incremental updates
-    when members did not change — the repo's known silent-wipe regression."""
+    """Feature-node data (exercised_by, review, flow_review, verify_result)
+    must survive incremental updates when members did not change — the repo's
+    known silent-wipe regression."""
     from ..memory import CodebaseMemory
     from ..providers import MockProvider
     from ..update import incremental_update
@@ -154,6 +155,9 @@ def _wf_carry_over(tmp: Path) -> str:
     node = mem.graph.nodes["feature:Greeting"]
     node["exercised_by"] = ["tests/test_app.py::test_greet"]
     node["review"] = {"verdict": "aligned", "headline": "sentinel-probe"}
+    node["flow_review"] = {"status": "static_only", "content_hash": "probe",
+                           "narrative": "sentinel-probe", "flows": []}
+    node["verify_result"] = {"passed": True, "at": "probe", "tests": 1}
     mem.save(graph_path)
 
     incremental_update(root, MockProvider(), echo=lambda *_: None)
@@ -162,7 +166,12 @@ def _wf_carry_over(tmp: Path) -> str:
         f"exercised_by wiped by incremental update: {after.get('exercised_by')!r}"
     assert (after.get("review") or {}).get("headline") == "sentinel-probe", \
         f"review wiped by incremental update: {after.get('review')!r}"
-    return "exercised_by and review survived an incremental update with unchanged members"
+    assert (after.get("flow_review") or {}).get("narrative") == "sentinel-probe", \
+        f"flow_review wiped by incremental update: {after.get('flow_review')!r}"
+    assert (after.get("verify_result") or {}).get("passed") is True, \
+        f"verify_result wiped by incremental update: {after.get('verify_result')!r}"
+    return ("exercised_by, review, flow_review and verify_result survived an "
+            "incremental update with unchanged members")
 
 
 def _wf_mock_labelling(tmp: Path) -> str:

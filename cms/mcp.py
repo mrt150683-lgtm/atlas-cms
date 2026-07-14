@@ -190,6 +190,85 @@ TOOLS = [
         },
     },
     {
+        "name": "add_annotation",
+        "description": "Attach a structured, typed annotation to a canonical graph object (any node id like feature:X / file:p / func:p::q, an edge, or a source range). Use for observations, bug suspicions, contradictions, questions, intended changes. Model-authored annotations are provenance-stamped and immutable — correcting one means superseding it, so the record survives.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "Canonical target: a node id (feature:Name, file:path, func:path::qualname, component:Name, system:Name), 'edge:src|dst', or 'range:path#start-end'."},
+                "type": {"type": "string", "description": "One of: note, observation, intended_change, instruction, bug_suspicion, contradiction, security_concern, performance_concern, architecture_concern, question, decision_link, verification_result."},
+                "body": {"type": "string", "description": "The annotation text — concrete and evidence-grounded."},
+                "confidence": {"type": "number", "description": "0-1 confidence in the claim (optional)."},
+                "evidence": {"type": "array", "items": {"type": "string"}, "description": "Node ids or path:line refs backing the claim (optional)."},
+                "feature": {"type": "string", "description": "Related feature name (optional)."},
+                "supersedes": {"type": "string", "description": "Annotation id this replaces (optional)."},
+            },
+            "required": ["target", "type", "body"],
+        },
+    },
+    {
+        "name": "list_annotations",
+        "description": "Structured annotations on canonical objects — user notes, model observations, contradictions, questions — with status lifecycle. Default excludes archived/superseded. Check these before editing a feature: unresolved contradictions and bug suspicions are declared gaps.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "Filter to one canonical target id (optional)."},
+                "feature": {"type": "string", "description": "Filter to one feature name (optional)."},
+                "include_archived": {"type": "boolean", "description": "Include archived/superseded annotations (default false)."},
+            },
+        },
+    },
+    {
+        "name": "propose_decision",
+        "description": "Propose a structured intended-behaviour statement (a decision) for a feature. Decisions are versioned: once a human approves one its intent is locked forever — change means proposing a successor with supersedes set. Agents can propose and read decisions but NEVER approve them (approval is human-only, in the UI).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "feature": {"type": "string", "description": "Feature name the intent belongs to (omit for an app-level decision)."},
+                "title": {"type": "string", "description": "Short imperative title, e.g. 'Reject unscanned paths in get_source'."},
+                "behaviour": {"type": "string", "description": "What should happen, in plain testable words."},
+                "constraints": {"type": "array", "items": {"type": "string"}, "description": "Hard requirements the implementation must honour (optional)."},
+                "prohibited": {"type": "array", "items": {"type": "string"}, "description": "Behaviours that must NOT occur (optional)."},
+                "supersedes": {"type": "string", "description": "Decision id this proposal replaces (optional)."},
+            },
+            "required": ["title", "behaviour"],
+        },
+    },
+    {
+        "name": "get_decisions",
+        "description": "Read the decision trail: proposed and approved intended-behaviour statements, with supersession history. The approved decision for a feature is the ground truth to implement and verify against — check it before coding and cite it in check_alignment.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "feature": {"type": "string", "description": "Filter to one feature (optional)."},
+                "active_only": {"type": "boolean", "description": "Only proposed/approved decisions (default true)."},
+            },
+        },
+    },
+    {
+        "name": "discover_feature",
+        "description": "Map a plain-language behaviour description ('users upload a document and it becomes searchable') to a candidate feature: intent-ranked code evidence plus, with a real provider, ONE proposed mapping with per-member reasons. Proposals are never auto-accepted — a human confirms (and can rename) in the UI, which makes the mapping a durable discovered feature.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "description": {"type": "string", "description": "The behaviour in plain words, one or two sentences."},
+            },
+            "required": ["description"],
+        },
+    },
+    {
+        "name": "review_exact_flow",
+        "description": "Structured, evidence-classified review of a feature's exact execution flow: the statically traced call skeleton with per-step evidence (static CALLS edges, coverage from mapped tests), and — with a real provider — a step-by-step analysis of inputs, outputs, side effects, async boundaries and error paths, each claim classified proven/observed/inferred/intended. The overall status is computed from evidence ('verified' requires full static+coverage proof); the model can never assert it. Cached per content hash; served stale-flagged when inputs drifted.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "feature": {"type": "string", "description": "Feature name to review (see list_features)."},
+                "force": {"type": "boolean", "description": "Regenerate even when a current cached review exists (default false)."},
+            },
+            "required": ["feature"],
+        },
+    },
+    {
         "name": "check_alignment",
         "description": "Did the change do what was declared? Judges the git diff against the active intent — returns a verdict (aligned/partial/drift/unverified), concrete gaps, Sentinel findings on changed files, and the exact tests to run. Call after making changes.",
         "inputSchema": {
@@ -222,6 +301,7 @@ class MCPServer:
         self.graph_path = self.root / config.MEMORY_DIR_NAME / "graph.json"
         self._memory: CodebaseMemory | None = None
         self._mtime = 0.0
+        self._client = ""  # clientInfo label from initialize — annotation provenance
 
     def memory(self) -> CodebaseMemory:
         if not self.graph_path.is_file():
@@ -504,6 +584,106 @@ class MCPServer:
         return {"refined": True, "direction": direction,
                 "report": report, "stale_members": fusion_staleness(report)}
 
+    # @memory:feature:StructuredAnnotations
+    # @memory:summary:Agents attach and read typed annotations on canonical graph objects over MCP — author provenance auto-stamped from the connected client and configured provider.
+    def add_annotation(self, target: str, type: str, body: str,
+                       confidence: float | None = None,
+                       evidence: list | None = None,
+                       feature: str | None = None,
+                       supersedes: str | None = None) -> dict:
+        from .annotations import AnnotationStore
+        from .providers import provider_identity
+
+        ident = provider_identity()
+        author = {"kind": "model", "identity": self._client or "mcp-agent",
+                  "provider": ident.get("name"), "model": ident.get("model"),
+                  "via": "mcp"}
+        try:
+            entry = AnnotationStore(self.root / config.MEMORY_DIR_NAME, root=self.root).add(
+                target, type, body, author=author, confidence=confidence,
+                evidence=evidence, feature=feature, supersedes=supersedes,
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {"annotation": entry}
+
+    def list_annotations(self, target: str | None = None,
+                         feature: str | None = None,
+                         include_archived: bool = False) -> dict:
+        from .annotations import AnnotationStore
+
+        store = AnnotationStore(self.root / config.MEMORY_DIR_NAME, root=self.root)
+        return {"annotations": store.list(target=target, feature=feature,
+                                          include_archived=include_archived)}
+
+    # @memory:feature:ApprovedDecisions
+    # @memory:summary:Agents propose and read versioned intended-behaviour decisions over MCP; approval stays human-only by design.
+    def propose_decision(self, title: str, behaviour: str,
+                         feature: str | None = None,
+                         constraints: list | None = None,
+                         prohibited: list | None = None,
+                         supersedes: str | None = None) -> dict:
+        from .decisions import DecisionStore
+        from .providers import provider_identity
+
+        ident = provider_identity()
+        try:
+            dec = DecisionStore(self.root / config.MEMORY_DIR_NAME, root=self.root).propose(
+                feature, title,
+                {"behaviour": behaviour, "constraints": constraints or [],
+                 "prohibited": prohibited or []},
+                created_by={"kind": "model", "identity": self._client or "mcp-agent",
+                            "provider": ident.get("name"), "model": ident.get("model"),
+                            "via": "mcp"},
+                supersedes=supersedes,
+            )
+        except ValueError as exc:
+            return {"error": str(exc)}
+        return {"decision": dec,
+                "next_step": "a human must approve this in the UI before it becomes locked intent"}
+
+    def get_decisions(self, feature: str | None = None, active_only: bool = True) -> dict:
+        from .decisions import DecisionStore
+
+        store = DecisionStore(self.root / config.MEMORY_DIR_NAME, root=self.root)
+        return {"decisions": store.list(feature=feature, active_only=active_only)}
+
+    # @memory:feature:FeatureDiscoveryByDescription
+    # @memory:summary:discover_feature over MCP — NL behaviour description to evidence-backed candidate mapping; confirmation stays human-only in the UI.
+    def discover_feature(self, description: str) -> dict:
+        from .feature_discovery import FeatureDiscoveryError, propose_feature
+        from .providers import get_provider
+
+        try:
+            out = propose_feature(self.root, self.memory(), description,
+                                  get_provider(None))
+        except FeatureDiscoveryError as exc:
+            return {"error": str(exc)}
+        if out.get("candidate"):
+            out["next_step"] = ("ask the human to confirm/rename this mapping in the "
+                                "UI feature list — proposals are never auto-accepted")
+        return out
+
+    # @memory:feature:ExactFlowReview
+    # @memory:summary:review_exact_flow over MCP — agents get the evidence-classified flow account and its verification status, cache-first with honest staleness.
+    def review_exact_flow(self, feature: str, force: bool = False) -> dict:
+        from .flowreview import FlowReviewError, build_flow_review, read_flow_review
+        from .providers import get_provider
+
+        mem = self.memory()
+        try:
+            if not force:
+                stored = read_flow_review(self.root, mem.graph, feature)
+                if stored and not stored["stale"]:
+                    return {**stored, "reused": True}
+            review = build_flow_review(self.root, mem.graph, get_provider(None),
+                                       feature, force=force)
+        except FlowReviewError as exc:
+            return {"error": str(exc)}
+        mem.save(self.graph_path)
+        self._mtime = self.graph_path.stat().st_mtime  # our own write isn't a reload
+        return review
+
     def get_source(self, path: str, start_line: int = 1, end_line: int | None = None) -> dict:
         target = (self.root / path).resolve()
         if self.root not in target.parents and target != self.root:
@@ -526,6 +706,7 @@ class MCPServer:
             label = client.get("name") or "AI model"
             if client.get("version"):
                 label += f" {client['version']}"
+            self._client = label
             self._log("connected", [], label=label)
             return self._result(msg_id, {
                 "protocolVersion": PROTOCOL_VERSION,
@@ -583,6 +764,8 @@ class MCPServer:
             elif tool == "get_review" and isinstance(payload, dict):
                 nodes = [f"feature:{n}" for n in (payload.get("features") or {})] or \
                         ([f"feature:{args['feature']}"] if "feature" in args else [])
+            elif tool in ("add_annotation", "list_annotations") and args.get("target"):
+                nodes = [str(args["target"])]
             elif tool == "get_impact" and isinstance(payload, dict):
                 nodes = [payload.get("target", "")]
                 nodes += [f"file:{p}" for p in payload.get("files", [])]

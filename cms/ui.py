@@ -8,6 +8,8 @@ Binds to 127.0.0.1 only; no external dependencies.
 from __future__ import annotations
 
 import json
+import os
+import secrets
 import sys
 import threading
 import webbrowser
@@ -51,6 +53,11 @@ class _MemoryCache:
 # @memory:summary:HTTP request handler for the viewer — serves the single-page UI and the JSON API (graph, tree, query, source with traversal guard, activity feed, prompt export, sentinel scans and findings).
 def make_handler(root: Path, cache: _MemoryCache):
     memory_dir = root / config.MEMORY_DIR_NAME
+    # Decision approvals need something a local agent cannot trivially replay:
+    # a per-session code printed only to the launching terminal (the human's
+    # channel). Env override exists for tests/headless setups. This is the
+    # mechanism behind "approval is human-only" — not just tool-surface omission.
+    approval_token = os.environ.get("CMS_APPROVAL_TOKEN") or secrets.token_hex(3)
     # one Sentinel scan at a time, shared across requests
     sentinel_state = {"running": False, "error": "", "finished_at": 0.0}
     sentinel_lock = threading.Lock()
@@ -189,6 +196,7 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._serve_memory_file("clean_tree.json")
                 elif url.path == "/api/meta":
                     self._json({"project": root.name, "root": str(root),
+                                "flags": config.flags(),
                                 "stale": _newest_code_mtime() > _boot_code_mtime + 1.0})
                 elif url.path == "/api/semantic":
                     self._semantic()
@@ -202,6 +210,25 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._source(query)
                 elif url.path == "/api/notes":
                     self._notes_list(query)
+                elif url.path == "/api/annotations":
+                    if not config.flags()["annotations"]:
+                        self._error(403, "annotations are disabled (CMS_ANNOTATIONS=0)")
+                        return
+                    self._annotations_list(query)
+                elif url.path == "/api/fidelity":
+                    self._fidelity(query)
+                elif url.path == "/api/decisions":
+                    from .decisions import DecisionStore
+
+                    store = DecisionStore(memory_dir, root=root)
+                    self._json({"decisions": store.list(
+                        feature=(query.get("feature") or [None])[0],
+                        active_only=(query.get("active") or ["0"])[0] == "1")})
+                elif url.path == "/api/flowreview":
+                    if not config.flags()["flow_review"]:
+                        self._error(403, "flow review is disabled (CMS_FLOW_REVIEW=0)")
+                        return
+                    self._flowreview_get(query)
                 else:
                     self._error(404, "not found")
             except BrokenPipeError:
@@ -224,6 +251,27 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._notes_update(body)
                 elif url.path == "/api/notes/delete":
                     self._notes_delete(body)
+                elif url.path == "/api/annotations":
+                    if not config.flags()["annotations"]:
+                        self._error(403, "annotations are disabled (CMS_ANNOTATIONS=0)")
+                        return
+                    self._annotations_add(body)
+                elif url.path == "/api/annotations/update":
+                    self._annotations_update(body)
+                elif url.path == "/api/annotations/archive":
+                    self._annotations_archive(body)
+                elif url.path in ("/api/decisions", "/api/decisions/approve",
+                                  "/api/decisions/close"):
+                    self._decisions_post(url.path, body)
+                elif url.path == "/api/flowreview":
+                    if not config.flags()["flow_review"]:
+                        self._error(403, "flow review is disabled (CMS_FLOW_REVIEW=0)")
+                        return
+                    self._flowreview_post(body)
+                elif url.path == "/api/feature/discover":
+                    self._feature_discover(body)
+                elif url.path == "/api/feature/confirm":
+                    self._feature_confirm(body)
                 elif url.path == "/api/scope":
                     self._scope_set(body)
                 elif url.path == "/api/build":
@@ -291,6 +339,31 @@ def make_handler(root: Path, cache: _MemoryCache):
                         self._json({"updated": True, "idea": idea})
                     except BrainstormError as exc:
                         self._json({"updated": False, "error": str(exc)}, 400)
+                elif url.path == "/api/lens":
+                    from .lens import LensError, rewrite_batch
+                    from .providers import get_provider
+
+                    try:
+                        self._json(rewrite_batch(root, str(body.get("level") or ""),
+                                                 body.get("items") or [],
+                                                 get_provider(None)))
+                    except LensError as exc:
+                        self._json({"error": str(exc)}, 400)
+                elif url.path == "/api/explain":
+                    from .explain import ExplainError, explain_nodes
+                    from .providers import get_provider
+
+                    memory = cache.get()
+                    if memory is None:
+                        self._error(404, "graph.json not found — run `cms run-all` first")
+                        return
+                    try:
+                        self._json(explain_nodes(root, memory.graph,
+                                                 body.get("items") or [],
+                                                 get_provider(None),
+                                                 force=bool(body.get("force"))))
+                    except ExplainError as exc:
+                        self._json({"error": str(exc)}, 400)
                 elif url.path == "/api/brainstorm/goals":
                     from .brainstorm import BrainstormError, add_goal, remove_goal
 
@@ -557,6 +630,174 @@ def make_handler(root: Path, cache: _MemoryCache):
             ok = self._notes_store().delete(str(body.get("id") or ""))
             self._json({"deleted": ok}, 200 if ok else 404)
 
+        def _ann_store(self):
+            from .annotations import AnnotationStore
+
+            return AnnotationStore(memory_dir, root=root)
+
+        def _annotations_list(self, query: dict) -> None:
+            store = self._ann_store()
+            rows = store.list(
+                target=(query.get("target") or [None])[0],
+                feature=(query.get("feature") or [None])[0],
+                status=(query.get("status") or [None])[0],
+                include_archived=(query.get("include_archived") or ["0"])[0] == "1",
+            )
+            self._json({"annotations": rows, "counts": store.counts()})
+
+        def _annotations_add(self, body: dict) -> None:
+            author = body.get("author") if isinstance(body.get("author"), dict) else {}
+            # provenance honesty: the transport is recorded server-side, never
+            # caller-asserted — a claimed author kind can be judged against it
+            author = {**author, "via": "http"}
+            try:
+                entry = self._ann_store().add(
+                    body.get("target"),
+                    str(body.get("type") or "note"),
+                    str(body.get("body") or ""),
+                    author=author,
+                    payload=body.get("payload"),
+                    confidence=body.get("confidence"),
+                    priority=str(body.get("priority") or "normal"),
+                    evidence=body.get("evidence"),
+                    feature=body.get("feature"),
+                    tags=body.get("tags"),
+                    supersedes=body.get("supersedes"),
+                    parent_id=body.get("parent_id"),
+                )
+            except ValueError as exc:
+                self._error(400, str(exc))
+                return
+            self._json({"annotation": entry})
+
+        def _annotations_update(self, body: dict) -> None:
+            store = self._ann_store()
+            ann_id = str(body.get("id") or "")
+            try:
+                if body.get("status"):
+                    updated = store.set_status(ann_id, str(body["status"]),
+                                               reason=str(body.get("reason") or ""))
+                elif body.get("body") is not None:
+                    updated = store.edit_body(ann_id, str(body["body"]))
+                else:
+                    self._error(400, "nothing to update — pass status or body")
+                    return
+            except ValueError as exc:
+                self._error(400, str(exc))
+                return
+            if updated is None:
+                self._error(404, "no such annotation")
+                return
+            self._json({"annotation": updated})
+
+        def _annotations_archive(self, body: dict) -> None:
+            updated = self._ann_store().set_status(str(body.get("id") or ""), "archived")
+            if updated is None:
+                self._error(404, "no such annotation")
+                return
+            self._json({"annotation": updated})
+
+        def _fidelity(self, query: dict) -> None:
+            from .fidelity import intent_fidelity
+
+            memory = cache.get()
+            if memory is None:
+                self._error(404, "graph.json not found — run `cms run-all` first")
+                return
+            try:
+                self._json(intent_fidelity(root, memory.graph,
+                                           (query.get("feature") or [""])[0]))
+            except ValueError as exc:
+                self._error(400, str(exc))
+
+        def _feature_discover(self, body: dict) -> None:
+            from .feature_discovery import FeatureDiscoveryError, propose_feature
+            from .providers import get_provider
+
+            memory = cache.get()
+            if memory is None:
+                self._error(404, "graph.json not found — run `cms run-all` first")
+                return
+            try:
+                self._json(propose_feature(root, memory,
+                                           str(body.get("description") or ""),
+                                           get_provider(None)))
+            except FeatureDiscoveryError as exc:
+                self._error(400, str(exc))
+
+        def _feature_confirm(self, body: dict) -> None:
+            from .feature_discovery import FeatureDiscoveryError, confirm_feature
+
+            try:
+                self._json(confirm_feature(root, str(body.get("name") or ""),
+                                           str(body.get("description") or ""),
+                                           body.get("members") or []))
+            except FeatureDiscoveryError as exc:
+                self._error(400, str(exc))
+
+        def _flowreview_get(self, query: dict) -> None:
+            from .flowreview import FlowReviewError, read_flow_review
+
+            memory = cache.get()
+            if memory is None:
+                self._error(404, "graph.json not found — run `cms run-all` first")
+                return
+            try:
+                stored = read_flow_review(root, memory.graph,
+                                          (query.get("feature") or [""])[0])
+            except FlowReviewError as exc:
+                self._error(400, str(exc))
+                return
+            self._json({"review": stored})  # null when never generated
+
+        def _flowreview_post(self, body: dict) -> None:
+            from .flowreview import FlowReviewError, build_flow_review
+            from .providers import get_provider
+
+            memory = cache.get()
+            if memory is None:
+                self._error(404, "graph.json not found — run `cms run-all` first")
+                return
+            try:
+                review = build_flow_review(root, memory.graph, get_provider(None),
+                                           str(body.get("feature") or ""),
+                                           force=bool(body.get("force")))
+            except FlowReviewError as exc:
+                self._error(400, str(exc))
+                return
+            memory.save(memory_dir / "graph.json")  # persist onto the feature node
+            self._json({"review": review})
+
+        def _decisions_post(self, path: str, body: dict) -> None:
+            from .decisions import DecisionStore
+
+            store = DecisionStore(memory_dir, root=root)
+            try:
+                if path.endswith("/approve"):
+                    # human-only gate: the code is printed to the launching
+                    # terminal, a channel agents driving HTTP don't see
+                    if str(body.get("token") or "") != approval_token:
+                        self._error(403, "approval requires the session code "
+                                         "shown in the terminal that launched Atlas")
+                        return
+                    dec = store.approve(str(body.get("id") or ""),
+                                        str(body.get("approved_by") or ""))
+                elif path.endswith("/close"):
+                    dec = store.close(str(body.get("id") or ""),
+                                      str(body.get("status") or ""),
+                                      reason=str(body.get("reason") or ""))
+                else:
+                    author = body.get("created_by") if isinstance(body.get("created_by"), dict) else {}
+                    dec = store.propose(body.get("feature"), str(body.get("title") or ""),
+                                        body.get("intent") or {},
+                                        created_by={**author, "via": "http"},
+                                        supersedes=body.get("supersedes"),
+                                        evidence=body.get("evidence"))
+            except ValueError as exc:
+                self._error(400, str(exc))
+                return
+            self._json({"decision": dec})
+
         def _serve_memory_file(self, name: str) -> None:
             path = memory_dir / name
             if not path.is_file():
@@ -637,6 +878,7 @@ def make_handler(root: Path, cache: _MemoryCache):
             text = target.read_text(encoding="utf-8", errors="replace")
             self._json({"path": rel, "text": text})
 
+    Handler.approval_token = approval_token  # serve() prints it to the terminal
     return Handler
 
 
@@ -646,9 +888,12 @@ def make_handler(root: Path, cache: _MemoryCache):
 def serve(root: Path, port: int = 7717, open_browser: bool = True, open_path: str = "/") -> None:
     root = root.resolve()
     cache = _MemoryCache(root / config.MEMORY_DIR_NAME / "graph.json")
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(root, cache))
+    handler = make_handler(root, cache)
+    server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     url = f"http://127.0.0.1:{port}"
     print(f"CMS UI serving {root.name} at {url}  (Ctrl+C to stop)")
+    print(f"Decision-approval code for this session: {handler.approval_token}  "
+          "(the UI asks for it when you approve an intent)")
     if open_browser:
         threading.Timer(0.4, webbrowser.open, args=(url + open_path,)).start()
     try:

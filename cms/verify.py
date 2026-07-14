@@ -153,9 +153,20 @@ def run_coverage(
 
 # @memory:feature:FeatureVerification
 # @memory:connects:FeatureTracing, ImpactAnalysis
-# @memory:summary:Executable evidence — per-test coverage contexts intersected with feature member line ranges give exercised_by test lists; cms verify <Feature> runs exactly those tests.
+# @memory:summary:Executable evidence — per-test coverage contexts intersected with feature member line ranges give exercised_by test lists at BOTH feature and component granularity; file members count only lines inside def/class bodies (import-time execution is not behavioural evidence); cms verify <Feature> runs exactly those tests.
 def map_tests_to_features(graph: nx.DiGraph, root: Path, coverage_data: dict) -> dict[str, list[str]]:
-    """Intersect per-test executed lines with feature member line ranges."""
+    """Intersect per-test executed lines with feature member line ranges.
+
+    Two honesty rules (dual-review Priority-0):
+    - ``exercised_by`` also lands on every func/class node individually, so
+      downstream consumers (exact-flow review) get STEP-granular evidence —
+      one test touching one member never vouches for the others.
+    - a file member contributes only lines inside its components' bodies;
+      module-level lines run at import time, and "a test imported this
+      module" is not evidence the feature's behaviour was executed. Files
+      with no parsed components keep whole-file matching (nothing better
+      exists for them).
+    """
     known_files = [
         a["path"] for _, a in graph.nodes(data=True) if a.get("type") == "file"
     ]
@@ -172,17 +183,36 @@ def map_tests_to_features(graph: nx.DiGraph, root: Path, coverage_data: dict) ->
                 if tid:
                     executed[rel][int(line_str)].add(tid)
 
+    # per-component evidence (and the path -> component-ranges index)
+    comp_ranges: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    for node_id, attrs in graph.nodes(data=True):
+        if attrs.get("type") not in ("func", "class"):
+            continue
+        path = attrs.get("path", "")
+        start, end = attrs.get("start_line") or 0, attrs.get("end_line") or 0
+        comp_ranges[path].append((start, end))
+        tests: set[str] = set()
+        for line, line_tests in executed.get(path, {}).items():
+            if start <= line <= end:
+                tests |= line_tests
+        if tests:
+            attrs["exercised_by"] = sorted(tests)
+        else:
+            attrs.pop("exercised_by", None)
+
     mapping: dict[str, list[str]] = {}
     for feat in get_features(graph):
-        tests: set[str] = set()
+        tests = set()
         for member_id in feat.get("members", []):
             if not graph.has_node(member_id):
                 continue
             attrs = graph.nodes[member_id]
             path = attrs.get("path", "")
             if attrs.get("type") == "file":
-                for line_tests in executed.get(path, {}).values():
-                    tests |= line_tests
+                ranges = comp_ranges.get(path)
+                for line, line_tests in executed.get(path, {}).items():
+                    if not ranges or any(s <= line <= e for s, e in ranges):
+                        tests |= line_tests
             else:
                 start, end = attrs.get("start_line") or 0, attrs.get("end_line") or 0
                 for line, line_tests in executed.get(path, {}).items():

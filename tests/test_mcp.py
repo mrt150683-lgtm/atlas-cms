@@ -266,3 +266,60 @@ def test_serve_stdio_loop(tmp_path: Path, monkeypatch, capsys) -> None:
     # handshake was announced to the activity feed
     events = (tmp_path / ".memory" / "activity.jsonl").read_text(encoding="utf-8").splitlines()
     assert any('"connected"' in e and "TestClient" in e for e in events)
+
+
+def test_annotation_tools_roundtrip(tmp_path: Path) -> None:
+    server = _server(tmp_path)
+    _call(server, "initialize", {"clientInfo": {"name": "Claude Code"}})
+    added = _tool(server, "add_annotation", {
+        "target": "feature:Greeting", "type": "bug_suspicion",
+        "body": "greet may not handle empty names", "confidence": 0.6,
+        "feature": "Greeting"})
+    ann = added["annotation"]
+    assert ann["author"]["kind"] == "model"
+    assert ann["author"]["identity"] == "Claude Code"  # provenance from clientInfo
+    listed = _tool(server, "list_annotations", {"feature": "Greeting"})
+    assert [a["id"] for a in listed["annotations"]] == [ann["id"]]
+    bad = _tool(server, "add_annotation", {"target": "  ", "type": "note", "body": "x"})
+    assert "error" in bad
+
+
+def test_decision_tools_propose_but_never_approve(tmp_path: Path) -> None:
+    server = _server(tmp_path)
+    _call(server, "initialize", {"clientInfo": {"name": "Codex"}})
+    out = _tool(server, "propose_decision", {
+        "feature": "Greeting", "title": "Greet politely",
+        "behaviour": "greet returns the name unchanged",
+        "prohibited": ["mutating the name"]})
+    dec = out["decision"]
+    assert dec["status"] == "proposed"
+    assert dec["created_by"]["kind"] == "model"
+    assert "human must approve" in out["next_step"]
+    # there is deliberately NO approve tool on the MCP surface
+    from cms.mcp import TOOLS
+    assert not any("approve" in t["name"] for t in TOOLS)
+    listed = _tool(server, "get_decisions", {"feature": "Greeting"})
+    assert [d["id"] for d in listed["decisions"]] == [dec["id"]]
+
+
+def test_review_exact_flow_tool(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CMS_PROVIDER", "mock")
+    server = _server(tmp_path)
+    out = _tool(server, "review_exact_flow", {"feature": "Greeting"})
+    assert out["status"] == "static_only" and out["flows"]
+    # cache-first on the second call (mock still, but reused path)
+    again = _tool(server, "review_exact_flow", {"feature": "Greeting"})
+    assert again.get("reused") is True
+    missing = _tool(server, "review_exact_flow", {"feature": "Ghost"})
+    assert "error" in missing
+
+
+def test_discover_feature_tool_mock_degrades(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("CMS_PROVIDER", "mock")
+    server = _server(tmp_path)
+    out = _tool(server, "discover_feature",
+                {"description": "greeting people by their given name"})
+    assert out["real"] is False and out["candidate"] is None
+    assert out["hits"]  # ranked evidence still served
+    bad = _tool(server, "discover_feature", {"description": "hi"})
+    assert "error" in bad
