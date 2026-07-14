@@ -56,6 +56,23 @@ def test_verify_help_exposes_forced_coverage_refresh() -> None:
     assert "Ignore cached coverage" in result.output
 
 
+def test_flow_output_discloses_truncated_steps(tmp_path: Path, monkeypatch) -> None:
+    _verified_project(tmp_path)
+    monkeypatch.setattr("cms.cli.get_provider", lambda *_: object())
+    monkeypatch.setattr("cms.flowreview.build_flow_review", lambda *_args, **_kwargs: {
+        "feature": "TruthLayer",
+        "status": "static_only",
+        "scope": {"flows_reviewed": 1, "flows_traced": 1,
+                  "steps_reviewed": 12, "steps_truncated": True},
+        "flows": [],
+    })
+
+    result = CliRunner().invoke(app, ["flow", "TruthLayer", "--root", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "long flows truncated" in result.output
+
+
 def test_verify_help_exposes_forced_coverage_refresh() -> None:
     result = CliRunner().invoke(app, ["verify", "--help"])
     assert result.exit_code == 0

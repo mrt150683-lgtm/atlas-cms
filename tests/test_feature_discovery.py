@@ -10,6 +10,7 @@ from cms import semantic_state as ss
 from cms.exporter import export_graph
 from cms.feature_discovery import (
     FeatureDiscoveryError,
+    _feature_catalog,
     confirm_feature,
     propose_feature,
 )
@@ -147,7 +148,9 @@ class HuntProvider:
                          "role": "wizard", "why": "bad role degrades to core"}],
             "connections": [{"feature": "Notifications", "via": "asserted by model"},
                             {"feature": "GhostFeature", "via": "hallucinated"}],
-            "explanation": [f"step {i}" for i in range(1, 12)],
+            "explanation": [
+                f"`upload_document` performs grounded step {i}" for i in range(1, 10)
+            ] + ["fluent but unreferenced claim", "`GhostFunction` invents a step"],
             "uncertainty": "no runtime evidence",
         })
 
@@ -165,6 +168,8 @@ def test_already_covered_verdict_flags_instead_of_duplicating(mapped_proj) -> No
     assert "EXISTING FEATURES" in provider.last_prompt
     assert "GRAPH NEIGHBOURHOOD" in provider.last_prompt
     assert out["explanation"] and len(out["explanation"]) <= 7
+    assert out["explanation_provenance"] == "llm_grounded"
+    assert all("GhostFunction" not in step for step in out["explanation"])
 
 
 def test_hunt_validates_members_roles_and_connections(mapped_proj) -> None:
@@ -194,6 +199,50 @@ def test_graph_connections_are_edge_grounded(mapped_proj) -> None:
     assert {"feature": "Notifications",
             "via": "docs_app.py::upload_document calls notify.py::notify",
             "provenance": "graph"} in conns
+
+
+def test_graph_connections_preserve_shared_feature_ownership(mapped_proj) -> None:
+    from cms.feature_discovery import graph_connections
+
+    _, memory = mapped_proj
+    graph = memory.graph
+    graph.add_node("feature:AuditTrail", type="feature", name="AuditTrail",
+                   members=["func:notify.py::notify"])
+    graph.add_edge("func:docs_app.py::upload_document", "func:notify.py::notify",
+                   type="CALLS", provenance="heuristic")
+
+    names = {c["feature"] for c in graph_connections(
+        graph, ["func:docs_app.py::upload_document"])}
+
+    assert {"Notifications", "AuditTrail"}.issubset(names)
+
+
+def test_catalog_and_verdict_validation_use_all_features(proj) -> None:
+    root, memory = proj
+    for i in range(45):
+        memory.graph.add_node(f"feature:Mapped{i:02d}", type="feature",
+                              name=f"Mapped{i:02d}", description=f"Mapped feature {i}",
+                              members=[])
+    assert len(_feature_catalog(memory.graph)) == 45
+
+    class UnsupportedProvider:
+        name = "fake"
+        model = "fake-1"
+
+        def summarize(self, _prompt: str, _context: dict) -> str:
+            return json.dumps({
+                "verdict": "already_covered",
+                "existing": [{"feature": "GhostFeature", "why": "invented"}],
+                "members": [{"id": "func:docs_app.py::invented", "role": "core"}],
+                "explanation": ["`GhostFunction` does everything"],
+            })
+
+    out = propose_feature(root, memory,
+                          "users upload a document and it becomes searchable",
+                          UnsupportedProvider())
+    assert out["verdict"] == "not_found"
+    assert out["candidate"] is None and out["existing"] == []
+    assert out["explanation"] == [] and out["explanation_provenance"] == "none"
 
 
 def test_confirm_writes_durable_feature(proj) -> None:

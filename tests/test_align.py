@@ -45,6 +45,7 @@ def _intent(paths: list[str], task: str = "improve storage") -> dict:
     return {
         "task": task,
         "intent_source": "explicit",
+        "declared_paths": paths,
         "relevant_code": [{"kind": "file", "name": p, "path": p} for p in paths],
         "impact": {"files": []},
     }
@@ -92,6 +93,82 @@ def test_partial_flags_unstated_scope_creep(tmp_path, monkeypatch):
     rec = build_alignment(_mem(root), root, _intent(["core.py"]))
     assert rec["verdict"] == "partial"
     assert any(g == "unstated-change: app.py" for g in rec["gaps"])
+
+
+def test_semantic_candidates_are_advisory_not_mandatory(tmp_path, monkeypatch):
+    root = _project(tmp_path)
+    monkeypatch.setattr(align, "git_changed_files", lambda r, base="HEAD": ["core.py"])
+    intent = _intent(["core.py", "service.py"])
+    intent["declared_paths"] = []
+
+    rec = build_alignment(_mem(root), root, intent)
+
+    assert rec["verdict"] == "aligned"
+    assert rec["related_not_touched"] == ["service.py"]
+    assert not any(g.startswith("intent-target-untouched") for g in rec["gaps"])
+
+
+def test_only_literal_declared_paths_are_mandatory(tmp_path, monkeypatch):
+    root = _project(tmp_path)
+    monkeypatch.setattr(align, "git_changed_files", lambda r, base="HEAD": ["core.py"])
+    intent = _intent(["core.py", "service.py"])
+    intent["declared_paths"] = ["service.py"]
+
+    rec = build_alignment(_mem(root), root, intent)
+
+    assert rec["verdict"] == "partial"
+    assert "intent-target-untouched: service.py" in rec["gaps"]
+
+
+def test_intent_justified_support_files_are_not_scope_creep(tmp_path, monkeypatch):
+    root = _project(tmp_path)
+    support = ["README.md", ".github/workflows/ci.yml", ".github/dependabot.yml",
+               "SECURITY.md"]
+    monkeypatch.setattr(
+        align, "git_changed_files", lambda r, base="HEAD": ["core.py", *support])
+    intent = _intent(["core.py"], task=(
+        "improve storage with docs, CI workflow, dependency updates and security policy"))
+
+    rec = build_alignment(_mem(root), root, intent)
+
+    assert rec["verdict"] == "aligned"
+    assert not any(g.startswith("unstated-change") for g in rec["gaps"])
+
+
+def test_unrequested_support_file_still_counts_as_scope_creep(tmp_path, monkeypatch):
+    root = _project(tmp_path)
+    monkeypatch.setattr(
+        align, "git_changed_files", lambda r, base="HEAD": ["core.py", "SECURITY.md"])
+
+    rec = build_alignment(_mem(root), root, _intent(["core.py"]))
+
+    assert rec["verdict"] == "partial"
+    assert "unstated-change: SECURITY.md" in rec["gaps"]
+
+
+def test_graph_evidence_justifies_source_missed_by_bounded_search(tmp_path, monkeypatch):
+    root = _project(tmp_path)
+    monkeypatch.setattr(
+        align, "git_changed_files", lambda r, base="HEAD": ["core.py", "service.py"])
+    intent = _intent(["core.py"], task="improve service process behaviour")
+
+    rec = build_alignment(_mem(root), root, intent)
+
+    assert rec["verdict"] == "aligned"
+    assert rec["intent_justified_sources"] == ["service.py"]
+    assert not any(g == "unstated-change: service.py" for g in rec["gaps"])
+
+
+def test_one_weak_source_term_does_not_hide_scope_creep(tmp_path, monkeypatch):
+    root = _project(tmp_path)
+    monkeypatch.setattr(
+        align, "git_changed_files", lambda r, base="HEAD": ["core.py", "app.py"])
+    intent = _intent(["core.py"], task="improve app storage")
+
+    rec = build_alignment(_mem(root), root, intent)
+
+    assert rec["verdict"] == "partial"
+    assert "unstated-change: app.py" in rec["gaps"]
 
 
 def test_unverified_when_no_changes(tmp_path, monkeypatch):

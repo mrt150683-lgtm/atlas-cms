@@ -106,3 +106,17 @@ def test_mapping_is_step_granular_and_ignores_import_lines(tmp_path: Path) -> No
     mapping = map_tests_to_features(
         graph, tmp_path, _coverage({"app.py": {1: [ctx]}}))
     assert "exercised_by" not in graph.nodes["func:app.py::greet"]
+
+
+def test_componentless_file_never_turns_import_coverage_into_evidence(tmp_path: Path) -> None:
+    (tmp_path / "constants.py").write_text("import json\nVALUE = json.dumps(1)\n",
+                                           encoding="utf-8")
+    graph = build_graph(scan(tmp_path))
+    graph.add_node("feature:ConstantsImport", type="feature", name="ConstantsImport",
+                   members=["file:constants.py"], entry_points=[], flows=[], connects=[])
+
+    mapping = map_tests_to_features(
+        graph, tmp_path,
+        _coverage({"constants.py": {1: ["tests.test_constants.test_import"]}}))
+
+    assert mapping["ConstantsImport"] == []

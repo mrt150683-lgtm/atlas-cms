@@ -16,6 +16,7 @@ codebase accrues a labelled history of intent→outcome (trajectory memory).
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,6 +31,92 @@ from .review import VERDICTS
 
 ALIGN_DIR = "align"
 CRITICAL = "critical"
+
+_GENERIC_PATH_TERMS = {
+    "add", "app", "change", "code", "file", "files", "fix", "required",
+    "source", "support", "test", "tests", "update",
+}
+_IMPLEMENTATION_EXTENSIONS = {
+    ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs", ".c", ".cc",
+    ".cpp", ".h", ".hpp", ".cs", ".rb", ".php", ".swift", ".kt", ".kts",
+}
+
+
+def _terms(text: str) -> set[str]:
+    return {w[:-1] if w.endswith("s") and len(w) > 4 else w
+            for w in re.findall(r"[a-z0-9]+", str(text or "").lower())}
+
+
+def _intent_allows_support(path: str, task: str, related: set[str],
+                           changed: set[str]) -> bool:
+    """Whether a non-test change is an intent-justified support artifact.
+
+    These rules cover conventional companion outputs without making arbitrary
+    source files disappear from scope checking. Each allowance is tied either
+    to words in the declared goal or to a related/changed canonical companion.
+    """
+    low = path.lower()
+    task_terms = _terms(task)
+    path_terms = _terms(path.replace("/", " ").replace("_", " ").replace(".", " "))
+
+    meaningful = (path_terms - _GENERIC_PATH_TERMS) & (task_terms - _GENERIC_PATH_TERMS)
+    if meaningful:
+        return True
+
+    docs_requested = bool(task_terms & {"doc", "docs", "documentation", "readme", "skill"})
+    if docs_requested and (
+            low.endswith((".md", ".rst")) or low.startswith("docs/")
+            or low in {"readme.md", "skill.md", "updates.md"}):
+        return True
+    if task_terms & {"ci", "workflow", "github"} and low.startswith(".github/workflows/"):
+        return True
+    if task_terms & {"dependency", "dependabot"} and low == ".github/dependabot.yml":
+        return True
+    if "security" in task_terms and (low == "security.md" or "security" in path_terms):
+        return True
+    if task_terms & {"ui", "interface", "viewer"} and (
+            low.startswith("cms/ui_assets/") or low == "cms/ui.py"):
+        return True
+    if low.startswith("cms/ui_assets/") and (
+            "cms/ui.py" in related or "cms/ui.py" in changed):
+        return True
+    if low == "docs/feature_ledger.json" and task_terms & {
+            "alignment", "coverage", "ledger", "proof", "sentinel", "verify",
+    }:
+        return True
+    return False
+
+
+def _intent_allows_source(graph: nx.DiGraph, path: str, task: str) -> bool:
+    """Whether a changed source file is independently grounded in the goal.
+
+    Semantic retrieval is bounded and can omit a legitimate implementation
+    file in a multi-part goal. That omission must not become scope drift when
+    the graph's own file/member names, summaries, docstrings, or anchors carry
+    multiple concrete goal terms. Requiring two non-generic terms keeps a lone
+    broad word from laundering unrelated source changes.
+    """
+    if Path(path).suffix.lower() not in _IMPLEMENTATION_EXTENSIONS:
+        return False
+    fid = f"file:{path}"
+    if not graph.has_node(fid):
+        return False
+    task_terms = _terms(task) - _GENERIC_PATH_TERMS
+    evidence: list[str] = [path]
+    nodes = [fid]
+    nodes.extend(
+        target for _, target, data in graph.out_edges(fid, data=True)
+        if data.get("type") == "CONTAINS"
+    )
+    for node_id in nodes:
+        attrs = graph.nodes[node_id]
+        evidence.extend(str(attrs.get(key) or "")
+                        for key in ("name", "qualname", "summary", "docstring"))
+        anchors = attrs.get("anchors") or {}
+        for values in anchors.values():
+            evidence.extend(str(value) for value in (values if isinstance(values, list) else [values]))
+    source_terms = _terms(" ".join(evidence)) - _GENERIC_PATH_TERMS
+    return len(task_terms & source_terms) >= 2
 
 
 # ── git diff → changed source files ─────────────────────────────────────────
@@ -136,21 +223,37 @@ def build_alignment(
     graph = mem.graph
     changed = git_changed_files(root, base=base)
 
-    # expected side: the paths the intent points at (top memory matches + impact)
-    expected: set[str] = set()
+    # Semantic hits and blast-radius paths are advisory candidates: a search
+    # result being relevant does not mean the implementation must edit it.
+    related: set[str] = set()
     for t in intent_pack.get("relevant_code", []):
         if t.get("path"):
-            expected.add(t["path"])
+            related.add(t["path"])
     imp = intent_pack.get("impact") or {}
     for f in imp.get("files", []):
-        expected.add(f)
+        related.add(f)
+    # Only paths literally named in the goal are mandatory.
+    required = {str(p).replace("\\", "/")
+                for p in (intent_pack.get("declared_paths") or []) if p}
 
     changed_set = set(changed)
     is_test = lambda p: "tests/" in p or p.rsplit("/", 1)[-1].startswith("test_")
 
+    expected = related | required
     touched_expected = sorted(expected & changed_set)
-    untouched_expected = sorted(expected - changed_set)
-    unstated = sorted(p for p in changed_set - expected if not is_test(p))
+    untouched_required = sorted(required - changed_set)
+    related_not_touched = sorted(related - changed_set)
+    task = str(intent_pack.get("task") or "")
+    justified_sources = sorted(
+        p for p in changed_set - expected
+        if _intent_allows_source(graph, p, task)
+    )
+    unstated = sorted(
+        p for p in changed_set - expected
+        if not is_test(p)
+        and p not in justified_sources
+        and not _intent_allows_support(p, task, related, changed_set)
+    )
 
     radius = _blast_radius(graph, changed)
     touched_features = _touched_features(graph, changed)
@@ -214,7 +317,7 @@ def build_alignment(
     elif not has_tests:
         verdict = "unverified"
         headline = "Declared targets were touched, but no mapped test covers the change — can't prove it landed."
-    elif findings or untouched_expected or unstated:
+    elif findings or untouched_required or unstated or feature_gaps:
         verdict = "partial"
         headline = "Declared targets were touched and covered, but gaps remain (see below)."
     else:
@@ -224,7 +327,7 @@ def build_alignment(
     assert verdict in VERDICTS
 
     gaps: list[str] = []
-    for p in untouched_expected:
+    for p in untouched_required:
         gaps.append(f"intent-target-untouched: {p}")
     for p in unstated:
         gaps.append(f"unstated-change: {p}")
@@ -241,6 +344,8 @@ def build_alignment(
         "headline": headline,
         "changed": changed,
         "touched_expected": touched_expected,
+        "related_not_touched": related_not_touched,
+        "intent_justified_sources": justified_sources,
         "touched_features": [r["feature"] for r in feature_reviews],
         "feature_reviews": feature_reviews,
         "impact": radius,

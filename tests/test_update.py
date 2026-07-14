@@ -97,6 +97,13 @@ class DiscoveringProvider(CountingProvider):
         if "named FEATURES" in prompt:
             self.calls += 1
             return '[{"name": "Numbers", "description": "number utils", "files": ["one.py"]}]'
+        if "top-level review" in prompt:
+            self.calls += 1
+            return '{"verdict": "aligned", "headline": "matches", "summary": "complete review"}'
+        if "reviewing one feature" in prompt:
+            self.calls += 1
+            return ('{"verdict": "aligned", "headline": "matches", "expected": "numbers", '
+                    '"built": "numbers", "gaps": [], "education": "number utilities"}')
         if "return on investment" in prompt.lower() or "suggest" in prompt.lower():
             self.calls += 1
             return "[]"  # fall back to structural suggestions

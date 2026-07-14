@@ -652,6 +652,20 @@ def test_decisions_endpoints_and_intent_panel(server) -> None:
                                 "token": APPROVAL_TOKEN})
     assert status == 400  # cannot re-approve
 
+    status, body = client.post("/api/decisions", {
+        "feature": "Greeting", "title": "Unsafe alternative",
+        "intent": {"behaviour": "replace the greeting without approval"}})
+    rejectable = json.loads(body)["decision"]
+    status, body = client.post("/api/decisions/close", {
+        "id": rejectable["id"], "status": "rejected"})
+    assert status == 403 and "session code" in json.loads(body)["error"]
+    status, _ = client.post("/api/decisions/close", {
+        "id": rejectable["id"], "status": "rejected", "token": "wrong-guess"})
+    assert status == 403
+    status, body = client.post("/api/decisions/close", {
+        "id": rejectable["id"], "status": "rejected", "token": APPROVAL_TOKEN})
+    assert status == 200 and json.loads(body)["decision"]["status"] == "rejected"
+
     status, body = client.post("/api/decisions", {"title": "", "intent": {}})
     assert status == 400
 

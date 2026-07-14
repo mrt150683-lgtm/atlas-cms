@@ -53,10 +53,12 @@ def test_markdown_prompt_grounded_in_memory(tmp_path: Path) -> None:
 
 def test_json_pack_structure(tmp_path: Path) -> None:
     root = _project(tmp_path)
-    content, out = export_prompt(root, "token verification", as_json=True)
+    content, out = export_prompt(
+        root, "change `auth.py` and docs/security.md for token verification", as_json=True)
     pack = json.loads(content)
     assert out.suffix == ".json"
-    assert pack["task"] == "token verification"
+    assert pack["task"] == "change `auth.py` and docs/security.md for token verification"
+    assert pack["declared_paths"] == ["auth.py", "docs/security.md"]
     assert any(t["name"] == "verify_token" for t in pack["relevant_code"])
     assert pack["impact"]["target"].startswith(("func:", "file:"))
     assert pack["conventions"] and pack["verification"]

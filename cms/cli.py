@@ -400,7 +400,9 @@ def flow(
 
     sc = review_data.get("scope") or {}
     scope_txt = (f"  ({sc['flows_reviewed']} of {sc['flows_traced']} traced flow(s), "
-                 f"{sc['steps_reviewed']} step(s))" if sc else "")
+                 f"{sc['steps_reviewed']} step(s)"
+                 + (", long flows truncated" if sc.get("steps_truncated") else "")
+                 + ")" if sc else "")
     typer.echo(f"\nExact flow: {review_data['feature']}   "
                f"[{review_data['status']}]{scope_txt}"
                + ("  (cached)" if review_data.get("reused") else ""))
@@ -463,6 +465,24 @@ def review(
         mem.graph, root, llm,
         on_progress=lambda name, d, t: typer.echo(f"  [{d}/{t}] {name}"),
     )
+    if llm.name != "mock" and result.get("status") != "complete":
+        from . import semantic_state as ss
+
+        errors = result.get("provider_errors") or []
+        detail = errors[0] if errors else "provider returned an incomplete semantic review"
+        ss.record_stage(
+            memory_dir, "review", status="failed", provider=llm.name,
+            model=getattr(llm, "model", None), real_provider=True,
+            feature_set_hash=ss.feature_set_hash(mem.graph), error=str(detail)[:300],
+            **ss.feature_counts(mem.graph),
+        )
+        app_r = result["app"]
+        typer.echo(f"\nOverall: UNVERIFIED — {app_r['headline']}", err=True)
+        typer.echo(app_r["summary"], err=True)
+        if errors:
+            typer.echo(f"First provider error: {errors[0]}", err=True)
+        typer.echo("Existing review artifacts were not overwritten.", err=True)
+        raise typer.Exit(1)
     export_graph(mem.graph, memory_dir)
     out = export_review(mem.graph, memory_dir)
     if llm.name != "mock":  # manual refresh keeps the provenance record truthful

@@ -1,5 +1,7 @@
 <h1>▲ Atlas</h1>
 
+[![CI](https://github.com/mrt150683-lgtm/atlas-cms/actions/workflows/ci.yml/badge.svg)](https://github.com/mrt150683-lgtm/atlas-cms/actions/workflows/ci.yml)
+
 **Every codebase, mapped. One ground truth that AI agents and people read the same way.**
 
 *(Atlas is the product; `cms` is the command line and Python package: `pip install`, `cms run-all`, `cms mcp`.)*
@@ -124,6 +126,12 @@ cms scope show               # show which paths Atlas is currently processing
 cms bundle export --out atlas.cmsbundle  # share the generated memory without re-processing
 ```
 
+Change alignment distinguishes requirements from context: paths written
+literally in the goal are mandatory, while semantic search hits and blast-radius
+files are advisory. Requested docs, CI, dependency/security policy, UI
+companions, tests, and generated proof artifacts are accepted only when the
+declared goal justifies them; unrelated changes still surface as scope creep.
+
 ## App mode (`cms app` / CMS.exe)
 
 Everything in motion with one command, or one double-click:
@@ -205,10 +213,11 @@ run `cms run-all`".
   and corrected by supersession.
 - **Decisions**: `propose_decision`, `get_decisions`. Versioned
   intended-behaviour statements. Approval is human-only (the UI asks for a
-  per-session code printed only to the launching terminal) and locks the
-  intent; changing an approved decision means superseding it (a second,
-  unlinked approval for the same feature is refused), so the agreed word is
-  never silently rewritten or shadowed.
+  per-session code printed only to the launching terminal for both approval
+  and closure/rejection) and locks the intent; changing an approved decision
+  means superseding its current approved predecessor in the same feature
+  scope (cross-feature and stale links are refused), so the agreed word is
+  never silently rewritten, shadowed, or attached to the wrong audit chain.
 - **Flow verification**: `review_exact_flow`. Evidence-classified execution
   flows (static edges + step-granular coverage + bounded source reads);
   `verified` is computed from evidence (every in-feature step's own lines
@@ -218,11 +227,12 @@ run `cms run-all`".
   `cms flow <Feature>`.
 - **Feature discovery**: `discover_feature`, the feature hunt. Describe a
   behaviour the automatic mapping may have missed and Atlas checks whether it
-  is already stated (deterministic overlap against existing features), hunts
-  the graph with one-hop neighbourhood expansion, validates every proposed
-  member and connection against real edges, and returns an ordered
-  explanation of the mechanism. Verdicts: already_covered, partial_overlap,
-  new, not_found. Humans confirm in the UI.
+  is already stated (deterministic overlap against the complete feature
+  catalog), hunts the graph with one-hop neighbourhood expansion, validates
+  every proposed member and connection, reconciles the verdict against the
+  surviving evidence, and keeps only mechanism steps whose backticked code
+  references resolve to prompt evidence. Verdicts: already_covered,
+  partial_overlap, new, not_found. Humans confirm in the UI.
 - **Session control**: `switch_project` (flip the server to another project
   root mid-session; unmapped targets get the exact build command back).
 - **Constellation**: `list_projects`, `get_fusion_report`, `refine_fusion`.
@@ -247,7 +257,9 @@ as dashed amber links, and the inspector gains a History section.
 feature to the tests that actually execute its code (`exercised_by`, named
 deliberately: coverage proves execution, not behavioural correctness). The
 mapping is honest at two granularities: it also lands on each individual
-function and class, and a file's import-time lines never count as evidence.
+function and class, and a file's import-time lines never count as evidence;
+componentless files contribute no behavioural coverage rather than falling
+back to whole-file matching.
 Then `cms verify <Feature>` runs exactly those tests, turning the feature
 trace's checklist into runnable evidence.
 
@@ -295,6 +307,12 @@ Results live in `.memory/review.md`, on the graph (agents get them via the
 `get_review` MCP tool), and in the UI: hit the `review` button (or `?review=1`)
 for the overlay, one line per feature, expand for detail, "zoom into this
 feature on the map" for the full evidence.
+
+Real-provider reviews are atomic. Every feature response and the app rollup
+must pass the declared JSON contract before Atlas records semantic completion.
+Connection errors, truncated/malformed replies, or mixed semantic/structural
+output make the command fail non-zero, record the provider error, and preserve
+the last complete review instead of presenting an incomplete run as `partial`.
 
 ## Suggestions (`cms suggest`)
 

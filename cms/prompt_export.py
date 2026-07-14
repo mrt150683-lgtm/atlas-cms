@@ -24,6 +24,22 @@ def _slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60] or "task"
 
 
+def _declared_paths(task: str) -> list[str]:
+    """Paths written literally in the user's goal.
+
+    Semantic search hits are useful context, but they are not promises that
+    every returned file must change. Literal paths are the only safe source of
+    mandatory file targets for the deterministic alignment gate.
+    """
+    normalised = str(task or "").replace("\\", "/")
+    paths = re.findall(
+        r"(?<![A-Za-z0-9_.-])((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.[A-Za-z0-9]+)"
+        r"(?![A-Za-z0-9_.-])",
+        normalised,
+    )
+    return sorted({p.strip("`'\"") for p in paths if "://" not in p})
+
+
 def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8) -> dict:
     """Everything an AI (or human) needs to approach `task`, as structured data."""
     graph = mem.graph
@@ -100,6 +116,7 @@ def build_task_pack(mem: CodebaseMemory, root: Path, task: str, top_k: int = 8) 
 
     return {
         "task": task,
+        "declared_paths": _declared_paths(task),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project": root.name,
         "relevant_code": targets,

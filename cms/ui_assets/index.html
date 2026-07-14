@@ -2549,7 +2549,8 @@ function wireFeatureDiscovery() {
       // the mechanism, step by step — data-lens so it reads at the level the
       // user selected on the comprehension slider
       const explHtml = (data.explanation || []).length ? `
-        <div id="fdiscExpl" style="margin:6px 0"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px">How it works</div>
+        <div id="fdiscExpl" style="margin:6px 0"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px">How it works
+          <span class="ann-chip" style="margin-left:4px" title="Every backticked code reference was resolved against the evidence sent to the provider">${esc(data.explanation_provenance || "model")}</span></div>
         <div data-lens style="color:var(--ink-2);line-height:1.55;font-size:11.5px">${data.explanation.map((s, i) => `${i + 1}. ${esc(s)}`).join("<br>")}</div></div>` : "";
 
       const connHtml = (data.connections || []).length ? `
@@ -3338,8 +3339,11 @@ async function initIntentPanel(featureName) {
             body: JSON.stringify({ id, approved_by: by, token: token.trim() }) });
           if (!r.ok) { alert((await r.json()).error || "approval failed"); return; }
         } else {
-          await fetch("/api/decisions/close", { method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id, status: "rejected" }) });
+          const token = prompt("Session decision code (printed in the terminal that launched Atlas):");
+          if (!token) return;
+          const r = await fetch("/api/decisions/close", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, status: "rejected", token: token.trim() }) });
+          if (!r.ok) { alert((await r.json()).error || "rejection failed"); return; }
         }
         initIntentPanel(featureName);
       };

@@ -113,8 +113,24 @@ class DecisionStore:
         if not str(title or "").strip():
             raise ValueError("a decision needs a title")
         decisions = self._read()
-        if supersedes and not any(d.get("id") == supersedes for d in decisions):
-            raise ValueError(f"cannot supersede unknown decision {supersedes!r}")
+        if supersedes:
+            predecessor = next((d for d in decisions if d.get("id") == supersedes), None)
+            if predecessor is None:
+                raise ValueError(f"cannot supersede unknown decision {supersedes!r}")
+            if predecessor.get("feature") != (feature or None):
+                raise ValueError(
+                    f"cannot supersede decision {supersedes!r} from a different feature scope")
+            current = next(
+                (d for d in decisions
+                 if d.get("feature") == (feature or None) and d.get("status") == "approved"),
+                None,
+            )
+            if predecessor.get("status") != "approved" or (
+                    current and current.get("id") != supersedes):
+                current_id = current.get("id") if current else "none"
+                raise ValueError(
+                    f"supersedes must name the current approved decision for this scope "
+                    f"({current_id})")
         author = dict(created_by or {})
         author.setdefault("kind", "user")
         author.setdefault("identity", author["kind"])
@@ -151,29 +167,38 @@ class DecisionStore:
         if target["status"] != "proposed":
             raise ValueError(f"only proposed decisions can be approved "
                              f"(this one is {target['status']!r})")
-        # no intent shadowing: a feature has ONE operative approved intent.
+        # no intent shadowing: each feature (and the application-level scope)
+        # has ONE operative approved intent.
         # Approving a second, unlinked decision would silently change the
         # ground truth while the first still reads "approved" — refuse unless
         # this proposal explicitly supersedes the current one.
-        if target.get("feature"):
-            shadowed = next(
-                (d for d in decisions
-                 if d.get("feature") == target["feature"]
-                 and d.get("status") == "approved"
-                 and d.get("id") != target.get("supersedes")), None)
-            if shadowed:
+        scope = target.get("feature")
+        current = next(
+            (d for d in decisions
+             if d.get("feature") == scope and d.get("status") == "approved"),
+            None,
+        )
+        if current and target.get("supersedes") != current.get("id"):
+            label = f"feature {scope!r}" if scope else "application scope"
+            raise ValueError(
+                f"{label} already has approved decision {current['id']} — propose with "
+                f"supersedes={current['id']!r} to replace it (approved intent is never "
+                "silently shadowed)")
+        predecessor = None
+        if target.get("supersedes"):
+            predecessor = next(
+                (d for d in decisions if d.get("id") == target["supersedes"]), None)
+            if (predecessor is None or predecessor.get("feature") != scope
+                    or predecessor.get("status") != "approved"
+                    or not current or predecessor.get("id") != current.get("id")):
                 raise ValueError(
-                    f"feature {target['feature']!r} already has approved decision "
-                    f"{shadowed['id']} — propose with supersedes={shadowed['id']!r} "
-                    "to replace it (approved intent is never silently shadowed)")
+                    "supersedes must still name the current approved decision in the same scope")
         target["status"] = "approved"
         target["approved_by"] = str(approved_by)[:120]
         target["approved_at"] = _now_iso()
-        if target.get("supersedes"):
-            for d in decisions:
-                if d.get("id") == target["supersedes"] and d.get("status") != "superseded":
-                    d["status"] = "superseded"
-                    d["closed_at"] = target["approved_at"]
+        if predecessor:
+            predecessor["status"] = "superseded"
+            predecessor["closed_at"] = target["approved_at"]
         self._write(decisions)
         return target
 

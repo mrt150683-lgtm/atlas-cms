@@ -76,10 +76,12 @@ competing note system. Only `open/under_review/accepted` enter model context
 payload forever; change = `propose(supersedes=…)` + approval, which marks the
 ancestor `superseded` (full chain kept for audit). A feature's approved intent
 cannot be **shadowed**: approving a second decision that does not supersede
-the current approved one is refused. Approval requires a human identity and a
-per-session code (printed only to the terminal that launched Atlas; env
-override `CMS_APPROVAL_TOKEN` for tests) — the gate is a mechanism, not just
-tool-surface omission; the MCP tools can propose and read, never approve.
+the current approved one is refused. A successor must name the current
+approved predecessor in the same feature scope; cross-feature and stale links
+are refused. Approval and closure/rejection require the per-session code
+(printed only to the terminal that launched Atlas; env override
+`CMS_APPROVAL_TOKEN` for tests) — the gate is a mechanism, not just tool-surface
+omission; the MCP tools can propose and read, never approve or close.
 Annotation/decision writes are transport-stamped server-side
 (`author.via = "http" | "mcp"`), never caller-asserted. Consumers: `build_alignment`
 (`approved_intent` for touched features), chat evidence, flow review prompt,
@@ -121,7 +123,11 @@ string; overall `on_track / attention / insufficient_evidence`. Thin evidence
 ## Feature discovery from description
 
 `cms/feature_discovery.py`: `propose_feature` (intent-ranked hits + one LLM
-mapping with per-member reasons; mock = hits only, clearly not-a-mapping),
+mapping with per-member reasons; mock = hits only, clearly not-a-mapping).
+The full feature catalog is both prompt context and validation allow-list;
+verdicts are reconciled after invalid members/features are removed, shared
+member ownership is preserved, and mechanism steps are kept only when every
+backticked reference resolves to prompt evidence (`llm_grounded`).
 `confirm_feature` (human): writes the discovered feature into the graph AND
 appends it to the `features` stage's `discovered_features` in semantic state,
 so `_features_from_state` re-injects it on every future update.

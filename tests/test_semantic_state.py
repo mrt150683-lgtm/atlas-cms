@@ -18,6 +18,8 @@ from cms.update import ensure_judgment, incremental_update
 GOOD_DISCOVERY = '[{"name": "Widgets", "description": "widget engine", "files": ["one.py"]}]'
 GOOD_REVIEW = ('{"verdict": "aligned", "headline": "matches intent", "expected": "e",'
                ' "built": "b", "gaps": [], "education": "ed"}')
+GOOD_APP_REVIEW = ('{"verdict": "aligned", "headline": "matches intent",'
+                   ' "summary": "The reviewed application matches its declared intent."}')
 GOOD_SUGGEST = ('[{"title": "Add export", "description": "d", "kind": "feature",'
                 ' "value": 4, "effort": 2, "rationale": "r", "builds_on": []}]')
 
@@ -43,7 +45,10 @@ class SemanticProvider:
             if isinstance(self.discovery, Exception):
                 raise self.discovery
             return self.discovery
-        if "reviewing one feature" in prompt or "top-level review" in prompt:
+        if "top-level review" in prompt:
+            self.review_calls += 1
+            return GOOD_APP_REVIEW
+        if "reviewing one feature" in prompt:
             self.review_calls += 1
             return GOOD_REVIEW
         if "return on investment" in prompt:

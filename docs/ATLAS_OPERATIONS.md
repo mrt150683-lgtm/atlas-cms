@@ -5,13 +5,14 @@ how to maintain it. Written 2026-07-11.*
 
 ## Runtime
 
-- **Authoritative environment:** `C:\Users\banan\Desktop\CodeCrawl\.venv`
-  (Python 3.11, created from the user install at
-  `%LOCALAPPDATA%\Programs\Python\Python311`). The repo is installed editable
-  with `dev` + `anthropic` extras, so code edits apply immediately.
-- A second editable install exists in the global Python 3.11 (`cms` on PATH
-  from `...\Python311\Scripts\cms.exe`). Both point at the same source; the
-  `.venv` is the one Codex's MCP entry and `CMS.bat` use.
+- **Authoritative test environment:** the managed `uv` runtime (`uv run python
+  -m pytest tests -q`). The old workspace `.venv` currently points at a removed
+  `%LOCALAPPDATA%\Programs\Python\Python311` installation and must be recreated
+  before it can be used again; do not treat that stale interpreter as proof.
+- The configured Codex MCP entry still names the workspace `.venv`; recreate it
+  with the commands below, then start a new Codex session so the server uses the
+  repaired environment. `CMS.bat` import-probes it and falls through safely when
+  stale.
 - **Launcher health:** `CMS.bat` does not trust `python.exe` merely because the
   file exists. It import-probes `CMS_PYTHON` (an optional explicit override),
   the project `.venv`, `py -3.11`, then `python` on `PATH`. A copied or stale
@@ -82,9 +83,16 @@ any shell — it prefers `.venv` and never pauses when given arguments.
 | Full rebuild | `cms update --full` or `cms run-all` |
 | Quality gate | `cms sentinel` (exit 1 on active criticals) |
 | Change gate | `cms align "<goal>"` → edit → `cms align status` (exit 1 on drift) |
-| Tests | `.venv\Scripts\python -m pytest tests -q` |
+| Tests | `uv run python -m pytest tests -q` |
 | UI | `cms app` (or double-click `CMS.bat`) |
 | Diagnose | `cms features` (memory loads?) · `codex mcp list` (entry present?) · `.venv\Scripts\python -m cms.cli --help` (runtime OK?) |
+
+For the change gate, name a file path literally when it is mandatory. Atlas
+treats semantic matches and blast-radius files as advisory context, so an
+untouched related file is reported under `related_not_touched` but is not a
+gap. Requested companion docs, CI, dependency/security policy, UI assets,
+tests, and proof ledgers are accepted when justified by the goal; unrelated
+changes remain `unstated-change`.
 
 ## Mock vs semantic output
 
@@ -98,7 +106,9 @@ any shell — it prefers `.venv` and never pauses when given arguments.
   normal terminal for semantic output; agents should use `-p mock`.
 - The AI review (`cms review`) verdict is only *semantic* when produced by a
   real provider — a structural/mock run is labelled and must not be treated
-  as a verified review.
+  as a verified review. A real review is committed only when every feature and
+  the app rollup satisfy their JSON contracts; any connection or output failure
+  records `failed`, exits non-zero, and leaves the last complete artifacts intact.
 
 ## Semantic-stage evidence (`.memory/semantic_state.json`)
 

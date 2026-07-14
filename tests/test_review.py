@@ -1,6 +1,10 @@
 import json
 from pathlib import Path
 
+from typer.testing import CliRunner
+
+from cms.cli import app
+from cms.exporter import export_graph
 from cms.features import build_features
 from cms.graph_builder import build_graph
 from cms.providers import MockProvider
@@ -48,6 +52,8 @@ def test_llm_review_lands_on_nodes_and_rollup(tmp_path: Path) -> None:
     assert review["verdict"] == "aligned"
     assert review["headline"] == "Greets people as promised."
     assert result["app"]["verdict"] == "partial"
+    assert result["status"] == "complete"
+    assert review["evidence_kind"] == "semantic"
     assert graph.nodes["review:app"]["counts"]["aligned"] == 1
 
 
@@ -56,6 +62,8 @@ def test_mock_review_is_unverified_and_exports(tmp_path: Path) -> None:
     build_review(graph, tmp_path, MockProvider())
     review = graph.nodes["feature:Greeting"]["review"]
     assert review["verdict"] == "unverified"
+    assert review["structural"] is True
+    assert review["evidence_kind"] == "structural"
     assert "No tests currently exercise" in review["gaps"][0]
     out = export_review(graph, tmp_path)
     text = out.read_text(encoding="utf-8")
@@ -68,5 +76,72 @@ def test_bad_llm_json_falls_back(tmp_path: Path) -> None:
             return "not json at all"
 
     graph = _graph(tmp_path)
-    build_review(graph, tmp_path, BrokenProvider())
-    assert graph.nodes["feature:Greeting"]["review"]["verdict"] == "unverified"
+    result = build_review(graph, tmp_path, BrokenProvider())
+    assert result["status"] == "failed"
+    assert result["features"]["Greeting"]["structural"] is True
+    assert result["app"]["verdict"] == "unverified"
+    assert result["app"]["fallback_features"] == 1
+    assert "review" not in graph.nodes["feature:Greeting"]
+    assert not graph.has_node("review:app")
+
+
+def test_provider_exception_is_reported_and_transactional(tmp_path: Path) -> None:
+    class FailingProvider(JsonProvider):
+        def summarize(self, prompt, context):
+            raise ConnectionError("offline")
+
+    graph = _graph(tmp_path)
+    graph.nodes["feature:Greeting"]["review"] = {"verdict": "aligned", "headline": "old"}
+    graph.add_node("review:app", type="review", verdict="aligned", headline="old", summary="old")
+    result = build_review(graph, tmp_path, FailingProvider())
+    assert result["status"] == "failed"
+    assert "ConnectionError: offline" in result["provider_errors"][0]
+    assert graph.nodes["feature:Greeting"]["review"]["headline"] == "old"
+    assert graph.nodes["review:app"]["headline"] == "old"
+
+
+def test_app_rollup_failure_does_not_commit_feature_reviews(tmp_path: Path) -> None:
+    class BrokenRollupProvider(JsonProvider):
+        def summarize(self, prompt, context):
+            if "top-level review" in prompt:
+                return "not json"
+            return super().summarize(prompt, context)
+
+    graph = _graph(tmp_path)
+    result = build_review(graph, tmp_path, BrokenRollupProvider())
+    assert result["status"] == "failed"
+    assert result["app"]["verdict"] == "unverified"
+    assert "review" not in graph.nodes["feature:Greeting"]
+
+
+def test_json_parser_accepts_fences_and_ignores_later_objects(tmp_path: Path) -> None:
+    class FencedProvider(JsonProvider):
+        def summarize(self, prompt, context):
+            return "```json\n" + super().summarize(prompt, context) + "\n```\nExtra {broken}"
+
+    graph = _graph(tmp_path)
+    result = build_review(graph, tmp_path, FencedProvider())
+    assert result["status"] == "complete"
+    assert graph.nodes["feature:Greeting"]["review"]["verdict"] == "aligned"
+
+
+def test_cli_failed_provider_exits_nonzero_and_records_failed(tmp_path: Path, monkeypatch) -> None:
+    class FailingProvider(JsonProvider):
+        model = "test-model"
+
+        def summarize(self, prompt, context):
+            raise ConnectionError("offline")
+
+    graph = _graph(tmp_path)
+    export_graph(graph, tmp_path / ".memory")
+    monkeypatch.setattr("cms.cli.get_provider", lambda *_: FailingProvider())
+
+    result = CliRunner().invoke(
+        app, ["review", "--root", str(tmp_path), "--provider", "fake-llm"])
+
+    assert result.exit_code == 1
+    assert "Overall: UNVERIFIED" in result.output
+    assert "Existing review artifacts were not overwritten" in result.output
+    state = json.loads((tmp_path / ".memory" / "semantic_state.json").read_text(encoding="utf-8"))
+    assert state["stages"]["review"]["status"] == "failed"
+    assert "ConnectionError: offline" in state["stages"]["review"]["error"]

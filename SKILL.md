@@ -135,6 +135,9 @@ the human can literally watch you think). Tools:
   mapping with per-member roles (entry/core/support) and reasons, connections
   to existing features (`provenance: graph` when grounded in a real edge,
   `llm` when inferred), and an ordered step-by-step mechanism explanation.
+  The complete feature catalog is used, headline verdicts are reconciled after
+  invalid claims are removed, and explanation steps survive only when their
+  backticked code references resolve to the evidence (`llm_grounded`).
   Check `existing` before proposing anything — never duplicate a mapped
   feature. Proposals are never auto-accepted; a human confirms/renames in the
   UI feature list, which makes it a durable discovered feature.
@@ -162,8 +165,11 @@ the human can literally watch you think). Tools:
   change means proposing a successor (`supersedes`), never editing, and a
   feature's approved intent can never be shadowed — approving a second,
   unlinked decision is refused. You cannot approve your own proposals —
-  approval is human-only and gated by a per-session code printed only to the
-  terminal that launched Atlas (not merely absent from this tool surface).
+  approval and closure/rejection are human-authority actions gated by a
+  per-session code printed only to the terminal that launched Atlas (not
+  merely absent from this tool surface). A successor must name the current
+  approved predecessor in the same feature scope; cross-feature and stale
+  supersession links are refused.
 - `get_decisions(feature=None, active_only=True)` — the decision trail. The
   approved decision for a feature is the ground truth to implement and verify
   against; `check_alignment` reports it for touched features.
@@ -171,7 +177,9 @@ the human can literally watch you think). Tools:
 **The alignment loop (intent → verdict)**
 - `declare_intent(goal=None)` — record what the current change is meant to do
   (if `goal` omitted, inferred from git branch / last commit). Returns a grounded
-  brief and stores the active intent. **Call this first.**
+  brief and stores the active intent. Paths written literally in the goal are
+  recorded as mandatory targets; semantic hits and blast-radius files are
+  related context, not an instruction to edit every match. **Call this first.**
 - `check_alignment(base="HEAD", scan=False)` — judge the working diff against the
   declared intent. Returns `verdict` (aligned/partial/drift/unverified),
   `headline`, `changed` files, `touched_features`, `feature_reviews`, `impact`
@@ -221,6 +229,8 @@ the CLI. `--root PATH` targets a project; the API key is read from
 
 **Judge / verify**
 - `cms review [Feature]` — build/print the built-vs-expected alignment audit.
+  Full real-provider refreshes are atomic: incomplete/malformed provider output
+  records `failed`, exits non-zero, and preserves the last complete review.
 - `cms suggest` — ROI-ranked plan of what to build next.
 - `cms verify` — map tests → features via coverage contexts (`exercised_by`;
   coverage proves the tests *execute* the feature, not that behaviour is correct).
@@ -388,6 +398,12 @@ review** verdicts, and **Sentinel** findings on changed files into one verdict:
 
 Verdicts persist to `.memory/align/sessions.json` (trajectory history). Read
 `gaps` and `tests_to_run` and act on them — that's the honest-finish contract.
+`intent-target-untouched` applies only to a path explicitly written in the
+goal. Conventional companion artifacts (tests, requested docs, CI workflows,
+dependency/security policy, UI assets, and proof ledgers) are accepted only
+when the goal or a related canonical file justifies them; unrelated changes
+still produce `unstated-change`. `related_not_touched` is advisory context and
+does not lower the verdict.
 
 ## 10. Configuration
 

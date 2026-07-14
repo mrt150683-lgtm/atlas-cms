@@ -773,13 +773,15 @@ def make_handler(root: Path, cache: _MemoryCache):
 
             store = DecisionStore(memory_dir, root=root)
             try:
-                if path.endswith("/approve"):
-                    # human-only gate: the code is printed to the launching
-                    # terminal, a channel agents driving HTTP don't see
+                if path.endswith(("/approve", "/close")):
+                    # Human-authority gate: approving and closing/rejecting both
+                    # change the durable decision lifecycle. The code is printed
+                    # to the launching terminal, a channel HTTP agents don't see.
                     if str(body.get("token") or "") != approval_token:
-                        self._error(403, "approval requires the session code "
+                        self._error(403, "decision authority requires the session code "
                                          "shown in the terminal that launched Atlas")
                         return
+                if path.endswith("/approve"):
                     dec = store.approve(str(body.get("id") or ""),
                                         str(body.get("approved_by") or ""))
                 elif path.endswith("/close"):
@@ -892,8 +894,8 @@ def serve(root: Path, port: int = 7717, open_browser: bool = True, open_path: st
     server = ThreadingHTTPServer(("127.0.0.1", port), handler)
     url = f"http://127.0.0.1:{port}"
     print(f"CMS UI serving {root.name} at {url}  (Ctrl+C to stop)")
-    print(f"Decision-approval code for this session: {handler.approval_token}  "
-          "(the UI asks for it when you approve an intent)")
+    print(f"Decision-authority code for this session: {handler.approval_token}  "
+          "(the UI asks for it when you approve or reject an intent)")
     if open_browser:
         threading.Timer(0.4, webbrowser.open, args=(url + open_path,)).start()
     try:

@@ -37,7 +37,6 @@ from .providers import SummaryProvider
 
 MAX_HITS = 14
 MAX_NEIGHBOURS = 4
-MAX_CATALOG = 40
 PROPOSAL_MAX_TOKENS = 2800
 
 _HUNT_PROMPT = """A user believes the "{project}" codebase contains a behaviour that the automatic feature mapping may have missed. Hunt for it in the evidence below and report honestly.
@@ -144,7 +143,10 @@ def _feature_catalog(graph) -> list[dict]:
         if a.get("type") == "feature":
             rows.append({"name": a.get("name", ""),
                          "description": (a.get("description") or "")[:120]})
-    return sorted(rows, key=lambda r: r["name"])[:MAX_CATALOG]
+    # This list is also the validation allow-list. Silently truncating it lets
+    # established features beyond the prompt window look unknown and invites
+    # duplicate proposals, so every mapped feature must be present.
+    return sorted(rows, key=lambda r: r["name"])
 
 
 def _neighbourhood_edges(graph, hits: list[dict]) -> list[str]:
@@ -178,14 +180,14 @@ def _neighbourhood_edges(graph, hits: list[dict]) -> list[str]:
 def graph_connections(graph, member_ids: list[str]) -> list[dict]:
     """Evidence-grounded connections: existing features whose members share
     edges (or files) with the candidate members. Never model-asserted."""
-    owner: dict[str, str] = {}  # member id / file path -> feature name
+    owner: dict[str, set[str]] = {}  # member id / file path -> feature names
     for _, a in graph.nodes(data=True):
         if a.get("type") != "feature":
             continue
         for m in a.get("members") or []:
-            owner[m] = a["name"]
+            owner.setdefault(m, set()).add(a["name"])
             if graph.has_node(m) and graph.nodes[m].get("path"):
-                owner.setdefault("file:" + graph.nodes[m]["path"], a["name"])
+                owner.setdefault("file:" + graph.nodes[m]["path"], set()).add(a["name"])
     out: dict[str, str] = {}
     for mid in member_ids:
         if not graph.has_node(mid):
@@ -195,14 +197,49 @@ def graph_connections(graph, member_ids: list[str]) -> list[dict]:
             if d.get("type") not in ("CALLS", "IMPORTS"):
                 continue
             other = dst if src == mid else src
-            feat = owner.get(other)
-            if not feat or feat in out:
+            features = owner.get(other, set())
+            if not features:
                 continue
             verb = "calls" if d.get("type") == "CALLS" else "imports"
             a, b = (mid, other) if src == mid else (other, mid)
-            out[feat] = f"{a.split(':', 1)[-1]} {verb} {b.split(':', 1)[-1]}"
+            via = f"{a.split(':', 1)[-1]} {verb} {b.split(':', 1)[-1]}"
+            for feat in features:
+                out.setdefault(feat, via)
     return [{"feature": f, "via": via, "provenance": "graph"}
             for f, via in sorted(out.items())][:8]
+
+
+def _grounded_explanation(graph, raw_steps: list, hits: list[dict],
+                          edge_rows: list[str], known_features: set[str]) -> list[str]:
+    """Keep only model explanation steps whose backticked references resolve
+    to evidence that was actually placed in the prompt.
+
+    Requiring explicit references makes provenance machine-checkable instead
+    of treating fluent prose as grounded merely because it was short.
+    """
+    allowed = set(known_features)
+    evidence_ids = {h["id"] for h in hits}
+    for edge in edge_rows:
+        parts = re.split(r" -(?:calls|imports|part_of)-> ", edge, maxsplit=1)
+        evidence_ids.update(parts)
+    for node_id in evidence_ids:
+        allowed.add(node_id)
+        if graph.has_node(node_id):
+            attrs = graph.nodes[node_id]
+            allowed.update(str(v) for v in (attrs.get("name"), attrs.get("qualname"),
+                                             attrs.get("path")) if v)
+    for hit in hits:
+        allowed.update(str(v) for v in (hit.get("id"), hit.get("name"), hit.get("path")) if v)
+
+    grounded = []
+    for raw in raw_steps or []:
+        step = str(raw).strip()[:400]
+        refs = [ref.strip() for ref in re.findall(r"`([^`]+)`", step)]
+        if step and refs and all(ref in allowed for ref in refs):
+            grounded.append(step)
+        if len(grounded) >= 7:
+            break
+    return grounded
 
 
 # @memory:feature:FeatureDiscoveryByDescription
@@ -226,6 +263,7 @@ def propose_feature(root: Path, memory: CodebaseMemory, description: str,
         return {"real": provider.name != "mock", "verdict": "not_found",
                 "candidate": None, "hits": [], "existing": overlap,
                 "connections": [], "explanation": [],
+                "explanation_provenance": "none",
                 "note": "nothing in the mapped code matches this description"}
     if provider.name == "mock":
         flagged = (f"looks already stated as '{overlap[0]['feature']}' "
@@ -233,17 +271,19 @@ def propose_feature(root: Path, memory: CodebaseMemory, description: str,
                    if overlap else "")
         return {"real": False, "verdict": None, "candidate": None, "hits": hits,
                 "existing": overlap, "connections": [], "explanation": [],
+                "explanation_provenance": "none",
                 "note": (flagged + "no real provider — these are keyword-ranked hits "
                          "only, NOT a verified mapping; pick members manually or add an API key")}
 
     catalog = _feature_catalog(graph)
+    edge_rows = _neighbourhood_edges(graph, hits)
     prompt = _HUNT_PROMPT.format(
         project=Path(root).resolve().name, description=description[:600],
         catalog="\n".join(f"- {c['name']}: {c['description'] or '(no description)'}"
                           for c in catalog) or "(none mapped yet)",
         hits="\n".join(f"- {h['id']} | {h['path']}:{h['lines']} | "
                        f"{h['summary'] or '(no summary)'}" for h in hits),
-        edges="\n".join(_neighbourhood_edges(graph, hits)) or "(no edges found)",
+        edges="\n".join(edge_rows) or "(no edges found)",
     )
     try:
         reply = provider.summarize(prompt, {"max_tokens": PROPOSAL_MAX_TOKENS})
@@ -277,6 +317,20 @@ def propose_feature(root: Path, memory: CodebaseMemory, description: str,
                 "why": str(m.get("why") or "")[:300]}
                for m in (data.get("members") or [])
                if isinstance(m, dict) and m.get("id") in known_ids]
+
+    # Reconcile the headline only after filtering its supporting claims. A
+    # fluent verdict cannot survive when its required evidence was invalid.
+    if existing:
+        if verdict in ("new", "not_found"):
+            verdict = "partial_overlap" if members else "already_covered"
+        elif verdict == "partial_overlap" and not members:
+            verdict = "already_covered"
+    else:
+        if verdict in ("already_covered", "partial_overlap"):
+            verdict = "new" if members else "not_found"
+        elif verdict == "new" and not members:
+            verdict = "not_found"
+
     candidate = None
     if members and verdict in ("new", "partial_overlap"):
         candidate = {
@@ -300,11 +354,12 @@ def propose_feature(root: Path, memory: CodebaseMemory, description: str,
             else:
                 connections.append(gc)
 
-    explanation = [str(s)[:400] for s in (data.get("explanation") or [])
-                   if str(s).strip()][:7]
+    explanation = _grounded_explanation(
+        graph, data.get("explanation") or [], hits, edge_rows, known_features)
     return {"real": True, "verdict": verdict, "candidate": candidate,
             "hits": hits, "existing": existing, "connections": connections,
             "explanation": explanation,
+            "explanation_provenance": "llm_grounded" if explanation else "none",
             "note": str(data.get("uncertainty") or "")[:400]}
 
 

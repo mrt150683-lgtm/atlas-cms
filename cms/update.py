@@ -421,15 +421,13 @@ def _ensure_judgment_locked(root, provider, echo, graph_path, ran) -> dict:
             echo(f"  review: FAILED — {exc} (recorded; artifacts unchanged)")
             return ran
         feature_reviews = result.get("features") or {}
-        all_structural = counts["feature_count"] > 0 and feature_reviews and all(
-            r.get("structural") for r in feature_reviews.values())
-        if all_structural:
-            # malformed provider output everywhere -> not a semantic review;
-            # do NOT export over whatever exists, record the failure.
+        if result.get("status") != "complete":
+            errors = result.get("provider_errors") or []
+            detail = errors[0] if errors else "provider returned an incomplete semantic review"
             ss.record_stage(memory_dir, "review", status="failed",
-                            error="provider returned unusable review output for every feature",
+                            error=str(detail)[:300],
                             **common)
-            echo("  review: provider output unusable — recorded failed, artifacts unchanged")
+            echo("  review: provider output incomplete — recorded failed, artifacts unchanged")
             return ran
         export_review(mem.graph, memory_dir)
         out_hash = hashlib.sha256(_json.dumps(

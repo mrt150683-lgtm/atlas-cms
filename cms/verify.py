@@ -163,9 +163,8 @@ def map_tests_to_features(graph: nx.DiGraph, root: Path, coverage_data: dict) ->
       one test touching one member never vouches for the others.
     - a file member contributes only lines inside its components' bodies;
       module-level lines run at import time, and "a test imported this
-      module" is not evidence the feature's behaviour was executed. Files
-      with no parsed components keep whole-file matching (nothing better
-      exists for them).
+      module" is not evidence the feature's behaviour was executed. A file
+      with no parsed components therefore contributes no coverage evidence.
     """
     known_files = [
         a["path"] for _, a in graph.nodes(data=True) if a.get("type") == "file"
@@ -211,7 +210,7 @@ def map_tests_to_features(graph: nx.DiGraph, root: Path, coverage_data: dict) ->
             if attrs.get("type") == "file":
                 ranges = comp_ranges.get(path)
                 for line, line_tests in executed.get(path, {}).items():
-                    if not ranges or any(s <= line <= e for s, e in ranges):
+                    if ranges and any(s <= line <= e for s, e in ranges):
                         tests |= line_tests
             else:
                 start, end = attrs.get("start_line") or 0, attrs.get("end_line") or 0

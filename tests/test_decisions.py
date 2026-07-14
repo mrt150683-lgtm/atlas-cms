@@ -82,6 +82,30 @@ def test_no_intent_shadowing_without_supersession(store) -> None:
     assert store.get(v1["id"])["status"] == "superseded"
 
 
+def test_supersession_stays_in_scope_and_targets_current_approval(store) -> None:
+    feature_current = store.propose("FeatureA", "feature word", INTENT)
+    store.approve(feature_current["id"], "alex")
+    app_current = store.propose(None, "application word", INTENT)
+    store.approve(app_current["id"], "alex")
+
+    with pytest.raises(ValueError, match="different feature scope"):
+        store.propose("FeatureB", "cross-feature", INTENT,
+                      supersedes=feature_current["id"])
+    with pytest.raises(ValueError, match="different feature scope"):
+        store.propose(None, "cross-application", INTENT,
+                      supersedes=feature_current["id"])
+
+    successor = store.propose("FeatureA", "successor", INTENT,
+                              supersedes=feature_current["id"])
+    store.close(feature_current["id"], "implemented")
+    with pytest.raises(ValueError, match="current approved"):
+        store.approve(successor["id"], "alex")
+
+    app_rogue = store.propose(None, "competing application word", INTENT)
+    with pytest.raises(ValueError, match="application scope"):
+        store.approve(app_rogue["id"], "alex")
+
+
 def test_closure_outcomes(store) -> None:
     d = store.propose("F", "t", INTENT)
     with pytest.raises(ValueError):
