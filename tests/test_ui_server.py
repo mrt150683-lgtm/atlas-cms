@@ -40,6 +40,7 @@ class _Client:
         self.port = port
         self.conn: http.client.HTTPConnection | None = None
         self.lock = threading.Lock()
+        self.last_headers: dict[str, str] = {}
         self._connect(deadline=60)
 
     def _connect(self, deadline: float) -> None:
@@ -59,15 +60,17 @@ class _Client:
     def get(self, path: str):
         with self.lock:
             try:
-                self.conn.request("GET", path)
-                resp = self.conn.getresponse()
-                return resp.status, resp.read()
+                return self._get(path)
             except Exception:
                 self.conn.close()
                 self._connect(deadline=30)  # one reconnect, then requests fail loudly
-                self.conn.request("GET", path)
-                resp = self.conn.getresponse()
-                return resp.status, resp.read()
+                return self._get(path)
+
+    def _get(self, path: str):
+        self.conn.request("GET", path)
+        resp = self.conn.getresponse()
+        self.last_headers = dict(resp.getheaders())
+        return resp.status, resp.read()
 
     def post(self, path: str, payload: dict):
         body = json.dumps(payload)
@@ -895,9 +898,15 @@ def test_idea_journal_page_and_human_capture_round_trip(server) -> None:
     page = body.decode("utf-8")
     assert status == 200
     for element in ("map", "ideaList", "captureBtn", "generateBtn", "drawBtn",
-                    "joinGenerate", "detailCandidates"):
+                    "joinGenerate", "detailCandidates", "eventList", "filterKind",
+                    "filterStatus", "genProjects"):
         assert f'id="{element}"' in page
     assert "'/api/ideas/join'" in page and "'/api/ideas/generate'" in page
+    # the journal is editable from the panel, not read-only
+    assert "'/api/ideas/update'" in page and "'/api/ideas/relationship'" in page
+    assert "'/api/ideas/source'" in page
+    assert "verdict:'merged'" in page      # the inbox can fold, not only accept
+    assert "project_roots" in page         # a named project reaches the generator
 
     status, body = client.post("/api/ideas/capture", {
         "title": "Journal through Atlas", "overview": "Keep project ideas connected.",
@@ -917,6 +926,135 @@ def test_idea_journal_page_and_human_capture_round_trip(server) -> None:
         "content"] == "Raw session notes."
     status, exported = client.get("/api/ideas/export")
     assert status == 200 and json.loads(exported)["schema_version"] == 1
+    # Export is a download, not a tab full of JSON
+    assert "atlas-idea-journal.json" in client.last_headers["Content-Disposition"]
+
+
+def test_idea_rail_tabs_can_actually_hide_a_list() -> None:
+    """The rail's Journal/Review/Activity lists are toggled by the `hidden`
+    attribute, but `.idea-list`/`.candidate-list` set `display:grid` — author
+    CSS beats the UA's `[hidden]{display:none}`, so every list stayed on screen
+    at once. The reset has to win, or the tabs are decorative."""
+    html = (Path(__file__).parent.parent / "cms" / "ui_assets" / "ideas.html"
+            ).read_text(encoding="utf-8")
+    assert "[hidden]{display:none!important}" in html
+    for list_id in ("ideaList", "candidateList", "eventList"):
+        assert f'id="{list_id}"' in html
+
+
+def test_idea_edit_status_and_reparent_round_trip(server) -> None:
+    """The detail panel owns the idea: title, overview, kind, status and parent."""
+    client, _ = server
+    _, body = client.post("/api/ideas/capture", {
+        "title": "Rough sketch", "overview": "Half a thought.", "kind": "concept"})
+    idea = json.loads(body)["idea"]
+    _, body = client.post("/api/ideas/capture", {"title": "The bigger arc", "kind": "project"})
+    parent = json.loads(body)["idea"]
+
+    status, body = client.post("/api/ideas/update", {
+        "id": idea["id"], "title": "Sharpened sketch", "overview": "A whole thought.",
+        "kind": "tool", "status": "exploring", "parent_id": parent["id"]})
+    updated = json.loads(body)["idea"]
+    assert status == 200
+    assert updated["title"] == "Sharpened sketch" and updated["kind"] == "tool"
+    assert updated["status"] == "exploring" and updated["parent_id"] == parent["id"]
+
+    # the quick status control sends status alone: everything else survives
+    _, body = client.post("/api/ideas/update", {"id": idea["id"], "status": "shipped"})
+    moved = json.loads(body)["idea"]
+    assert moved["status"] == "shipped" and moved["title"] == "Sharpened sketch"
+    assert moved["overview"] == "A whole thought." and moved["parent_id"] == parent["id"]
+
+    # "— none —" clears the parent instead of being ignored
+    _, body = client.post("/api/ideas/update", {"id": idea["id"], "parent_id": None})
+    assert json.loads(body)["idea"]["parent_id"] is None
+
+    status, body = client.post("/api/ideas/update", {"id": idea["id"], "status": "sorcery"})
+    assert status == 400 and "invalid idea kind or status" in json.loads(body)["error"]
+
+
+def test_idea_links_and_sources_are_addable_from_the_panel(server) -> None:
+    client, _ = server
+    _, body = client.post("/api/ideas/capture", {"title": "Linked thought", "kind": "concept"})
+    first = json.loads(body)["idea"]
+    _, body = client.post("/api/ideas/capture", {"title": "Other thought", "kind": "concept"})
+    second = json.loads(body)["idea"]
+
+    status, _ = client.post("/api/ideas/relationship", {
+        "idea_id": first["id"], "target_type": "idea", "target_ref": second["id"],
+        "relation_type": "builds_on"})
+    assert status == 200
+    detail = json.loads(client.get(f"/api/ideas/item?id={first['id']}")[1])["idea"]
+    assert [(r["relation_type"], r["target_ref"]) for r in detail["relationships"]] == [
+        ("builds_on", second["id"])]
+
+    # the map read model carries the new link, so the canvas can draw it
+    graph = json.loads(client.get("/api/ideas/map?features=0")[1])
+    assert any(e["source"] == f"idea:{first['id']}" and e["target"] == f"idea:{second['id']}"
+               and e["type"] == "builds_on" for e in graph["edges"])
+
+    status, body = client.post("/api/ideas/relationship", {
+        "idea_id": first["id"], "target_type": "idea", "target_ref": second["id"],
+        "relation_type": "sorcery"})
+    assert status == 400 and "relation_type must be one of" in json.loads(body)["error"]
+
+    status, _ = client.post("/api/ideas/source", {
+        "idea_id": first["id"], "title": "Voice note", "content": "Said it out loud.",
+        "source_type": "transcript"})
+    assert status == 200
+    detail = json.loads(client.get(f"/api/ideas/item?id={first['id']}")[1])["idea"]
+    assert [(s["source_type"], s["title"]) for s in detail["sources"]] == [
+        ("transcript", "Voice note")]
+
+
+def test_idea_search_and_filters_run_server_side(server) -> None:
+    client, _ = server
+    _, body = client.post("/api/ideas/capture", {
+        "title": "Filterable experiment", "overview": "Kingfisher marker.",
+        "kind": "experiment"})
+    mine = json.loads(body)["idea"]
+    client.post("/api/ideas/update", {"id": mine["id"], "status": "promising"})
+
+    rows = json.loads(client.get("/api/ideas?kind=experiment")[1])["ideas"]
+    assert mine["id"] in [r["id"] for r in rows] and {r["kind"] for r in rows} == {"experiment"}
+
+    rows = json.loads(client.get("/api/ideas?status=promising")[1])["ideas"]
+    assert mine["id"] in [r["id"] for r in rows] and {r["status"] for r in rows} == {"promising"}
+
+    # full text reaches the overview, not just the title, and filters compose with it
+    assert [r["id"] for r in json.loads(client.get("/api/ideas?q=kingfisher")[1])["ideas"]
+            ] == [mine["id"]]
+    assert json.loads(client.get("/api/ideas?q=kingfisher&kind=tool")[1])["ideas"] == []
+
+    # the rail's Activity tab reads the audit trail the same request already carries
+    assert json.loads(client.get("/api/ideas")[1])["events"]
+
+
+def test_idea_candidate_merge_folds_into_an_existing_idea(server) -> None:
+    from cms.ideas import default_journal
+
+    client, _ = server
+    _, body = client.post("/api/ideas/capture", {"title": "Home for merges", "kind": "concept"})
+    home = json.loads(body)["idea"]
+    candidate = default_journal().propose_candidate(
+        "Near duplicate", "Says the same thing again.", actor_kind="model")
+
+    status, body = client.post("/api/ideas/candidate", {
+        "id": candidate["id"], "verdict": "merged", "merge_into": home["id"]})
+    merged = json.loads(body)["candidate"]
+    assert status == 200
+    assert merged["status"] == "merged" and merged["accepted_idea_id"] == home["id"]
+
+    # the model's words land as evidence on the human's idea, never as a new idea
+    detail = json.loads(client.get(f"/api/ideas/item?id={home['id']}")[1])["idea"]
+    assert [s["source_type"] for s in detail["sources"]] == ["candidate"]
+    listed = json.loads(client.get("/api/ideas?q=duplicate")[1])["ideas"]
+    assert not any(row["title"] == "Near duplicate" for row in listed)
+
+    # a merge with nowhere to land is refused rather than silently parked
+    status, body = client.post("/api/ideas/candidate", {
+        "id": candidate["id"], "verdict": "merged"})
+    assert status == 400 and "merge_into" in json.loads(body)["error"]
 
 
 def test_idea_candidate_decisions_are_explicit(server) -> None:
