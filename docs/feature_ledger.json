@@ -140,6 +140,7 @@
           "tests/test_ui_server.py::test_library_draft_then_publish_is_token_gated",
           "tests/test_ui_server.py::test_library_list_get_export_and_compose",
           "tests/test_ui_server.py::test_library_import_lands_untrusted_and_deprecate_is_gated",
+          "tests/test_ui_server.py::test_library_directory_import_and_human_rating",
           "tests/test_ui_server.py::test_library_rejects_invalid_assets"
         ],
         "manual_verification": "Library screen served at /library: browse, filter, inspect canonical content, publish behind the session code, compose preview with conflict + size warnings."
@@ -155,6 +156,7 @@
       "evidence": {
         "files": [
           "cms/library.py",
+          "cms/library_usage.py",
           "cms/config.py",
           "cms/cli.py",
           "cms/mcp.py",
@@ -174,9 +176,13 @@
           "POST /api/library/status",
           "POST /api/library/compose",
           "POST /api/library/import",
+          "POST /api/library/import-directory",
+          "POST /api/library/rating",
           "MCP list_assets",
           "MCP get_asset",
-          "MCP propose_asset"
+          "MCP propose_asset",
+          "MCP record_asset_use",
+          "MCP get_asset_feedback"
         ],
         "ui": [
           "cms/ui_assets/library.html"
@@ -194,19 +200,23 @@
           "tests/test_library.py::test_version_pin_clash_nearest_wins",
           "tests/test_library.py::test_drafts_excluded_unless_included",
           "tests/test_library.py::test_import_defaults_trust_and_roundtrip",
+          "tests/test_library.py::test_import_skill_directory_keeps_package_resources_out_of_context",
+          "tests/test_library.py::test_mode_is_first_class_and_renders_before_guidance",
+          "tests/test_library_usage.py::test_usage_ledger_keeps_agent_and_human_judgement_separate",
           "tests/test_library.py::test_verify_integrity_catches_tampering",
           "tests/test_mcp.py::test_propose_asset_drafts_only_never_publishes",
           "tests/test_mcp.py::test_propose_asset_revision_leaves_published_content_untouched",
-          "tests/test_mcp.py::test_task_prompt_and_intent_record_asset_versions"
+          "tests/test_mcp.py::test_task_prompt_and_intent_record_asset_versions",
+          "tests/test_mcp.py::test_library_mode_and_use_evidence_tools"
         ],
         "manual_verification": "cms library list/publish/compose/verify run live on this repo; five seed assets published at v1 and composed through `cms prompt --asset atlas-default`."
       },
       "known_limitations": [
         "Built-in assets resolve from the Atlas checkout's skills/ dir; a packaged wheel or CMS.exe needs the dir shipped as package data (see PLAN.md risks).",
-        "Asset selection is manual (explicit refs or a profile). Rule-based and AI-assisted recommendation are deliberately deferred.",
+        "Asset application remains explicit and auditable; skill-selector and model-routing modes guide selection but do not silently override the user's chosen model or context.",
         "Size is estimated from characters (~chars/4), not a real tokenizer."
       ],
-      "last_verified": "2026-07-14"
+      "last_verified": "2026-07-15"
     },
     {
       "feature": "CLIOrchestration",
@@ -1124,6 +1134,46 @@
         "manual_verification": ""
       },
       "known_limitations": [],
+      "last_verified": "2026-07-14"
+    },
+    {
+      "feature": "AnchorDrift",
+      "status": "complete",
+      "evidence": {
+        "files": [
+          "cms/anchor_drift.py",
+          "cms/sentinel/anchor_drift.py",
+          "cms/cli.py",
+          "cms/mcp.py",
+          "cms/ui.py",
+          "cms/ui_assets/index.html"
+        ],
+        "database": [
+          ".memory/graph.json",
+          ".memory/sentinel/findings.json"
+        ],
+        "api": [
+          "GET /api/drift",
+          "MCP get_anchor_drift"
+        ],
+        "ui": [
+          "cms/ui_assets/index.html"
+        ],
+        "tests": [
+          "tests/test_anchor_drift.py::test_summary_symbol_true_positive_and_true_negative",
+          "tests/test_anchor_drift.py::test_connect_without_evidence_and_supported_inverse_link",
+          "tests/test_anchor_drift.py::test_cli_json_is_a_gate",
+          "tests/test_anchor_drift.py::test_sentinel_finding_clears_when_source_matches_again",
+          "tests/test_mcp.py::test_query_and_feature_tools",
+          "tests/test_ui_server.py::test_trust_loop_actions_are_live",
+          "tests/test_ui_server.py::test_notes_update_route_is_reachable_and_trust_commands_are_live"
+        ],
+        "manual_verification": "Live cms app on 127.0.0.1:7721 rendered the file inspector for cms/prompt_export.py with a red Anchor Integrity card: 'The stated intent here no longer matches the code', summary-symbol-drift, content_hash, and line 46."
+      },
+      "known_limitations": [
+        "Only backticked identifiers and conservative snake_case/CamelCase tokens are checked; ambiguous prose is intentionally ignored.",
+        "Static feature coupling cannot prove runtime or conceptual relationships, so unsupported links are low-severity Sentinel findings."
+      ],
       "last_verified": "2026-07-14"
     },
     {

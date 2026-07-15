@@ -465,7 +465,21 @@
   }
   #legend .li { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-2); }
   #legend .sw { width: 8px; height: 8px; border-radius: 50%; }
-  #legend .note { color: var(--ink-3); font-size: 10.5px; margin-top: 3px; }
+  /* the explanatory note is collapsed so it never covers the canvas — it
+     unfurls when the legend is hovered (the "toggle"), leaving only swatches. */
+  #legend.has-note { cursor: help; }
+  #legend .note {
+    color: var(--ink-3); font-size: 10.5px; line-height: 1.5;
+    max-height: 0; opacity: 0; margin-top: 0; overflow: hidden;
+    transition: max-height .2s ease, opacity .16s ease, margin-top .2s ease;
+  }
+  #legend.has-note::after {
+    content: "···"; color: var(--ink-3); font-size: 11px; line-height: 1;
+    letter-spacing: 2px; margin-top: 5px; opacity: .55;
+    transition: opacity .16s ease;
+  }
+  #legend:hover .note { max-height: 140px; opacity: 1; margin-top: 4px; }
+  #legend:hover.has-note::after { opacity: 0; }
 
   #controls { bottom: 16px; right: 16px; display: flex; gap: 6px; }
 
@@ -787,6 +801,47 @@
   }
   .summary strong { color: var(--ink); font-weight: 600; }
   .summary code { font: 11.5px var(--mono); color: #86b6ef; }
+
+  /* trust-loop actions: real Run buttons + inline evidence (impact/verify/align) */
+  .trust-run {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    margin: 14px 0 2px; padding: 7px 15px; border-radius: 8px;
+    background: rgba(57,135,229,0.12); border: 1px solid rgba(57,135,229,0.4);
+    color: #86b6ef; font: 12px var(--font); font-weight: 600;
+    transition: border-color 130ms ease, color 130ms ease, transform 130ms ease;
+  }
+  .trust-run:hover:not(:disabled) { border-color: var(--accent); color: #eaf3ff; transform: translateY(-1px); }
+  .trust-run:disabled { opacity: 0.55; cursor: default; }
+  .trust-hint { color: var(--ink-3); font: 11px var(--mono); margin-top: 9px; word-break: break-all; }
+  #trustResult .tr-group { margin-top: 14px; }
+  #trustResult .tr-group h4 {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--ink-3); font-weight: 600; margin-bottom: 6px;
+  }
+  #trustResult .tr-item { font: 11.5px var(--mono); color: var(--ink-2); padding: 2px 0; word-break: break-all; }
+  #trustResult pre {
+    font: 11px var(--mono); color: var(--ink-2); background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+    max-height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-word; margin-top: 12px;
+  }
+  .tr-badge {
+    display: inline-flex; align-items: center; gap: 6px; font: 11px var(--mono);
+    text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 10px;
+    border-radius: 999px; border: 1px solid;
+  }
+  .tr-badge.pass { color: #0ca30c; border-color: rgba(12,163,12,0.5); }
+  .tr-badge.fail { color: #d03b3b; border-color: rgba(208,59,59,0.55); }
+
+  .drift-card {
+    border: 1px solid var(--border); border-radius: 9px; padding: 11px 12px;
+    background: var(--surface-2); color: var(--ink-2); font-size: 12px; line-height: 1.5;
+  }
+  .drift-card.clean { border-color: rgba(12,163,12,0.35); }
+  .drift-card.alert { border-color: rgba(208,59,59,0.58); background: rgba(208,59,59,0.07); }
+  .drift-card .drift-title { color: var(--ink); font-weight: 650; margin-bottom: 4px; }
+  .drift-card.alert .drift-title { color: #e47777; }
+  .drift-item { border-top: 1px solid var(--border); margin-top: 9px; padding-top: 9px; }
+  .drift-kind { color: #c98500; font: 10px var(--mono); text-transform: uppercase; letter-spacing: .05em; }
 
   .comp {
     border: 1px solid var(--border); border-radius: var(--radius);
@@ -2015,6 +2070,13 @@ function renderTree(node, host, prefix) {
 }
 
 function renderLegend() {
+  _renderLegendBody();
+  // a present note is collapsed by default and unfurls on hover (see #legend css)
+  const el = $("legend");
+  el.classList.toggle("has-note", !!el.querySelector(".note"));
+}
+
+function _renderLegendBody() {
   const el = $("legend");
   el.innerHTML = "";
   if (S.human.on && S.human.res <= 1) {
@@ -2873,6 +2935,7 @@ function renderFeatureInspector(feat) {
       <div class="stat"><div class="v">${exercisedBy.length}</div><div class="k">mapped tests</div></div>
     </div>`;
   if (S.human.on) html += explainSectionHtml();
+  html += driftSectionHtml(feat.id);
   html += fidelitySectionHtml();
   html += intentSectionHtml();
   html += `<div class="i-section"><h3>Test execution evidence (${exercisedBy.length})</h3>` +
@@ -2926,6 +2989,7 @@ function renderFeatureInspector(feat) {
   html += annSectionHtml();
   $("inspector").innerHTML = html;
   initAnnPanel(feat.id, feat.name);
+  initDriftPanel(feat.id);
   initFidelityPanel(feat.name);
   initIntentPanel(feat.name);
   initFlowPanel(feat.name);
@@ -3016,12 +3080,132 @@ function showTrustStage(stage) {
   }
   const selected = S.selected || null;
   const selectedFeature = selected && selected.startsWith("feature:") ? selected.slice(8) : null;
-  const details = {
-    impact: ["Impact", "Check the blast radius before editing", selected ? `cms impact "${selected}"` : "Select a file or feature, then run cms impact <target>"],
-    verify: ["Verify", "Collect execution evidence after the change", selectedFeature ? `cms verify "${selectedFeature}" --refresh` : "cms verify --refresh"],
-    align: ["Align", "Compare the final diff with declared intent", "cms align --scan"],
+  const meta = {
+    impact: {
+      title: "Impact", sub: "Check the blast radius before editing",
+      ready: !!selected, target: selected,
+      cli: selected ? `cms impact "${selected}"` : "cms impact <target>",
+      need: "Select a file or feature node first, then run impact.",
+    },
+    verify: {
+      title: "Verify", sub: "Run the tests that exercise this feature",
+      ready: !!selectedFeature, feature: selectedFeature,
+      cli: selectedFeature ? `cms verify "${selectedFeature}"` : "cms verify <Feature>",
+      need: "Select a feature node first, then run verify.",
+    },
+    align: {
+      title: "Align", sub: "Verdict the working diff against declared intent",
+      ready: true, cli: "cms align", need: "",
+    },
   }[stage];
-  $("inspector").innerHTML = `<div class="i-kind">Trust loop · ${details[0]}</div><div class="i-name">${details[1]}</div><div class="summary">Next evidence action:<br><br><code>${esc(details[2])}</code></div>`;
+
+  const action = meta.ready
+    ? `<button class="trust-run" id="trustRun">Run ${esc(stage)}</button>`
+    : `<div class="summary" style="margin-top:14px">${esc(meta.need)}</div>`;
+  $("inspector").innerHTML =
+    `<div class="i-kind">Trust loop · ${esc(meta.title)}</div>` +
+    `<div class="i-name">${esc(meta.sub)}</div>` +
+    action +
+    `<div class="trust-hint">≡ ${esc(meta.cli)}</div>` +
+    `<div id="trustResult"></div>`;
+  const runBtn = $("trustRun");
+  if (runBtn) runBtn.onclick = () => runTrustAction(stage, meta);
+}
+
+async function runTrustAction(stage, meta) {
+  const btn = $("trustRun"), out = $("trustResult");
+  if (btn) { btn.disabled = true; btn.textContent = "running…"; }
+  out.innerHTML = `<div class="summary" style="margin-top:16px">Running <code>${esc(meta.cli)}</code> …</div>`;
+  try {
+    let data;
+    if (stage === "impact") {
+      data = await (await fetch("/api/impact?target=" + encodeURIComponent(meta.target))).json();
+      renderImpactResult(out, data);
+    } else if (stage === "verify") {
+      data = await (await fetch("/api/verify", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feature: meta.feature }),
+      })).json();
+      renderVerifyResult(out, data);
+    } else {
+      data = await (await fetch("/api/align", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })).json();
+      renderAlignResult(out, data);
+    }
+  } catch (e) {
+    out.innerHTML = `<div class="summary" style="margin-top:16px;color:#d03b3b">Failed: ${esc(String(e))}</div>`;
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Run " + stage; }
+  }
+}
+
+function trustError(out, data) {
+  if (data && data.error) {
+    out.innerHTML = `<div class="summary" style="margin-top:16px;color:#d03b3b">${esc(data.error)}</div>`;
+    return true;
+  }
+  return false;
+}
+
+function trGroup(title, items) {
+  if (!items || !items.length) return "";
+  return `<div class="tr-group"><h4>${esc(title)} (${items.length})</h4>` +
+    items.map(i => `<div class="tr-item">${esc(i)}</div>`).join("") + `</div>`;
+}
+
+function renderImpactResult(out, data) {
+  if (trustError(out, data)) return;
+  const groups =
+    trGroup("Functions / classes", data.functions) +
+    trGroup("Files", data.files) +
+    trGroup("Features", data.features) +
+    trGroup("Tests", data.tests);
+  const suggest = (data.tests && data.tests.length)
+    ? `<div class="trust-hint">suggested check: pytest ${esc(data.tests.slice(0,3).map(t => t.split("::")[0]).join(" "))}</div>`
+    : "";
+  out.innerHTML =
+    `<div class="i-section" style="margin-top:18px"><h3>Impact · ${data.total} downstream</h3>` +
+    `<div class="i-path">${esc(data.target)}</div></div>` +
+    (groups || `<div class="summary" style="margin-top:12px">Nothing downstream — changing this is isolated.</div>`) +
+    suggest;
+}
+
+function renderVerifyResult(out, data) {
+  if (trustError(out, data)) return;
+  if (!data.ran) {
+    out.innerHTML = `<div class="summary" style="margin-top:16px">${esc(data.message || "No tests mapped.")}</div>`;
+    return;
+  }
+  const badge = data.passed
+    ? `<span class="tr-badge pass">✓ pass</span>`
+    : `<span class="tr-badge fail">✕ fail</span>`;
+  out.innerHTML =
+    `<div class="i-section" style="margin-top:18px"><h3>Verify · ${esc(data.feature)}</h3>` +
+    `<div style="margin:8px 0">${badge} <span style="color:var(--ink-3);font-size:12px">${data.tests.length} mapped test(s)</span></div></div>` +
+    trGroup("Tests run", data.tests) +
+    (data.output ? `<pre>${esc(data.output)}</pre>` : "");
+}
+
+function renderAlignResult(out, data) {
+  if (trustError(out, data)) return;
+  const v = data.verdict || "unverified";
+  out.innerHTML =
+    `<div class="i-section" style="margin-top:18px">` +
+    `<div style="display:flex;align-items:center;gap:10px"><span class="verdict ${v}">${esc(v)}</span>` +
+    `<span style="color:var(--ink-3);font-size:11px">${esc(data.intent_source || "")}${data.base ? " · base " + esc(data.base) : ""}</span></div>` +
+    `<div class="summary" style="margin-top:10px">${esc(data.headline || "")}</div>` +
+    (data.intent ? `<div class="trust-hint">intent: ${esc(data.intent)}</div>` : "") +
+    `</div>` +
+    trGroup("Changed files", data.changed) +
+    trGroup("Touched features", data.touched_features) +
+    trGroup("Gaps", data.gaps) +
+    trGroup("Sentinel findings",
+      (data.findings || []).map(f => `[${f.severity}] ${f.file} — ${f.summary}`)) +
+    ((data.tests_to_run && data.tests_to_run.length)
+      ? `<div class="trust-hint">prove it landed: pytest ${esc(data.tests_to_run.slice(0,8).join(" "))}</div>`
+      : "");
 }
 
 function mdLite(text) {
@@ -3037,6 +3221,36 @@ function anchorChips(anchors) {
     for (const v of vals) html += `<span class="chip"><span class="ck">${esc(k)}</span>${esc(v)}</span>`;
   }
   return html + `</div></div>`;
+}
+
+function driftSectionHtml(target) {
+  return `<div class="i-section"><h3>Anchor integrity</h3>` +
+    `<div class="drift-card" data-drift-target="${esc(target)}">Checking the stated intent against current code evidence…</div></div>`;
+}
+
+async function initDriftPanel(target) {
+  const host = document.querySelector(`[data-drift-target="${CSS.escape(target)}"]`);
+  if (!host) return;
+  try {
+    const response = await fetch("/api/drift?target=" + encodeURIComponent(target));
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || `HTTP ${response.status}`);
+    const findings = data.findings || [];
+    if (!findings.length) {
+      host.className = "drift-card clean";
+      host.innerHTML = `<div class="drift-title">No high-confidence anchor drift found</div>` +
+        `<div>Atlas found no stale summary symbols or unsupported declared links here.</div>`;
+      return;
+    }
+    host.className = "drift-card alert";
+    host.innerHTML = `<div class="drift-title">The stated intent here no longer matches the code</div>` +
+      `<div>${findings.length} high-confidence mismatch${findings.length === 1 ? "" : "es"}. Review the anchor before trusting it.</div>` +
+      findings.map(f => `<div class="drift-item"><div class="drift-kind">${esc(f.kind)}</div>` +
+        `<div>${esc(f.message)}</div>` +
+        (f.path ? `<div class="i-path">${esc(f.path)}${f.line ? ":" + f.line : ""}</div>` : "") + `</div>`).join("");
+  } catch (error) {
+    host.innerHTML = `<div class="drift-title">Anchor check unavailable</div><div>${esc(String(error))}</div>`;
+  }
 }
 
 function fileLink(id) {
@@ -3079,6 +3293,7 @@ function renderInspector(fileId) {
   }
 
   html += anchorChips(a.anchors);
+  html += driftSectionHtml(fileId);
 
   if (S.human.on) html += explainSectionHtml();
   if (a.summary) {
@@ -3116,6 +3331,7 @@ function renderInspector(fileId) {
   html += annSectionHtml();
   $("inspector").innerHTML = html;
   initAnnPanel(fileId, null);
+  initDriftPanel(fileId);
   if (S.human.on) initExplain(fileId);
   const vb = document.querySelector("#inspector .i-view");
   if (vb) vb.onclick = () => openViewer(vb.dataset.viewpath, vb.dataset.viewlang);
@@ -3550,7 +3766,7 @@ const activityAudit = { events: [] };
 const TOOL_LEVEL = {
   query_codebase: ["graph", "#3987e5"], list_features: ["graph", "#3987e5"],
   get_feature_trace: ["graph", "#3987e5"], who_calls: ["graph", "#3987e5"],
-  who_imports: ["graph", "#3987e5"], get_impact: ["graph", "#3987e5"],
+  who_imports: ["graph", "#3987e5"], get_impact: ["graph", "#3987e5"], get_anchor_drift: ["graph", "#c98500"],
   get_file_summary: ["summary", "#199e70"], get_source: ["source", "#c98500"],
 };
 

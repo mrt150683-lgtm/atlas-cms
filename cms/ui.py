@@ -206,6 +206,10 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._semantic()
                 elif url.path == "/api/query":
                     self._query(query)
+                elif url.path == "/api/impact":
+                    self._impact(query)
+                elif url.path == "/api/drift":
+                    self._drift(query)
                 elif url.path == "/api/activity":
                     self._activity(query)
                 elif url.path == "/api/prompt":
@@ -278,13 +282,18 @@ def make_handler(root: Path, cache: _MemoryCache):
                         self._error(403, "flow review is disabled (CMS_FLOW_REVIEW=0)")
                         return
                     self._flowreview_post(body)
+                elif url.path == "/api/verify":
+                    self._verify(body)
+                elif url.path == "/api/align":
+                    self._align(body)
                 elif url.path == "/api/feature/discover":
                     self._feature_discover(body)
                 elif url.path == "/api/feature/confirm":
                     self._feature_confirm(body)
                 elif url.path in ("/api/library/asset", "/api/library/publish",
                                   "/api/library/status", "/api/library/compose",
-                                  "/api/library/import", "/api/library/register"):
+                                  "/api/library/import", "/api/library/register",
+                                  "/api/library/import-directory", "/api/library/rating"):
                     self._library_post(url.path, body)
                 elif url.path == "/api/scope":
                     self._scope_set(body)
@@ -821,18 +830,24 @@ def make_handler(root: Path, cache: _MemoryCache):
 
         def _library_list(self, query: dict) -> None:
             from .library import LibraryView
+            from .library_usage import LibraryUsageStore
 
             def one(key):
                 return (query.get(key) or [None])[0] or None
 
             view = LibraryView(root)
-            self._json({"assets": view.list(type=one("type"), tag=one("tag"),
-                                            status=one("status"), scope=one("scope"),
-                                            q=one("q")),
+            rows = view.list(type=one("type"), tag=one("tag"),
+                             status=one("status"), scope=one("scope"), q=one("q"))
+            summaries = LibraryUsageStore(memory_dir).summaries()
+            for row in rows:
+                row["evidence"] = summaries.get(
+                    row["id"], {"uses": 0, "human": {"ratings": 0}})
+            self._json({"assets": rows,
                         "types": list(_ASSET_TYPES), "scopes": [s.scope for s in view.stores]})
 
         def _library_asset(self, query: dict) -> None:
             from .library import LibraryError, LibraryView
+            from .library_usage import LibraryUsageStore
 
             asset_id = (query.get("id") or [""])[0]
             raw_version = (query.get("version") or [""])[0]
@@ -849,7 +864,8 @@ def make_handler(root: Path, cache: _MemoryCache):
                     target=f"asset:{asset_id}")
             except Exception:
                 pass
-            self._json({"asset": asset, "annotations": annotations})
+            self._json({"asset": asset, "annotations": annotations,
+                        "evidence": LibraryUsageStore(memory_dir).summary(asset_id)})
 
         def _library_export(self, query: dict) -> None:
             from .library import LibraryError, export_asset
@@ -870,6 +886,7 @@ def make_handler(root: Path, cache: _MemoryCache):
                 LibraryView,
                 compose_context,
                 import_asset,
+                import_skill_directory,
                 serialize_asset,
                 slugify,
                 validate_meta,
@@ -877,6 +894,16 @@ def make_handler(root: Path, cache: _MemoryCache):
 
             scope = str(body.get("scope") or "project")
             try:
+                if path.endswith("/rating"):
+                    from .library_usage import LibraryUsageStore
+                    rated = LibraryUsageStore(memory_dir).rate(
+                        str(body.get("use_id") or ""), rating=body.get("rating"),
+                        effectiveness=body.get("effectiveness"),
+                        efficiency=body.get("efficiency"), comment=body.get("comment"),
+                        rated_by="user")
+                    self._json(rated)
+                    return
+
                 if path.endswith("/compose"):
                     selection = [str(r) for r in (body.get("selection") or [])]
                     self._json(compose_context(
@@ -914,6 +941,13 @@ def make_handler(root: Path, cache: _MemoryCache):
                     rec = store.register_file(
                         str(body.get("id") or ""),
                         created_by={"kind": "user", "identity": "viewer", "via": "http"})
+                elif path.endswith("/import-directory"):
+                    result = import_skill_directory(
+                        root, str(body.get("directory") or ""), scope=scope,
+                        source_name=str(body.get("source_name") or ""),
+                        created_by={"kind": "user", "identity": "viewer", "via": "http"})
+                    self._json(result)
+                    return
                 elif path.endswith("/import"):
                     rec = import_asset(root, str(body.get("content") or ""),
                                        scope=scope,
@@ -936,7 +970,7 @@ def make_handler(root: Path, cache: _MemoryCache):
                     rec = store.save_draft(
                         str(text),
                         created_by={"kind": "user", "identity": "viewer", "via": "http"})
-            except LibraryError as exc:
+            except (LibraryError, ValueError) as exc:
                 self._error(400, str(exc))
                 return
             self._json({"asset": rec})
@@ -988,6 +1022,94 @@ def make_handler(root: Path, cache: _MemoryCache):
                 return
             results = memory.query_intent(text, top_k=top_k)
             self._json({"results": [asdict(r) for r in results]})
+
+        # ── trust-loop actions (impact / verify / align run from the UI) ──
+
+        def _impact(self, query: dict) -> None:
+            """Blast radius of a target — pure graph traversal, no LLM."""
+            target = (query.get("target") or [""])[0].strip()
+            if not target:
+                self._json({"error": "no target given"}, 400)
+                return
+            memory = cache.get()
+            if memory is None:
+                self._json({"error": "no graph.json — run `cms run-all` first"}, 404)
+                return
+            from .impact import analyze_impact
+
+            result = analyze_impact(memory.graph, target)
+            if result is None:
+                self._json({"error": f"could not resolve {target!r} in the graph"}, 404)
+                return
+            data = asdict(result)
+            data["total"] = result.total
+            self._json(data)
+
+        # @memory:feature:AnchorDrift
+        # @memory:feature:MemoryViewer
+        # @memory:summary:Serves the current anchor-integrity report to the file and feature inspectors.
+        def _drift(self, query: dict) -> None:
+            """Per-anchor intent integrity, computed from current source and graph evidence."""
+            target = (query.get("target") or [""])[0].strip() or None
+            memory = cache.get()
+            if memory is None:
+                self._json({"error": "no graph.json — run `cms run-all` first"}, 404)
+                return
+            from .anchor_drift import detect_anchor_drift
+
+            try:
+                report = detect_anchor_drift(memory.graph, root, target=target)
+            except ValueError as exc:
+                self._json({"error": str(exc)}, 404)
+                return
+            self._json(report.to_dict())
+
+        def _verify(self, body: dict) -> None:
+            """Run exactly the tests mapped as exercising one feature."""
+            feature = str(body.get("feature") or "").strip()
+            if not feature:
+                self._json({"error": "select a feature first, then run verify"}, 400)
+                return
+            memory = cache.get()
+            if memory is None:
+                self._json({"error": "no graph.json — run `cms run-all` first"}, 404)
+                return
+            from .features import get_features
+
+            matches = [f for f in get_features(memory.graph)
+                       if f["name"].lower() == feature.lower()]
+            if not matches:
+                self._json({"error": f"unknown feature {feature!r}"}, 404)
+                return
+            name = matches[0]["name"]
+            tests = matches[0].get("exercised_by") or []
+            if not tests:
+                self._json({"feature": name, "ran": False, "tests": [],
+                            "message": "No tests are mapped to this feature yet — run "
+                                       "`cms verify` (no args) to collect coverage first."})
+                return
+            from .verify import verify_feature
+
+            passed, output = verify_feature(root, tests)
+            self._json({"feature": name, "ran": True, "passed": passed,
+                        "tests": tests, "output": output})
+
+        def _align(self, body: dict) -> None:
+            """Capture intent and verdict the working diff against it."""
+            memory = cache.get()
+            if memory is None:
+                self._json({"error": "no graph.json — run `cms run-all` first"}, 404)
+                return
+            from .align import AlignStore, build_alignment
+            from .intent import capture_intent
+
+            goal = str(body.get("goal") or "").strip() or None
+            base = str(body.get("base") or "HEAD") or "HEAD"
+            scan = bool(body.get("scan"))
+            pack = capture_intent(root, goal=goal, base=base)
+            record = build_alignment(memory, root, pack, base=base, scan=scan)
+            AlignStore(memory_dir).save_alignment(record)
+            self._json(record)
 
         def _activity(self, query: dict) -> None:
             import time as _time

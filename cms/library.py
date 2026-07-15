@@ -45,9 +45,10 @@ SCHEMA_VERSION = 1
 # members, contributing only a preamble of their own.
 ASSET_TYPES: dict[str, dict] = {
     "constraint": {"composite": False, "order": 0},
-    "preference": {"composite": False, "order": 1},
-    "strategy": {"composite": False, "order": 2},
-    "skill": {"composite": False, "order": 3},
+    "mode": {"composite": False, "order": 1},
+    "preference": {"composite": False, "order": 2},
+    "strategy": {"composite": False, "order": 3},
+    "skill": {"composite": False, "order": 4},
     "profile": {"composite": True, "order": None},
 }
 
@@ -57,10 +58,11 @@ SCOPES = ("built-in", "user", "project")  # ascending precedence
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{2,63}$")
 _REF_RE = re.compile(r"^([a-z0-9][a-z0-9-]{2,63})(?:@(\d+))?$")
-_LIST_FIELDS = ("tags", "requires", "conflicts_with", "assets")
+_LIST_FIELDS = ("tags", "requires", "conflicts_with", "assets", "excluded_context")
 # canonical frontmatter order for serialization / hashing
 _FRONT_ORDER = ("id", "name", "type", "description",
-                "tags", "requires", "conflicts_with", "assets")
+                "tags", "requires", "conflicts_with", "assets", "source",
+                "source_path", "resource_root", "excluded_context")
 
 
 class LibraryError(ValueError):
@@ -110,18 +112,34 @@ def parse_asset_text(text: str) -> tuple[dict, str]:
         raise LibraryError("asset file must start with a `---` frontmatter fence")
     meta: dict = {}
     end = None
-    for i, line in enumerate(lines[1:], start=1):
+    i = 1
+    while i < len(lines):
+        line = lines[i]
         if line.strip() == "---":
             end = i
             break
         if not line.strip() or line.lstrip().startswith("#"):
+            i += 1
             continue
         key, sep, value = line.partition(":")
         if not sep or not key.strip():
             raise LibraryError(f"frontmatter line {i + 1} is not `key: value`: {line!r}")
         key = key.strip().lower()
         value = value.strip()
+        if value in ("|", "|-", "|+", ">", ">-", ">+"):
+            style = value[0]
+            block: list[str] = []
+            i += 1
+            while i < len(lines):
+                candidate = lines[i]
+                if candidate.strip() == "---" or (candidate.strip() and not candidate[:1].isspace()):
+                    break
+                block.append(candidate.strip())
+                i += 1
+            meta[key] = ("\n" if style == "|" else " ").join(block).strip()
+            continue
         meta[key] = _parse_list(value) if key in _LIST_FIELDS else value.strip('"').strip("'")
+        i += 1
     if end is None:
         raise LibraryError("frontmatter fence `---` is never closed")
     body = "\n".join(lines[end + 1:]).strip("\n")
@@ -170,6 +188,13 @@ def validate_meta(meta: dict) -> dict:
         clean["assets"] = members[:40]
     elif members:
         raise LibraryError("only profiles carry an `assets` member list")
+    for field in ("source", "source_path", "resource_root"):
+        value = str(meta.get(field) or "").strip()
+        if value:
+            clean[field] = value
+    excluded = [str(v).strip() for v in (meta.get("excluded_context") or []) if str(v).strip()]
+    if excluded:
+        clean["excluded_context"] = excluded[:40]
     for key, value in meta.items():
         if key not in _FRONT_ORDER and isinstance(value, (str, list)):
             clean[key] = value  # preserved verbatim, never interpreted
@@ -760,6 +785,10 @@ class LibraryView:
                 "name": loaded["meta"]["name"],
                 "description": loaded["meta"]["description"],
                 "conflicts_with": loaded["meta"].get("conflicts_with", []),
+                "source": loaded["meta"].get("source", ""),
+                "source_path": loaded["meta"].get("source_path", ""),
+                "resource_root": loaded["meta"].get("resource_root", ""),
+                "excluded_context": loaded["meta"].get("excluded_context", []),
                 "content": loaded["body"], "draft": loaded["draft"],
             })
 
@@ -822,6 +851,10 @@ def render_assets(result: dict, flavor: str = "markdown") -> str:
         version = f"v{asset['version']}" if asset.get("version") else "draft"
         lines.append(f"### [{asset['type']}] {asset['name']} "
                      f"({asset['id']}@{version}, {asset['scope']}, {asset['trust']})")
+        if asset.get("resource_root"):
+            lines.append(f"> Package resources: `{asset['resource_root']}`. Resolve relative "
+                         "scripts, references, templates, and assets from this directory; "
+                         "excluded-context files are provenance-only.")
         if asset.get("content"):
             lines.append(asset["content"])
         lines.append("")
@@ -843,6 +876,63 @@ def import_asset(root: Path, text: str, *, scope: str = "project",
                            "delete it or import under a different id")
     return store.save_draft(serialize_asset(clean, body), created_by=created_by,
                             trust="imported")
+
+
+def import_skill_directory(root: Path, directory: str | Path, *,
+                           scope: str = "project", source_name: str = "",
+                           created_by: dict | None = None) -> dict:
+    """Register every immediate ``*/SKILL.md`` package in a project directory.
+
+    The packages stay in place so their scripts, references, templates, and
+    assets remain usable.  Licence/notices are retained on disk for provenance
+    but named as excluded context so they are never injected into agent prompts.
+    Imports are drafts with ``imported`` trust; existing ids are reported and
+    skipped rather than overwritten.
+    """
+    project_root = Path(root).resolve()
+    source = Path(directory)
+    if not source.is_absolute():
+        source = project_root / source
+    source = source.resolve()
+    if source != project_root and project_root not in source.parents:
+        raise LibraryError("skill package directory must be inside the project root")
+    if not source.is_dir():
+        raise LibraryError(f"skill package directory does not exist: {source}")
+    package_root = source / "skills" if (source / "skills").is_dir() else source
+
+    view = LibraryView(project_root)
+    store = view.store(scope)
+    imported: list[dict] = []
+    skipped: list[dict] = []
+    problems: list[dict] = []
+    excluded = ["LICENSE*", "LICENCE*", "COPYING*", "NOTICE*", "OFL*.txt"]
+    source_label = str(source_name or source.name).strip()
+
+    for skill_dir in sorted((path for path in package_root.iterdir() if path.is_dir()),
+                            key=lambda path: path.name.lower()):
+        skill_file = skill_dir / "SKILL.md"
+        if not skill_file.is_file() or skill_dir.name.lower() == "template":
+            continue
+        try:
+            text = skill_file.read_text(encoding="utf-8")
+            meta, body = parse_asset_text(text)
+            meta = dict(meta)
+            meta["source"] = source_label
+            meta["source_path"] = skill_file.relative_to(project_root).as_posix()
+            meta["resource_root"] = skill_dir.relative_to(project_root).as_posix()
+            meta["excluded_context"] = excluded
+            clean = normalize_meta(meta, fallback_id=skill_dir.name.replace("_", "-"))
+            if store.get(clean["id"]) is not None:
+                skipped.append({"id": clean["id"], "reason": "already-exists"})
+                continue
+            rec = store.save_draft(serialize_asset(clean, body), created_by=created_by,
+                                   trust="imported")
+            imported.append({"id": rec["id"], "resource_root": clean["resource_root"]})
+        except (LibraryError, OSError) as exc:
+            problems.append({"package": skill_dir.name, "problem": str(exc)})
+    return {"source": source_label, "scope": scope, "imported": imported,
+            "skipped": skipped, "problems": problems,
+            "excluded_context": excluded}
 
 
 def export_asset(root: Path, asset_id: str, version: int | None = None) -> str:

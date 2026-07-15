@@ -14,6 +14,7 @@ from cms.library import (
     edit_published_guard,
     export_asset,
     import_asset,
+    import_skill_directory,
     new_asset_template,
     parse_asset_text,
     parse_ref,
@@ -440,3 +441,48 @@ def test_compose_context_module_helper(env):
     result = compose_context(env.project, ["helper-skill"])
     a = result["assets"][0]
     assert {"id", "version", "content_hash", "scope", "trust"} <= set(a)
+
+
+def test_mode_is_first_class_and_renders_before_guidance(env):
+    mode = _publish(env, "focus-mode", _asset("focus-mode", type="mode"))
+    skill = _publish(env, "build-skill", _asset("build-skill"))
+    result = compose_context(env.project, [skill["id"], mode["id"]])
+    assert [row["type"] for row in result["assets"]] == ["mode", "skill"]
+    assert new_asset_template("routing-mode", "mode")
+
+
+def test_frontmatter_block_description_is_supported():
+    meta, body = parse_asset_text("""---
+name: claude-api
+description: |-
+  First trigger sentence.
+  Second trigger sentence.
+---
+Body
+""")
+    assert meta["description"] == "First trigger sentence.\nSecond trigger sentence."
+    assert body == "Body"
+
+
+def test_import_skill_directory_keeps_package_resources_out_of_context(env):
+    package = env.project / "vendor" / "skills" / "specialist"
+    (package / "scripts").mkdir(parents=True)
+    (package / "scripts" / "check.py").write_text("print('ok')", encoding="utf-8")
+    (package / "LICENSE.txt").write_text("licence prose", encoding="utf-8")
+    (package / "SKILL.md").write_text("""---
+name: Specialist
+description: Uses its attached checker.
+---
+# Specialist
+Run `scripts/check.py`.
+""", encoding="utf-8")
+
+    result = import_skill_directory(env.project, "vendor", source_name="World class pack")
+    assert [row["id"] for row in result["imported"]] == ["specialist"]
+    assert result["problems"] == []
+    composed = compose_context(env.project, ["specialist"], include_drafts=True)
+    asset = composed["assets"][0]
+    assert asset["resource_root"] == "vendor/skills/specialist"
+    rendered = render_assets(composed)
+    assert "Package resources" in rendered
+    assert "licence prose" not in rendered

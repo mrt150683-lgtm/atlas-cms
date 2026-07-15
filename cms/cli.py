@@ -286,6 +286,45 @@ def impact(
 
 
 @app.command()
+def drift(
+    root: Path = RootOption,
+    target: str = typer.Option(None, "--target", "-t", help="Optional file, node id, or feature to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Print the anchor-drift report as JSON."),
+) -> None:
+    """Gate on high-confidence drift in developer-authored @memory anchors."""
+    from .anchor_drift import detect_anchor_drift
+
+    graph_path = _memory_dir(root) / "graph.json"
+    if not graph_path.is_file():
+        typer.echo("No graph.json — run `cms run-all` first.", err=True)
+        raise typer.Exit(1)
+    try:
+        report = detect_anchor_drift(CodebaseMemory.load(graph_path).graph, root, target=target)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+    data = report.to_dict()
+    if as_json:
+        typer.echo(json.dumps(data, indent=2))
+    elif not report.findings:
+        typer.echo("No high-confidence anchor drift found.")
+    else:
+        typer.echo(f"Anchor Drift: {len(report.findings)} high-confidence finding(s)")
+        current = None
+        for finding in report.findings:
+            node = finding.node_id
+            if node != current:
+                typer.echo(f"\n  {node}")
+                current = node
+            location = f"{finding.path}:{finding.line}" if finding.path and finding.line else finding.path
+            suffix = f" [{location}]" if location else ""
+            typer.echo(f"    - {finding.kind}{suffix}: {finding.message}")
+        typer.echo("\nThe stated intent here no longer matches the code. Review the anchor before trusting it.")
+    if report.high_confidence_count:
+        raise typer.Exit(1)
+
+
+@app.command()
 def update(
     root: Path = RootOption,
     provider: str = typer.Option(None, "--provider", "-p", help="anthropic | openai | mock"),

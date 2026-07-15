@@ -146,6 +146,41 @@ def test_graph_tree_query_endpoints(server) -> None:
     assert any(h["node_id"] == "func:app.py::greet" for h in hits)
 
 
+def test_trust_loop_actions_are_live(server) -> None:
+    """Impact/verify/align run as real endpoints behind the trust-loop buttons."""
+    client, _ = server
+
+    # impact: pure-graph blast radius for a resolvable target
+    status, body = client.get("/api/impact?target=func:app.py::greet")
+    assert status == 200
+    imp = json.loads(body)
+    assert "total" in imp and isinstance(imp["features"], list)
+
+    # an unresolvable target is a clean 404, not a 500
+    status, _ = client.get("/api/impact?target=feature:DoesNotExist")
+    assert status == 404
+
+    # verify: a feature with no mapped tests reports honestly instead of running
+    status, body = client.post("/api/verify", {"feature": "Greeting"})
+    assert status == 200
+    v = json.loads(body)
+    assert v["ran"] is False and "No tests are mapped" in v["message"]
+    status, _ = client.post("/api/verify", {"feature": "NoSuchFeature"})
+    assert status == 404
+
+    # align: verdicts the working tree (a non-git tmp project has no changes)
+    status, body = client.post("/api/align", {})
+    assert status == 200
+    rec = json.loads(body)
+    assert rec["verdict"] in ("aligned", "partial", "drift", "unverified")
+
+    # drift: the same deterministic anchor check used by CLI/MCP/Sentinel
+    status, body = client.get("/api/drift?target=feature:Greeting")
+    assert status == 200
+    drift = json.loads(body)
+    assert drift["target"] == "feature:Greeting" and isinstance(drift["findings"], list)
+
+
 def test_source_endpoint_and_traversal_guard(server) -> None:
     client, _ = server
     _, body = client.get("/api/source?path=app.py")
@@ -332,8 +367,12 @@ def test_notes_update_route_is_reachable_and_trust_commands_are_live() -> None:
 
     assert 'fetch("/api/notes/update"' in html
     assert "function editNote(id)" in html
-    assert '"cms align --scan"' in html
-    assert "cms align run" not in html
+    # the trust-loop stages are live one-click actions, not copy-paste command text
+    assert "function runTrustAction(stage" in html
+    assert '"/api/impact?target="' in html
+    assert 'fetch("/api/verify"' in html and 'fetch("/api/align"' in html
+    assert 'fetch("/api/drift?target="' in html
+    assert "The stated intent here no longer matches the code" in html
     assert "chat unavailable" in html
     # invalid/stale judgment banners exist
     assert "not valid semantic output" in html and "valid but frozen" in html
@@ -837,7 +876,8 @@ def test_library_page_and_nav_entry(server) -> None:
     status, body = client.get("/library")
     assert status == 200 and b'id="rows"' in body
     page = body.decode("utf-8")
-    for el in ("btnNew", "btnImport", "compose", "lensBtn", "editDlg", "importDlg"):
+    for el in ("btnNew", "btnImport", "compose", "lensBtn", "editDlg", "importDlg",
+               "fDirectory"):
         assert f'id="{el}"' in page, f"missing {el}"
     assert "data-lens" in page                      # asset prose flows through the lens
     assert '"/api/library/compose"' in page
@@ -933,6 +973,36 @@ def test_library_import_lands_untrusted_and_deprecate_is_gated(server) -> None:
     row = next(a for a in json.loads(body)["assets"] if a["id"] == "house-rules")
     assert row["enabled_effective"] is False
     client.post("/api/library/status", {"id": "house-rules", "status": "enabled"})
+
+
+def test_library_directory_import_and_human_rating(server) -> None:
+    from cms.library_usage import LibraryUsageStore
+
+    client, root = server
+    package = root / "vendor" / "skills" / "specialist"
+    (package / "scripts").mkdir(parents=True)
+    (package / "SKILL.md").write_text(
+        "---\nname: specialist\ndescription: Attached package.\n---\n\nUse scripts/check.py.",
+        encoding="utf-8")
+    (package / "LICENSE.txt").write_text("licence prose", encoding="utf-8")
+
+    status, body = client.post("/api/library/import-directory", {"directory": "vendor"})
+    result = json.loads(body)
+    assert status == 200 and result["problems"] == []
+    assert result["imported"][0]["id"] == "specialist"
+    _, body = client.get("/api/library/asset?id=specialist")
+    assert json.loads(body)["asset"]["meta"]["resource_root"] == "vendor/skills/specialist"
+
+    event = LibraryUsageStore(root / ".memory").record(
+        [{"id": "specialist", "version": 1, "content_hash": "abc",
+          "scope": "project", "trust": "imported", "type": "skill"}],
+        task="Try the specialist", outcome="success", effectiveness=4)
+    status, body = client.post("/api/library/rating", {
+        "use_id": event["id"], "rating": 5, "comment": "Useful package"})
+    assert status == 200 and json.loads(body)["feedback"]["rating"] == 5
+    _, body = client.get("/api/library/asset?id=specialist")
+    evidence = json.loads(body)["evidence"]
+    assert evidence["uses"] == 1 and evidence["human"]["rating"] == 5.0
 
 
 def test_library_rejects_invalid_assets(server) -> None:

@@ -18,6 +18,7 @@ from pathlib import Path
 
 from . import config
 from .activity import log_activity
+from .anchor_drift import detect_anchor_drift
 from .config import LANGUAGE_BY_EXTENSION
 from .impact import analyze_impact
 from .memory import CodebaseMemory
@@ -86,6 +87,16 @@ TOOLS = [
             "type": "object",
             "properties": {"target": {"type": "string"}},
             "required": ["target"],
+        },
+    },
+    {
+        "name": "get_anchor_drift",
+        "description": "Find high-confidence drift in @memory summaries and declared feature connections. Deterministic and LLM-free; omit target for the whole project.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "Optional file path, canonical node id, or feature name."},
+            },
         },
     },
     {
@@ -283,11 +294,11 @@ TOOLS = [
     },
     {
         "name": "list_assets",
-        "description": "The Library: reusable, versioned agent-context assets (skills, strategies, preferences, constraints, and profiles that compose them). Use it to find the right specialist context for a task instead of guessing — then load it with get_asset, or pass the ids to export_task_prompt/declare_intent so your working context (and its exact versions) is recorded.",
+        "description": "The Library: reusable, versioned agent-context assets (skills, strategies, preferences, constraints, behavioural modes, and profiles). Find the right specialist context using use/rating evidence when available, then load it with get_asset or record it in a task intent.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "type": {"type": "string", "description": "Filter: skill | strategy | preference | constraint | profile."},
+                "type": {"type": "string", "description": "Filter: skill | strategy | preference | constraint | mode | profile."},
                 "tag": {"type": "string", "description": "Filter by tag."},
                 "status": {"type": "string", "description": "Filter: draft | published | deprecated."},
                 "q": {"type": "string", "description": "Substring over id/name/description/tags."},
@@ -308,12 +319,12 @@ TOOLS = [
     },
     {
         "name": "propose_asset",
-        "description": "Propose a NEW Library asset (or a revision of one, by reusing its id) as a DRAFT — reusable knowledge you learned that is worth keeping: a skill, strategy, preference or constraint. Drafts are provenance-stamped as agent-authored and never enter an agent's context until a human publishes them in the Library screen. You cannot publish: publishing is human-only. To comment on an existing asset instead, use add_annotation with target 'asset:<id>'.",
+        "description": "Propose a NEW Library asset (or a revision of one, by reusing its id) as a DRAFT — reusable knowledge worth keeping as a skill, strategy, preference, constraint, or behavioural mode. Publishing is human-only.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Human title, e.g. 'React Component Conventions'."},
-                "type": {"type": "string", "description": "skill | strategy | preference | constraint."},
+                "type": {"type": "string", "description": "skill | strategy | preference | constraint | mode."},
                 "description": {"type": "string", "description": "One line: what it does and when to load it."},
                 "content": {"type": "string", "description": "The canonical agent-facing content (markdown) — the instructions an agent would follow verbatim."},
                 "id": {"type": "string", "description": "Asset id (lowercase slug). Omit for a new asset (derived from the name); pass an existing id to propose a revision of it."},
@@ -323,6 +334,34 @@ TOOLS = [
             },
             "required": ["name", "type", "description", "content"],
         },
+    },
+    {
+        "name": "record_asset_use",
+        "description": "After actually using Library assets, append an evidence event pinned to their exact versions and hashes. Agent effectiveness and efficiency are provisional self-assessments; human ratings remain separate.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "assets": {"type": "array", "items": {"type": "string"}, "description": "Published asset ids or pinned refs actually used."},
+                "task": {"type": "string", "description": "Short description of the work these assets supported."},
+                "outcome": {"type": "string", "description": "success | partial | failure | unknown", "default": "unknown"},
+                "effectiveness": {"type": "integer", "minimum": 1, "maximum": 5},
+                "efficiency": {"type": "integer", "minimum": 1, "maximum": 5},
+                "duration_ms": {"type": "integer", "minimum": 0},
+                "input_tokens": {"type": "integer", "minimum": 0},
+                "output_tokens": {"type": "integer", "minimum": 0},
+                "model": {"type": "string"},
+                "notes": {"type": "string"}
+            },
+            "required": ["assets", "task"]
+        }
+    },
+    {
+        "name": "get_asset_feedback",
+        "description": "Read aggregate and recent effectiveness evidence for one Library asset, or overall. Human ratings and agent self-assessments are reported separately.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"id": {"type": "string", "description": "Optional Library asset id."}}
+        }
     },
 ]
 
@@ -440,6 +479,15 @@ class MCPServer:
         if impact is None:
             return {"error": f"could not resolve {target!r}"}
         return asdict(impact)
+
+    # @memory:feature:AnchorDrift
+    # @memory:feature:AgentMemoryAccess
+    # @memory:summary:Exposes the deterministic anchor-integrity report to agents, optionally scoped to one canonical target.
+    def get_anchor_drift(self, target: str | None = None) -> dict:
+        try:
+            return detect_anchor_drift(self.memory().graph, self.root, target=target).to_dict()
+        except ValueError as exc:
+            return {"error": str(exc)}
 
     def get_review(self, feature: str | None = None) -> dict:
         from .features import get_features
@@ -710,23 +758,27 @@ class MCPServer:
     def list_assets(self, type: str | None = None, tag: str | None = None,
                     status: str | None = None, q: str | None = None) -> dict:
         from .library import LibraryError, LibraryView
+        from .library_usage import LibraryUsageStore
 
         try:
             rows = LibraryView(self.root).list(type=type, tag=tag, status=status, q=q)
         except LibraryError as exc:
             return {"error": str(exc)}
+        summaries = LibraryUsageStore(self.root / config.MEMORY_DIR_NAME).summaries()
         return {"assets": [
             {"id": r["id"], "name": r.get("name"), "type": r.get("type"),
              "description": r.get("description"), "tags": r.get("tags") or [],
              "version": r.get("current_version"), "status": r.get("status"),
              "scope": r.get("scope"), "trust": r.get("trust"),
-             "effective": r.get("effective"), "enabled": r.get("enabled_effective", True)}
+             "effective": r.get("effective"), "enabled": r.get("enabled_effective", True),
+             "evidence": summaries.get(r["id"], {"uses": 0, "human": {"ratings": 0}})}
             for r in rows]}
 
     # @memory:feature:AtlasLibrary
     # @memory:summary:Full canonical content of one Library asset for the agent that must follow it.
     def get_asset(self, id: str, version: int | None = None) -> dict:
         from .library import LibraryError, LibraryView
+        from .library_usage import LibraryUsageStore
 
         try:
             asset = LibraryView(self.root).get(id, version)
@@ -739,6 +791,9 @@ class MCPServer:
             "requires": meta.get("requires") or [],
             "conflicts_with": meta.get("conflicts_with") or [],
             "members": meta.get("assets") or [],
+            "source": meta.get("source"), "source_path": meta.get("source_path"),
+            "resource_root": meta.get("resource_root"),
+            "excluded_context": meta.get("excluded_context") or [],
             "status": asset.get("status"), "scope": asset.get("scope"),
             "trust": asset.get("trust"), "version": asset.get("resolved_version"),
             "draft": asset.get("draft"),
@@ -747,7 +802,47 @@ class MCPServer:
                           "published_by": v.get("published_by")}
                          for v in asset.get("versions") or []],
             "content": asset.get("body"),
+            "evidence": LibraryUsageStore(self.root / config.MEMORY_DIR_NAME).summary(id),
         }}
+
+    # @memory:feature:LibraryFeedbackLoop
+    # @memory:connects:AtlasLibrary, ActivityPulse
+    # @memory:summary:Agents append exact-version Library use evidence and read human ratings separately from their own effectiveness assessment.
+    def record_asset_use(self, assets: list, task: str, outcome: str = "unknown",
+                         effectiveness: int | None = None,
+                         efficiency: int | None = None,
+                         duration_ms: int | None = None,
+                         input_tokens: int | None = None,
+                         output_tokens: int | None = None,
+                         model: str | None = None, notes: str | None = None) -> dict:
+        from .library import LibraryError, LibraryView
+        from .library_usage import LibraryUsageStore
+        from .providers import provider_identity
+
+        try:
+            refs = [str(ref) for ref in assets]
+            result = LibraryView(self.root).compose(refs)
+            if result.get("warnings") or not result.get("assets"):
+                return {"error": "all recorded assets must resolve to enabled published versions",
+                        "composition": result}
+            ident = provider_identity()
+            event = LibraryUsageStore(self.root / config.MEMORY_DIR_NAME).record(
+                result["assets"], task=task, outcome=outcome,
+                effectiveness=effectiveness, efficiency=efficiency,
+                duration_ms=duration_ms, input_tokens=input_tokens,
+                output_tokens=output_tokens, model=model or ident.get("model"),
+                notes=notes, source="agent", client=self._client or "mcp-agent")
+        except (LibraryError, ValueError) as exc:
+            return {"error": str(exc)}
+        return {"use": event,
+                "next_step": "the user may add a separate human rating in the Library screen"}
+
+    # @memory:feature:LibraryFeedbackLoop
+    def get_asset_feedback(self, id: str | None = None) -> dict:
+        from .library_usage import LibraryUsageStore
+
+        return {"feedback": LibraryUsageStore(
+            self.root / config.MEMORY_DIR_NAME).summary(id)}
 
     # @memory:feature:AtlasLibrary
     # @memory:connects:StructuredAnnotations
@@ -915,6 +1010,18 @@ class MCPServer:
                 nodes = [payload.get("target", "")]
                 nodes += [f"file:{p}" for p in payload.get("files", [])]
                 nodes += [f"file:{f.split('::')[0]}" for f in payload.get("functions", [])]
+            elif tool == "get_anchor_drift" and isinstance(payload, dict):
+                nodes = [f.get("node_id", "") for f in payload.get("findings", [])]
+            elif tool == "list_assets" and isinstance(payload, dict):
+                nodes = [f"asset:{a['id']}" for a in payload.get("assets", []) if a.get("id")]
+            elif tool in ("get_asset", "propose_asset") and isinstance(payload, dict):
+                asset = payload.get("asset") or {}
+                nodes = [f"asset:{asset['id']}"] if asset.get("id") else []
+            elif tool == "record_asset_use" and isinstance(payload, dict):
+                nodes = [f"asset:{a['id']}" for a in (payload.get("use") or {}).get("assets", [])
+                         if a.get("id")]
+            elif tool == "get_asset_feedback" and args.get("id"):
+                nodes = [f"asset:{args['id']}"]
         except (KeyError, TypeError):
             pass
         return [n for n in dict.fromkeys(nodes) if n]

@@ -50,7 +50,7 @@ def test_initialize_and_list_tools(tmp_path: Path) -> None:
     assert event["label"] == "Claude Code 2.1"
     tools = _call(server, "tools/list")["result"]["tools"]
     names = {t["name"] for t in tools}
-    assert {"query_codebase", "get_feature_trace", "get_impact", "get_source"} <= names
+    assert {"query_codebase", "get_feature_trace", "get_impact", "get_anchor_drift", "get_source"} <= names
 
 
 def test_query_and_feature_tools(tmp_path: Path) -> None:
@@ -67,6 +67,9 @@ def test_query_and_feature_tools(tmp_path: Path) -> None:
 
     impact = _tool(server, "get_impact", {"target": "helper"})
     assert "app.py::greet" in impact["functions"]
+
+    drift = _tool(server, "get_anchor_drift", {"target": "feature:Greeting"})
+    assert drift["target"] == "feature:Greeting" and drift["findings"] == []
 
     src = _tool(server, "get_source", {"path": "app.py", "start_line": 2, "end_line": 3})
     assert "def greet" in src["source"]
@@ -441,3 +444,28 @@ def test_annotations_can_target_a_library_asset(tmp_path: Path, monkeypatch) -> 
     assert out["annotation"]["target_kind"] == "asset"
     listed = _tool(server, "list_annotations", {"target": "asset:memory-first"})
     assert listed["annotations"][0]["body"].startswith("This asset needs")
+
+
+def test_library_mode_and_use_evidence_tools(tmp_path: Path, monkeypatch) -> None:
+    from cms.library import LibraryView
+
+    server = _library_server(tmp_path, monkeypatch)
+    proposed = _tool(server, "propose_asset", {
+        "name": "Focus Mode", "type": "mode",
+        "description": "Keep one objective visible.", "content": "Stay on target."})
+    assert proposed["asset"]["type"] == "mode"
+    store = LibraryView(tmp_path).store("project")
+    store.publish("focus-mode", "human")
+
+    used = _tool(server, "record_asset_use", {
+        "assets": ["focus-mode"], "task": "Complete the investigation",
+        "outcome": "success", "effectiveness": 4, "efficiency": 5,
+        "duration_ms": 250, "model": "test-model"})
+    assert used["use"]["assets"][0]["version"] == 1
+    assert len(used["use"]["assets"][0]["hash"]) == 24
+
+    feedback = _tool(server, "get_asset_feedback", {"id": "focus-mode"})["feedback"]
+    assert feedback["uses"] == 1
+    assert feedback["agent"]["efficiency"] == 5.0
+    listed = _tool(server, "list_assets", {"type": "mode"})["assets"][0]
+    assert listed["evidence"]["uses"] == 1

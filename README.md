@@ -107,6 +107,7 @@ cms ui                      # open the memory viewer in your browser
 cms update                  # incremental: only changed files re-summarized
 cms watch                   # keep .memory/ in sync as you edit
 cms impact cms/scanner.py::scan   # blast radius of a change
+cms drift [--json]          # gate on stale @memory summaries and unsupported feature links
 cms verify                  # map tests to features via coverage
 cms verify CleanDirectoryScanner  # run exactly the tests mapped as exercising a feature
 cms verify --refresh               # force fresh per-test coverage instead of using a current cache
@@ -198,7 +199,7 @@ nearest project holding `.memory/graph.json`, so one global entry serves every
 repo. In an un-mapped repo it stays alive and tools answer "no memory layer:
 run `cms run-all`".
 
-28 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
+31 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
 
 - **Grounding / read**: `query_codebase`, `get_file_summary`, `get_source`,
   `get_feature_trace`, `list_features`, `who_calls`, `who_imports`, `get_impact`.
@@ -206,7 +207,8 @@ run `cms run-all`".
   (flows, features, connections, intent-vs-reality), evidence named. Also in
   the UI as the Ask Atlas chat popup and on the CLI as `cms ask "..."`.
 - **Judgment / plan**: `get_review`, `get_suggestions`, `get_sentinel_report`,
-  `export_task_prompt`.
+  `get_anchor_drift`, `export_task_prompt`. Anchor Drift is deterministic and
+  compares each human-authored summary/link with current source and graph evidence.
 - **Alignment loop**: `declare_intent`, `check_alignment`.
 - **Annotations**: `add_annotation`, `list_annotations`. Typed, lifecycled
   annotations on canonical graph objects (features, files, functions, edges,
@@ -219,6 +221,9 @@ run `cms run-all`".
   means superseding its current approved predecessor in the same feature
   scope (cross-feature and stale links are refused), so the agreed word is
   never silently rewritten, shadowed, or attached to the wrong audit chain.
+- **Library**: `list_assets`, `get_asset`, `propose_asset`, `record_asset_use`,
+  `get_asset_feedback`. Select reusable context, keep publishing human-only, and
+  learn from exact-version outcomes without mixing agent confidence with user ratings.
 - **Flow verification**: `review_exact_flow`. Evidence-classified execution
   flows (static edges + step-granular coverage + bounded source reads);
   `verified` is computed from evidence (every in-feature step's own lines
@@ -470,6 +475,12 @@ Line-form anchors attach to the next `def`/`class`; `module` tags (and anchors n
 followed by a definition) attach to the file. Only real comments count; anchor-like
 text inside strings or docstrings is ignored.
 
+`cms drift` checks those statements at their finest grain without an LLM. It flags
+high-confidence summary symbols that vanished from the anchored node and declared
+feature connections with no supporting RELATES, CALLS or IMPORTS evidence. The same
+report is available to agents through `get_anchor_drift` and in the file/feature
+inspector; a finding reads plainly: the stated intent no longer matches the code.
+
 ## Summary providers
 
 Selected via `--provider` or the `CMS_PROVIDER` env var (`anthropic` | `openai` | `mock`):
@@ -507,7 +518,7 @@ reappear when you reopen the file. Deep-link straight to a file with
 
 Built-in bug finding, feature auditing and a completion quality gate. Sentinel
 inventories the repo, scans for risky patterns (classified by context, not
-blanket-flagged), audits `docs/feature_ledger.json` completion claims against
+blanket-flagged), checks individual anchor drift, audits `docs/feature_ledger.json` completion claims against
 graph evidence, checks UI↔HTTP↔MCP↔docs contracts, executes end-to-end
 workflow checks against the real pipeline (including the carry-over
 regression trap), validates CMS domain invariants and the provider layer, and
@@ -528,8 +539,8 @@ findings, change statuses, export). Gate thresholds live in
 
 Reusable, versioned, inspectable **assets** that Atlas composes into an agent's
 working context — instead of one oversized prompt or the same generic
-instructions for every agent. Five types: `skill`, `strategy`, `preference`,
-`constraint`, and `profile` (a composite that *references* member assets by
+instructions for every agent. Six types: `skill`, `strategy`, `preference`,
+`constraint`, `mode` (a behavioural operating mode), and `profile` (a composite that *references* member assets by
 pinned `id@version`, never copies them).
 
 Canonical content is a markdown file with a small frontmatter block; lifecycle
@@ -566,6 +577,12 @@ cms library import ./some-skill.md        # markdown skill file -> draft, trust:
 cms library verify                        # re-hash every snapshot against its record
 ```
 
+Whole skill-package directories can also be imported from the Library screen.
+Atlas registers each `skills/*/SKILL.md` while retaining its package root, so
+relative scripts, references, templates, fonts, and other assets remain usable.
+Licence and notice files stay on disk for provenance but are marked as excluded
+context and are never composed into an agent prompt.
+
 Rules that hold: **published content is frozen** (changes ship as a new
 version; pinned `id@N` keeps resolving the old one), dependencies and conflicts
 are **declared and warned about, never silently resolved**, agents may propose
@@ -573,6 +590,11 @@ drafts and attach notes but **publishing is a human act**, and imported or
 agent-generated assets stay visibly untrusted until a human publishes them.
 Composition records the exact `{id, version, content_hash}` of every asset used,
 so an agent run's context is reproducible and auditable.
+After real work, agents can call `record_asset_use` with outcome, model, duration,
+token counts, and provisional effectiveness/efficiency scores. The Library screen
+lets the user rate each recorded use; human ratings remain separate from agent
+self-assessment, and `get_asset_feedback` exposes the accumulated evidence to
+future skill/model selection.
 
 Plan and design rationale: [`PLAN.md`](PLAN.md).
 

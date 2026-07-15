@@ -34,7 +34,7 @@ DEFAULT_CONFIG = {
     "ignore_paths": [],
 }
 
-MODULES = ("inventory", "static_risk", "ledger", "contracts",
+MODULES = ("inventory", "static_risk", "anchor_drift", "ledger", "contracts",
            "workflows", "domain_rules", "providers")
 
 
@@ -145,6 +145,11 @@ def run_scan(root: Path, modules: tuple[str, ...] = MODULES, echo=lambda *_: Non
 
         add(scan_static_risks(root, records))
 
+    def _anchor_drift():
+        from .anchor_drift import scan_anchor_drift
+
+        add(scan_anchor_drift(root))
+
     def _ledger():
         from .ledger import audit_ledger
 
@@ -174,6 +179,7 @@ def run_scan(root: Path, modules: tuple[str, ...] = MODULES, echo=lambda *_: Non
 
     run("inventory", _inventory)
     run("static_risk", _static)
+    run("anchor_drift", _anchor_drift)
     run("ledger", _ledger)
     run("contracts", _contracts)
     run("workflows", _workflows)

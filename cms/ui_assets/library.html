@@ -91,6 +91,7 @@
   .t-strategy { color: #9d8cf5; border-color: rgba(157,140,245,.3); }
   .t-preference { color: #6fc99a; border-color: rgba(111,201,154,.3); }
   .t-constraint { color: #e08a8a; border-color: rgba(224,138,138,.3); }
+  .t-mode { color: #f09bc2; border-color: rgba(240,155,194,.35); }
   .t-profile { color: #e0c070; border-color: rgba(224,192,112,.3); }
   .tr-agent, .tr-imported { color: var(--warn); border-color: rgba(201,133,0,.35); }
   .tr-builtin { color: var(--ink-3); }
@@ -111,6 +112,10 @@
   .kv { display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px; font-size: 12px; }
   .kv b { color: var(--ink-3); font-weight: 400; }
   .actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
+  .use { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px;
+         margin: 8px 0; background: var(--surface-2); }
+  .use-rate { display: grid; grid-template-columns: 130px 1fr auto; gap: 7px;
+              align-items: center; margin-top: 8px; }
   .btn { background: var(--surface); border: 1px solid var(--border-strong); color: var(--ink-2);
          border-radius: 6px; padding: 5px 12px; font-size: 12px; }
   .btn:hover { color: var(--ink); border-color: var(--accent); }
@@ -244,10 +249,14 @@
 </dialog>
 
 <dialog id="importDlg">
-  <h3>Import a markdown skill file</h3>
+  <h3>Import skills</h3>
   <div class="banner info">Imported assets land as <b>drafts</b> with trust <b>imported</b>. They never
     enter an agent's context until you publish them.</div>
   <div id="importErr"></div>
+  <label>Package directory inside this project</label>
+  <input id="fDirectory" placeholder="skills-main (imports every skills/*/SKILL.md package)">
+  <div class="note">Scripts, references, templates and assets stay attached. Licence and notice files remain on disk for provenance but are excluded from agent context.</div>
+  <div class="note" style="margin:10px 0;text-align:center">or import one markdown file</div>
   <input type="file" id="fFile" accept=".md,text/markdown">
   <label style="margin-top:8px">…or paste the file</label>
   <textarea id="fPaste" spellcheck="false" placeholder="---&#10;name: Getting Rich&#10;description: …&#10;---&#10;&#10;Body…"></textarea>
@@ -370,6 +379,8 @@ function rowHtml(a) {
       ${a.registered === false ? '<span class="tag st-draft" title="A file in the library folder that is not registered yet">unregistered</span>' : ""}
       ${a.shadowed_by ? `<span class="tag" title="Overridden by the ${esc(a.shadowed_by)} scope">shadowed</span>` : ""}
       ${a.enabled_effective ? "" : '<span class="tag st-deprecated">disabled</span>'}
+      ${(a.evidence || {}).uses ? `<span class="tag" title="Recorded Library uses">${a.evidence.uses} uses</span>` : ""}
+      ${((a.evidence || {}).human || {}).rating ? `<span class="tag" title="Average human rating">user ${a.evidence.human.rating}/5</span>` : ""}
     </div>
     <div class="rdesc" data-lens>${esc(a.description || "")}</div>
   </div>`;
@@ -426,6 +437,7 @@ async function open(id) {
   S.sel = a.id + "|" + a.scope;
   S.detail = a;
   const meta = a.meta || {};
+  const evidence = data.evidence || { uses: 0, agent: {}, human: {}, recent: [] };
   const refs = list => (list || []).map(x =>
     `<button class="chip" onclick="open('${esc(String(x).split("@")[0])}')">${esc(x)}</button>`).join(" ");
   const published = (a.versions || []).length;
@@ -471,11 +483,28 @@ async function open(id) {
         <b>Conflicts with</b><div>${refs(meta.conflicts_with) || '<span class="note">none</span>'}</div>
         ${a.type === "profile" ? `<b>Members</b><div>${refs(meta.assets)}</div>` : ""}
         <b>Tags</b><div>${(a.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join(" ") || '<span class="note">none</span>'}</div>
+        ${meta.source ? `<b>Source</b><div>${esc(meta.source)}</div>` : ""}
+        ${meta.resource_root ? `<b>Package resources</b><div><code>${esc(meta.resource_root)}</code><br><span class="note">Relative scripts, references, templates and assets resolve here.</span></div>` : ""}
         <b>Created by</b><div>${esc((a.created_by || {}).identity || "—")}
            ${(a.created_by || {}).kind === "model" ? '<span class="tag tr-agent">🤖 model</span>' : ""}</div>
         ${a.shadowed_scopes && a.shadowed_scopes.length
           ? `<b>Shadows</b><div><span class="note">overrides the same id in: ${esc(a.shadowed_scopes.join(", "))}</span></div>` : ""}
       </div>
+    </div>
+
+    <div class="sect">
+      <h2>Effectiveness evidence <span class="note" style="text-transform:none">— agent observations and your ratings stay separate</span></h2>
+      <div class="rmeta">
+        <span class="tag">${evidence.uses || 0} uses</span>
+        ${evidence.agent && evidence.agent.effectiveness ? `<span class="tag">agent effectiveness ${evidence.agent.effectiveness}/5</span>` : ""}
+        ${evidence.agent && evidence.agent.efficiency ? `<span class="tag">agent efficiency ${evidence.agent.efficiency}/5</span>` : ""}
+        ${evidence.human && evidence.human.rating ? `<span class="tag">human rating ${evidence.human.rating}/5</span>` : ""}
+      </div>
+      ${(evidence.recent || []).length ? evidence.recent.map(u => `<div class="use">
+        <div><b>${esc(u.task)}</b> <span class="tag">${esc(u.outcome)}</span></div>
+        <div class="note">${esc(u.model || "model not recorded")} · ${esc(u.created_at || "")}</div>
+        <div class="use-rate"><select data-rating="${esc(u.id)}"><option value="">Your rating</option><option value="5">5 — excellent</option><option value="4">4 — good</option><option value="3">3 — mixed</option><option value="2">2 — poor</option><option value="1">1 — harmful</option></select><input data-comment="${esc(u.id)}" placeholder="What helped or got in the way?"><button class="btn rate-use" data-use="${esc(u.id)}">Save rating</button></div>
+      </div>`).join("") : '<div class="note" style="margin-top:8px">No recorded uses yet. Agents can append evidence with <code>record_asset_use</code> after real work.</div>'}
     </div>
 
     <div class="sect">
@@ -507,6 +536,14 @@ async function open(id) {
   on("aPub", () => publish(a));
   on("aDep", () => setStatus(a, "deprecated"));
   on("aTog", () => setStatus(a, a.enabled_effective ? "disabled" : "enabled"));
+  [...document.querySelectorAll(".rate-use")].forEach(button => button.onclick = async () => {
+    const useId = button.dataset.use;
+    const rating = document.querySelector(`[data-rating="${useId}"]`).value;
+    const comment = document.querySelector(`[data-comment="${useId}"]`).value;
+    if (!rating && !comment.trim()) { alert("Choose a rating or leave a comment."); return; }
+    try { await post("/api/library/rating", { use_id: useId, rating, comment }); open(a.id); }
+    catch (e) { alert(e.message); }
+  });
   loadList();
   applyLens();
 }
@@ -585,9 +622,23 @@ $("btnNew").onclick = () => openEdit(null);
 $("editCancel").onclick = () => $("editDlg").close();
 
 $("btnImport").onclick = () => { $("importErr").innerHTML = ""; $("fPaste").value = "";
-  $("fFile").value = ""; $("importDlg").showModal(); };
+  $("fFile").value = ""; $("fDirectory").value = ""; $("importDlg").showModal(); };
 $("importCancel").onclick = () => $("importDlg").close();
 $("importSave").onclick = async () => {
+  const directory = $("fDirectory").value.trim();
+  if (directory) {
+    try {
+      const out = await post("/api/library/import-directory", { directory, scope: "project" });
+      if ((out.problems || []).length) {
+        $("importErr").innerHTML = `<div class="banner warn">Imported ${(out.imported || []).length}; ${(out.problems || []).length} package(s) need attention: ${esc(out.problems.map(x => x.package + ": " + x.problem).join("; "))}</div>`;
+        await loadList();
+        return;
+      }
+      $("importDlg").close(); await loadList();
+      if ((out.imported || []).length) open(out.imported[0].id);
+      return;
+    } catch (e) { $("importErr").innerHTML = `<div class="banner bad">${esc(e.message)}</div>`; return; }
+  }
   const file = $("fFile").files[0];
   const content = file ? await file.text() : $("fPaste").value;
   if (!content.trim()) { $("importErr").innerHTML =

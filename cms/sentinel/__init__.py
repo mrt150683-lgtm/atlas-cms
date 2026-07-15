@@ -9,7 +9,8 @@ structured bug reports. Results persist under ``.memory/sentinel/`` and a
 configurable quality gate fails on critical findings.
 
 Modules map the Hermes Sentinel spec onto the real CMS architecture:
-inventory (Project Scanner), ledger (Feature Ledger Auditor), static_risk
+    inventory (Project Scanner), ledger (Feature Ledger Auditor), static_risk,
+    anchor_drift (per-anchor intent integrity),
 (Static Risk Scanner), contracts (Contract Checker), workflows (Workflow Test
 Runner), domain_rules (Domain Rule Validator), providers_check (Driver/Plugin
 Validator -> LLM providers), reports (Bug Report Generator), store

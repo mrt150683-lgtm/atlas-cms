@@ -51,7 +51,7 @@ attached or a `.memory/` dir exists, use the tools below first.
 This is the loop Atlas exists to serve. `declare_intent` + `check_alignment` are
 the input and the honest-finish of a change; everything else is grounding.
 
-## 3. MCP tools (28) — the primary agent surface
+## 3. MCP tools (31) — the primary agent surface
 
 Server id `cms` (stdio JSON-RPC). Every call is logged to
 `.memory/activity.jsonl` and rendered live in the UI (glow pulses + a badge —
@@ -79,6 +79,9 @@ the human can literally watch you think). Tools:
   affected functions, files, features, and the tests that cover the chain.
 
 **Judgment / plan**
+- `get_anchor_drift(target=None)` — deterministic per-anchor integrity check.
+  Flags a summary that names a vanished code symbol and a declared feature link
+  with no RELATES/CALLS/IMPORTS evidence. Omit `target` for the whole project.
 - `get_review(feature=None)` — the alignment audit verdict(s):
   `aligned | partial | drift | unverified` with headline, expected-vs-built, and
   concrete gaps. Read the touched feature's gaps *before* editing it.
@@ -178,7 +181,7 @@ the human can literally watch you think). Tools:
 
 **Library (reusable agent-context assets)**
 - `list_assets(type=None, tag=None, status=None, q=None)` — the Library: skills,
-  strategies, preferences, constraints, and profiles (composites that pin
+  strategies, preferences, constraints, behavioural modes, and profiles (composites that pin
   members by `id@N`). Find the right specialist context for the task instead of
   loading one oversized prompt.
 - `get_asset(id, version=None)` — one asset in full: canonical agent-facing
@@ -191,6 +194,11 @@ the human can literally watch you think). Tools:
   enter any agent's context until a human publishes them. **You cannot publish**
   — that is human-only, like decision approval. To comment on an asset instead
   of changing it, use `add_annotation` with `target="asset:<id>"`.
+- `record_asset_use(assets, task, outcome="unknown", ...)` — after real work,
+  append exact resolved versions/hashes plus the actual model and available
+  duration/token evidence. Agent effectiveness/efficiency scores are provisional.
+- `get_asset_feedback(id=None)` — read recent and aggregate outcome evidence.
+  Human ratings are reported separately from agent self-assessment.
 
 **The alignment loop (intent → verdict)**
 - `declare_intent(goal=None, assets=None)` — record what the current change is
@@ -249,6 +257,8 @@ the CLI. `--root PATH` targets a project; the API key is read from
   plain-language answer, evidence features named (mirrors `ask_codebase`).
 
 **Judge / verify**
+- `cms drift [--json]` — high-confidence `@memory` anchor-drift gate; exits
+  non-zero when stale summary symbols or unsupported declared links are found.
 - `cms review [Feature]` — build/print the built-vs-expected alignment audit.
   Full real-provider refreshes are atomic: incomplete/malformed provider output
   records `failed`, exits non-zero, and preserves the last complete review.
@@ -404,8 +414,9 @@ ignored).
 ## 8. Hermes Sentinel — the quality gate
 
 Built-in bug finding + completion gate (`cms sentinel`, MCP
-`get_sentinel_report`, UI `/sentinel`). Seven modules run: `inventory`,
-`static_risk`, `ledger` (audits `docs/feature_ledger.json` completion claims vs
+`get_sentinel_report`, UI `/sentinel`). Eight modules run: `inventory`,
+`static_risk`, `anchor_drift` (checks individual human-authored intent against
+current source/graph evidence), `ledger` (audits `docs/feature_ledger.json` completion claims vs
 graph evidence), `contracts` (UI↔HTTP↔MCP↔docs), `workflows` (end-to-end checks
 against the real pipeline, incl. path-traversal + carry-over regression traps),
 `domain_rules`, `providers`. Findings are **fingerprint-keyed** (survive line
@@ -502,7 +513,7 @@ it; `GET /api/semantic` serves it).
 
 Instead of one oversized prompt (or the same generic instructions for every
 agent), Atlas keeps **assets**: `skill`, `strategy`, `preference`, `constraint`,
-and `profile` (a composite that references members by pinned `id@N` — it never
+`mode` (a behavioural operating mode), and `profile` (a composite that references members by pinned `id@N` — it never
 copies them). Canonical content is markdown with a small frontmatter block;
 lifecycle state (versions, hashes, trust, enablement) lives in an `index.json`
 beside it, and every published version is frozen under `.versions/<id>/vN.md`.
@@ -521,7 +532,7 @@ Composition (`export_task_prompt(assets=…)`, `declare_intent(assets=…)`,
 `cms library compose`) expands profiles, walks `requires`, and **reports
 conflicts rather than resolving them** — both sides land in your context with a
 CONFLICT banner, and reconciling them deliberately is your job. Deduped,
-ordered constraints → preferences → strategies → skills, size-estimated, and
+ordered constraints → modes → preferences → strategies → skills, size-estimated, and
 stamped with each asset's exact `{id, version, content_hash}` so the run is
 reproducible.
 
@@ -532,6 +543,13 @@ Rules that bind you:
   other agents' context until a human approves them in the Library screen.
 - **Comment beside, not inside:** `add_annotation(target="asset:<id>", …)` for
   observations, gaps, failure cases — never smuggle notes into canonical text.
+- **Close the feedback loop:** after genuine use, call `record_asset_use` with
+  the exact assets, outcome, model and available time/token evidence. Agent scores
+  are provisional; user ratings in the Library remain separate. Consult
+  `get_asset_feedback` when selecting between relevant assets.
+- **Resolve package resources from their root.** Imported skill collections keep
+  scripts/references/templates beside the source package. Licence and notice
+  files are provenance-only excluded context, not working instructions.
 
 ## 13. Quick recipes
 
