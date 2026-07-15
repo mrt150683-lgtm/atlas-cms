@@ -215,6 +215,13 @@ LIBRARY_USER_DIR = Path.home() / ".cms" / "library"
 # Composed context larger than this raises the `oversized` warning (~6k tokens).
 LIBRARY_WARN_CHARS = 24_000
 
+# --- Idea Journal -----------------------------------------------------------
+
+# One personal journal spans every mapped project.  Project and feature links
+# retain their Atlas hashes so a missing or changed project is shown as stale,
+# never silently removed from the owner's history.
+IDEAS_USER_DIR = Path.home() / ".cms" / "ideas"
+
 
 def library_builtin_dir() -> Path:
     """The read-only built-in asset dir shipped with Atlas.

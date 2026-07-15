@@ -105,7 +105,9 @@ def server(tmp_path_factory):
     empty = tmp_path_factory.mktemp("nolib")
     os.environ["CMS_LIBRARY_BUILTIN"] = str(empty / "builtin")
     real_user_dir = config.LIBRARY_USER_DIR
+    real_ideas_dir = config.IDEAS_USER_DIR
     config.LIBRARY_USER_DIR = empty / "userlib"
+    config.IDEAS_USER_DIR = empty / "ideas"
 
     cache = _MemoryCache(memory_dir / "graph.json")
     os.environ["CMS_APPROVAL_TOKEN"] = APPROVAL_TOKEN  # deterministic gate for tests
@@ -121,6 +123,7 @@ def server(tmp_path_factory):
     httpd.shutdown()
     httpd.server_close()
     config.LIBRARY_USER_DIR = real_user_dir
+    config.IDEAS_USER_DIR = real_ideas_dir
     os.environ.pop("CMS_LIBRARY_BUILTIN", None)
 
 
@@ -884,6 +887,49 @@ def test_library_page_and_nav_entry(server) -> None:
     index = (Path(__file__).parent.parent / "cms" / "ui_assets" / "index.html"
              ).read_text(encoding="utf-8")
     assert 'href="/library"' in index               # reachable from the map
+
+
+def test_idea_journal_page_and_human_capture_round_trip(server) -> None:
+    client, _ = server
+    status, body = client.get("/ideas")
+    page = body.decode("utf-8")
+    assert status == 200
+    for element in ("map", "ideaList", "captureBtn", "generateBtn", "drawBtn",
+                    "joinGenerate", "detailCandidates"):
+        assert f'id="{element}"' in page
+    assert "'/api/ideas/join'" in page and "'/api/ideas/generate'" in page
+
+    status, body = client.post("/api/ideas/capture", {
+        "title": "Journal through Atlas", "overview": "Keep project ideas connected.",
+        "kind": "module"})
+    idea = json.loads(body)["idea"]
+    assert status == 200 and idea["origin"] == "user"
+    listed = json.loads(client.get("/api/ideas?q=connected")[1])
+    assert [row["id"] for row in listed["ideas"]] == [idea["id"]]
+    detail = json.loads(client.get(f"/api/ideas/item?id={idea['id']}")[1])["idea"]
+    assert detail["title"] == "Journal through Atlas"
+    graph = json.loads(client.get("/api/ideas/map?features=0")[1])
+    assert any(node["id"] == f"idea:{idea['id']}" for node in graph["nodes"])
+    _, body = client.post("/api/ideas/source", {
+        "idea_id": idea["id"], "title": "Brainstorm", "content": "Raw session notes."})
+    source = json.loads(body)["source"]
+    assert json.loads(client.get(f"/api/ideas/source?id={source['id']}")[1])["source"][
+        "content"] == "Raw session notes."
+    status, exported = client.get("/api/ideas/export")
+    assert status == 200 and json.loads(exported)["schema_version"] == 1
+
+
+def test_idea_candidate_decisions_are_explicit(server) -> None:
+    from cms.ideas import default_journal
+
+    client, _ = server
+    candidate = default_journal().propose_candidate(
+        "Candidate path", "Waiting for review.", actor_kind="model")
+    status, body = client.post("/api/ideas/candidate", {
+        "id": candidate["id"], "verdict": "accepted"})
+    accepted = json.loads(body)["candidate"]
+    assert status == 200 and accepted["accepted_idea_id"]
+    assert default_journal().get_idea(accepted["accepted_idea_id"])["origin"] == "agent"
 
 
 def test_library_draft_then_publish_is_token_gated(server) -> None:

@@ -117,6 +117,9 @@ def make_handler(root: Path, cache: _MemoryCache):
                 elif url.path in ("/library", "/library.html"):
                     page = (_ASSETS_DIR / "library.html").read_bytes()
                     self._send(200, page, "text/html; charset=utf-8")
+                elif url.path in ("/ideas", "/ideas.html"):
+                    page = (_ASSETS_DIR / "ideas.html").read_bytes()
+                    self._send(200, page, "text/html; charset=utf-8")
                 elif url.path == "/api/fusion":
                     from .fuse import fusion_history, fusion_staleness, load_fusion
 
@@ -243,6 +246,28 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._library_asset(query)
                 elif url.path == "/api/library/export":
                     self._library_export(query)
+                elif url.path == "/api/ideas":
+                    self._ideas_list(query)
+                elif url.path == "/api/ideas/item":
+                    self._ideas_item(query)
+                elif url.path == "/api/ideas/map":
+                    from .ideas import default_journal
+
+                    self._json(default_journal().map_data(
+                        include_features=(query.get("features") or ["1"])[0] != "0",
+                        feature_limit=int((query.get("limit") or ["120"])[0])))
+                elif url.path == "/api/ideas/source":
+                    from .ideas import default_journal
+
+                    source = default_journal().get_source((query.get("id") or [""])[0])
+                    self._json({"source": source} if source else {"error": "source not found"},
+                               200 if source else 404)
+                elif url.path == "/api/ideas/export":
+                    from .ideas import default_journal
+
+                    payload = json.dumps(default_journal().snapshot(), indent=2,
+                                         ensure_ascii=False).encode("utf-8")
+                    self._send(200, payload, "application/json; charset=utf-8")
                 else:
                     self._error(404, "not found")
             except BrokenPipeError:
@@ -295,6 +320,8 @@ def make_handler(root: Path, cache: _MemoryCache):
                                   "/api/library/import", "/api/library/register",
                                   "/api/library/import-directory", "/api/library/rating"):
                     self._library_post(url.path, body)
+                elif url.path.startswith("/api/ideas/"):
+                    self._ideas_post(url.path, body)
                 elif url.path == "/api/scope":
                     self._scope_set(body)
                 elif url.path == "/api/build":
@@ -408,6 +435,95 @@ def make_handler(root: Path, cache: _MemoryCache):
                 self._error(500, f"{type(exc).__name__}: {exc}")
 
         # ── Hermes Sentinel API ──────────────────────────────────────
+
+        def _ideas_list(self, query: dict) -> None:
+            from .ideas import default_journal
+
+            journal = default_journal()
+            self._json({
+                "ideas": journal.search(
+                    (query.get("q") or [""])[0],
+                    project=(query.get("project") or [None])[0],
+                    kind=(query.get("kind") or [None])[0],
+                    status=(query.get("status") or [None])[0],
+                    limit=int((query.get("limit") or ["100"])[0])),
+                "candidates": journal.list_candidates(
+                    status=(query.get("candidate_status") or [None])[0], limit=100),
+                "events": journal.events(limit=30),
+            })
+
+        def _ideas_item(self, query: dict) -> None:
+            from .ideas import default_journal
+
+            idea_id = (query.get("id") or [""])[0]
+            idea = default_journal().get_idea(idea_id)
+            self._json({"idea": idea} if idea else {"error": "idea not found"},
+                       200 if idea else 404)
+
+        def _ideas_post(self, path: str, body: dict) -> None:
+            from .ideas import IdeaError, default_journal
+
+            journal = default_journal()
+            try:
+                if path == "/api/ideas/capture":
+                    result = {"idea": journal.create_idea(
+                        str(body.get("title") or ""),
+                        overview=str(body.get("overview") or ""),
+                        body=str(body.get("body") or ""),
+                        kind=str(body.get("kind") or "concept"),
+                        status=str(body.get("status") or "inbox"),
+                        parent_id=body.get("parent_id") or None,
+                        actor_kind="human")}
+                elif path == "/api/ideas/update":
+                    values = {key: body[key] for key in
+                              ("title", "overview", "body", "kind", "status", "parent_id")
+                              if key in body}
+                    result = {"idea": journal.update_idea(
+                        str(body.get("id") or ""), actor_kind="human", **values)}
+                elif path == "/api/ideas/source":
+                    result = {"source": journal.add_source(
+                        str(body.get("content") or ""), idea_id=body.get("idea_id") or None,
+                        source_type=str(body.get("source_type") or "brainstorm"),
+                        title=str(body.get("title") or ""), uri=str(body.get("uri") or ""),
+                        actor_kind="human")}
+                elif path == "/api/ideas/relationship":
+                    result = {"relationship": journal.add_relationship(
+                        str(body.get("idea_id") or ""), str(body.get("target_type") or ""),
+                        str(body.get("target_ref") or ""),
+                        str(body.get("relation_type") or "relates_to"),
+                        metadata=body.get("metadata") or {}, actor_kind="human")}
+                elif path == "/api/ideas/generate":
+                    from .providers import get_provider
+
+                    result = journal.generate(
+                        get_provider(None), mode=str(body.get("mode") or "journal"),
+                        direction=str(body.get("direction") or ""),
+                        project_roots=body.get("project_roots") or [],
+                        feature_refs=body.get("feature_refs") or [],
+                        idea_ids=body.get("idea_ids") or [],
+                        surprise=float(body.get("surprise", 0.5)),
+                        count=int(body.get("count", 6)), seed=body.get("seed"))
+                elif path == "/api/ideas/join":
+                    from .providers import get_provider
+
+                    result = journal.join_dots(
+                        get_provider(None), body.get("node_ids") or [],
+                        points=body.get("points") or [],
+                        surprise=float(body.get("surprise", 0.7)),
+                        direction=str(body.get("direction") or ""),
+                        seed=body.get("seed"), count=int(body.get("count", 4)))
+                elif path == "/api/ideas/candidate":
+                    result = {"candidate": journal.decide_candidate(
+                        str(body.get("id") or ""), str(body.get("verdict") or ""),
+                        parent_id=body.get("parent_id") or None,
+                        merge_into=body.get("merge_into") or None)}
+                else:
+                    self._error(404, "not found")
+                    return
+            except IdeaError as exc:
+                self._json({"error": str(exc)}, 400)
+                return
+            self._json(result)
 
         def _sentinel_store(self):
             from .sentinel.store import SentinelStore

@@ -1181,6 +1181,99 @@ def bundle_open(
         typer.echo(f"Opened at {out}. View with:  cms ui --root {out}")
 
 
+ideas_app = typer.Typer(
+    help="Idea Journal - capture, search, inspect, and generate project ideas.",
+    no_args_is_help=True)
+app.add_typer(ideas_app, name="ideas")
+
+
+@ideas_app.command("list")
+def ideas_list(
+    query: str = typer.Argument("", help="Optional journal search."),
+    kind: str = typer.Option(None, "--kind"),
+    status: str = typer.Option(None, "--status"),
+    limit: int = typer.Option(50, "--limit"),
+) -> None:
+    """List canonical, human-owned journal ideas."""
+    from .ideas import default_journal
+
+    rows = default_journal().search(query, kind=kind, status=status, limit=limit)
+    if not rows:
+        typer.echo("No journal ideas matched.")
+        return
+    for row in rows:
+        typer.echo(f"{row['id']}  [{row['kind']}/{row['status']}]  {row['title']}")
+
+
+@ideas_app.command("capture")
+def ideas_capture(
+    title: str = typer.Argument(..., help="Idea title."),
+    overview: str = typer.Option("", "--overview", "-o"),
+    kind: str = typer.Option("concept", "--kind"),
+    parent: str = typer.Option(None, "--parent", help="Parent idea id."),
+) -> None:
+    """Capture a canonical idea as the human at the terminal."""
+    from .ideas import IdeaError, default_journal
+
+    try:
+        idea = default_journal().create_idea(
+            title, overview=overview, kind=kind, parent_id=parent, actor_kind="human")
+    except IdeaError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    typer.echo(f"Captured {idea['id']}: {idea['title']}")
+
+
+@ideas_app.command("show")
+def ideas_show(idea_id: str = typer.Argument(...)) -> None:
+    """Print one idea with its sources and typed relationships."""
+    from .ideas import default_journal
+
+    idea = default_journal().get_idea(idea_id)
+    if idea is None:
+        typer.echo(f"Unknown idea {idea_id!r}", err=True)
+        raise typer.Exit(1)
+    typer.echo(json.dumps(idea, indent=2, ensure_ascii=False))
+
+
+@ideas_app.command("generate")
+def ideas_generate(
+    direction: str = typer.Argument("", help="What should the model explore?"),
+    mode: str = typer.Option("journal", "--mode"),
+    project: list[str] = typer.Option(None, "--project", help="Atlas project root; repeatable."),
+    feature: list[str] = typer.Option(None, "--feature", help="root::Feature; repeatable."),
+    surprise: float = typer.Option(0.5, "--surprise", min=0.0, max=1.0),
+    count: int = typer.Option(6, "--count", min=1, max=10),
+    seed: int = typer.Option(None, "--seed"),
+) -> None:
+    """Generate review-inbox candidates with the configured real provider."""
+    from .ideas import IdeaError, default_journal
+
+    try:
+        result = default_journal().generate(
+            get_provider(None), mode=mode, direction=direction,
+            project_roots=project, feature_refs=feature,
+            surprise=surprise, count=count, seed=seed)
+    except IdeaError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1)
+    for candidate in result["candidates"]:
+        typer.echo(f"{candidate['id']}  [{candidate['kind']}]  {candidate['title']}")
+    typer.echo(f"Generation {result['generation_id']} (seed {result['seed']})")
+
+
+@ideas_app.command("export")
+def ideas_export(destination: Path = typer.Argument(..., help="Destination JSON path.")) -> None:
+    """Export a portable, read-only snapshot of the journal."""
+    from .ideas import default_journal
+
+    destination = destination.resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(json.dumps(default_journal().snapshot(), indent=2,
+                                      ensure_ascii=False), encoding="utf-8")
+    typer.echo(f"Exported Idea Journal to {destination}")
+
+
 library_app = typer.Typer(
     help="Library — reusable, versioned skills/strategies/preferences/constraints "
          "composed into agent context.",

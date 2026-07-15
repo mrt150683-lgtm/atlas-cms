@@ -2,6 +2,62 @@
   "about": "Feature completion ledger audited by Hermes Sentinel (cms sentinel). Statuses: not_started | in_progress | blocked | complete.",
   "features": [
     {
+      "feature": "IdeaJournal",
+      "status": "complete",
+      "evidence": {
+        "files": ["cms/ideas.py", "cms/config.py", "cms/cli.py", "cms/mcp.py"],
+        "database": ["~/.cms/ideas/journal.db"],
+        "api": ["GET /api/ideas", "GET /api/ideas/item", "GET /api/ideas/map", "POST /api/ideas/capture", "POST /api/ideas/candidate"],
+        "ui": ["cms/ui_assets/ideas.html"],
+        "tests": ["tests/test_ideas.py", "tests/test_ui_server.py::test_idea_journal_page_and_human_capture_round_trip", "tests/test_mcp.py::test_project_idea_tools_preserve_candidate_boundary"],
+        "manual_verification": "Idea Journal page supports capture, search, graph selection, and explicit candidate decisions."
+      },
+      "known_limitations": ["Model generation requires a configured real provider."],
+      "last_verified": "2026-07-15"
+    },
+    {
+      "feature": "IdeaGenerator",
+      "status": "complete",
+      "evidence": {
+        "files": ["cms/ideas.py", "cms/mcp.py", "skills/project-idea.md"],
+        "database": ["~/.cms/ideas/journal.db"],
+        "api": ["POST /api/ideas/generate", "MCP generate_idea_candidates", "MCP propose_idea"],
+        "ui": ["cms/ui_assets/ideas.html"],
+        "tests": ["tests/test_ideas.py::test_generation_is_structured_and_failure_is_transactional", "tests/test_ideas.py::test_candidate_acceptance_is_an_explicit_human_transition"],
+        "manual_verification": "Structured candidates retain provider, model, seed, evidence context, and input hash provenance."
+      },
+      "known_limitations": ["Project selection in the first UI uses map paths and generation modes; a richer multi-select picker can be added later."],
+      "last_verified": "2026-07-15"
+    },
+    {
+      "feature": "IdeaJournalUI",
+      "status": "complete",
+      "evidence": {
+        "files": ["cms/ui_assets/ideas.html", "cms/ui.py"],
+        "database": ["~/.cms/ideas/journal.db"],
+        "api": ["GET /ideas", "GET /api/ideas", "GET /api/ideas/item", "GET /api/ideas/map", "GET /api/ideas/source", "GET /api/ideas/export", "POST /api/ideas/capture", "POST /api/ideas/generate", "POST /api/ideas/join", "POST /api/ideas/candidate"],
+        "ui": ["cms/ui_assets/ideas.html"],
+        "tests": ["tests/test_ui_server.py::test_idea_journal_page_and_human_capture_round_trip", "tests/test_ui_server.py::test_idea_candidate_decisions_are_explicit"],
+        "manual_verification": "Three-pane progressive workspace with searchable journal, canvas map, detail/source inspection, quick capture, export, generator, and review inbox."
+      },
+      "known_limitations": [],
+      "last_verified": "2026-07-15"
+    },
+    {
+      "feature": "JoinTheDots",
+      "status": "complete",
+      "evidence": {
+        "files": ["cms/ideas.py", "cms/ui_assets/ideas.html", "cms/mcp.py"],
+        "database": ["~/.cms/ideas/journal.db"],
+        "api": ["POST /api/ideas/join", "MCP join_idea_dots"],
+        "ui": ["cms/ui_assets/ideas.html#map"],
+        "tests": ["tests/test_ideas.py::test_join_the_dots_preserves_order_seed_and_path"],
+        "manual_verification": "Pointer paths preserve ordered crossed nodes, sampled points, surprise level, wildcard selection, and seed."
+      },
+      "known_limitations": [],
+      "last_verified": "2026-07-15"
+    },
+    {
       "feature": "ActivityPulse",
       "status": "complete",
       "evidence": {

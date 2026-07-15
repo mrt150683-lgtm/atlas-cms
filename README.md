@@ -123,6 +123,9 @@ cms build-graph             # scan + knowledge graph only
 cms summarize               # (re)generate AI summaries only
 cms prompt "add rate limiting"    # export a memory-grounded task brief
 cms library list             # the Library: reusable, versioned agent-context assets
+cms ideas capture "A useful thought" -o "Overview, notes, or a rough sketch"
+cms ideas list "memory"      # search the durable journal shared by every Atlas project
+cms ideas generate "missing agent tools" --mode cross_project --surprise 0.6
 cms align --scan             # compare the current diff with captured/inferred intent and refresh Sentinel
 cms scope show               # show which paths Atlas is currently processing
 cms bundle export --out atlas.cmsbundle  # share the generated memory without re-processing
@@ -199,7 +202,7 @@ nearest project holding `.memory/graph.json`, so one global entry serves every
 repo. In an un-mapped repo it stays alive and tools answer "no memory layer:
 run `cms run-all`".
 
-31 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
+37 tools (this list is contract-checked against `cms/mcp.py` by Sentinel):
 
 - **Grounding / read**: `query_codebase`, `get_file_summary`, `get_source`,
   `get_feature_trace`, `list_features`, `who_calls`, `who_imports`, `get_impact`.
@@ -224,6 +227,11 @@ run `cms run-all`".
 - **Library**: `list_assets`, `get_asset`, `propose_asset`, `record_asset_use`,
   `get_asset_feedback`. Select reusable context, keep publishing human-only, and
   learn from exact-version outcomes without mixing agent confidence with user ratings.
+- **Project Idea**: `search_ideas`, `get_idea`, `get_idea_map`, `propose_idea`,
+  `generate_idea_candidates`, `join_idea_dots`. The published `project-idea`
+  Library skill gives agents the full workflow: recall canonical journal history,
+  inspect project/feature combinations, and add model suggestions to a human review
+  inbox without silently rewriting accepted thought.
 - **Flow verification**: `review_exact_flow`. Evidence-classified execution
   flows (static edges + step-granular coverage + bounded source reads);
   `verified` is computed from evidence (every in-feature step's own lines

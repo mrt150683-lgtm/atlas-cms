@@ -363,6 +363,65 @@ TOOLS = [
             "properties": {"id": {"type": "string", "description": "Optional Library asset id."}}
         }
     },
+    {
+        "name": "search_ideas",
+        "description": "Project Idea skill: search the owner's durable Idea Journal before brainstorming. Returns canonical human-owned ideas only; use propose_idea for model suggestions.",
+        "inputSchema": {"type": "object", "properties": {
+            "query": {"type": "string"},
+            "project": {"type": "string", "description": "Optional Atlas project root or name."},
+            "kind": {"type": "string"}, "status": {"type": "string"},
+            "limit": {"type": "integer", "default": 50}
+        }}
+    },
+    {
+        "name": "get_idea",
+        "description": "Project Idea skill: inspect one canonical idea with sub-ideas, sources, typed project/feature links, drift state, and its human/model event trail.",
+        "inputSchema": {"type": "object", "properties": {
+            "id": {"type": "string"}
+        }, "required": ["id"]}
+    },
+    {
+        "name": "get_idea_map",
+        "description": "Project Idea skill: graph-ready ideas, mapped Atlas projects, features, and their typed connections. Use this to find combinations and missing links.",
+        "inputSchema": {"type": "object", "properties": {
+            "include_features": {"type": "boolean", "default": True},
+            "feature_limit": {"type": "integer", "default": 120}
+        }}
+    },
+    {
+        "name": "propose_idea",
+        "description": "Project Idea skill: place a model-authored concept in the review inbox. It never edits the owner's canonical journal; a human must accept, merge, park, or reject it.",
+        "inputSchema": {"type": "object", "properties": {
+            "title": {"type": "string"}, "overview": {"type": "string"},
+            "kind": {"type": "string", "default": "concept"},
+            "payload": {"type": "object"}
+        }, "required": ["title", "overview"]}
+    },
+    {
+        "name": "generate_idea_candidates",
+        "description": "Project Idea skill: use the configured real model to generate structured candidates from journal history plus selected Atlas projects/features. Results remain in the review inbox.",
+        "inputSchema": {"type": "object", "properties": {
+            "mode": {"type": "string", "default": "journal"},
+            "direction": {"type": "string"},
+            "project_roots": {"type": "array", "items": {"type": "string"}},
+            "feature_refs": {"type": "array", "items": {"type": "string"}},
+            "idea_ids": {"type": "array", "items": {"type": "string"}},
+            "surprise": {"type": "number", "default": 0.5},
+            "count": {"type": "integer", "default": 6},
+            "seed": {"type": "integer"}
+        }}
+    },
+    {
+        "name": "join_idea_dots",
+        "description": "Project Idea skill: turn an ordered squiggle path through idea/project/feature node ids into reproducible cross-project candidates, preserving the path, seed, and surprise level.",
+        "inputSchema": {"type": "object", "properties": {
+            "node_ids": {"type": "array", "items": {"type": "string"}},
+            "points": {"type": "array", "items": {"type": "array", "items": {"type": "number"}}},
+            "surprise": {"type": "number", "default": 0.7},
+            "direction": {"type": "string"}, "seed": {"type": "integer"},
+            "count": {"type": "integer", "default": 6}
+        }, "required": ["node_ids"]}
+    },
 ]
 
 
@@ -924,6 +983,73 @@ class MCPServer:
         self._mtime = self.graph_path.stat().st_mtime  # our own write isn't a reload
         return review
 
+    # @memory:feature:IdeaJournal
+    # @memory:connects:AgentMemoryAccess, AtlasLibrary
+    # @memory:summary:Project Idea skill tools give agents full journal search, map, proposal, generation, and join-path access while preserving human authority over canonical ideas.
+    def search_ideas(self, query: str = "", project: str | None = None,
+                     kind: str | None = None, status: str | None = None,
+                     limit: int = 50) -> dict:
+        from .ideas import default_journal
+
+        return {"ideas": default_journal().search(query, project=project, kind=kind,
+                                                   status=status, limit=limit)}
+
+    def get_idea(self, id: str) -> dict:
+        from .ideas import default_journal
+
+        idea = default_journal().get_idea(id)
+        return {"idea": idea} if idea else {"error": f"unknown idea {id!r}"}
+
+    def get_idea_map(self, include_features: bool = True,
+                     feature_limit: int = 120) -> dict:
+        from .ideas import default_journal
+
+        return default_journal().map_data(include_features=include_features,
+                                          feature_limit=feature_limit)
+
+    def propose_idea(self, title: str, overview: str, kind: str = "concept",
+                     payload: dict | None = None) -> dict:
+        from .ideas import IdeaError, default_journal
+
+        try:
+            candidate = default_journal().propose_candidate(
+                title, overview, kind=kind, payload=payload, origin="project-idea-skill",
+                actor_kind="model")
+        except IdeaError as exc:
+            return {"error": str(exc)}
+        return {"candidate": candidate,
+                "next_step": "a human reviews this in the Idea Journal inbox"}
+
+    def generate_idea_candidates(self, mode: str = "journal", direction: str = "",
+                                 project_roots: list | None = None,
+                                 feature_refs: list | None = None,
+                                 idea_ids: list | None = None,
+                                 surprise: float = 0.5, count: int = 6,
+                                 seed: int | None = None) -> dict:
+        from .ideas import IdeaError, default_journal
+        from .providers import get_provider
+
+        try:
+            return default_journal().generate(
+                get_provider(None), mode=mode, direction=direction,
+                project_roots=project_roots, feature_refs=feature_refs,
+                idea_ids=idea_ids, surprise=surprise, count=count, seed=seed)
+        except IdeaError as exc:
+            return {"error": str(exc)}
+
+    def join_idea_dots(self, node_ids: list, points: list | None = None,
+                       surprise: float = 0.7, direction: str = "",
+                       seed: int | None = None, count: int = 6) -> dict:
+        from .ideas import IdeaError, default_journal
+        from .providers import get_provider
+
+        try:
+            return default_journal().join_dots(
+                get_provider(None), node_ids, points=points, surprise=surprise,
+                direction=direction, seed=seed, count=count)
+        except IdeaError as exc:
+            return {"error": str(exc)}
+
     def get_source(self, path: str, start_line: int = 1, end_line: int | None = None) -> dict:
         target = (self.root / path).resolve()
         if self.root not in target.parents and target != self.root:
@@ -1022,6 +1148,19 @@ class MCPServer:
                          if a.get("id")]
             elif tool == "get_asset_feedback" and args.get("id"):
                 nodes = [f"asset:{args['id']}"]
+            elif tool == "search_ideas" and isinstance(payload, dict):
+                nodes = [f"idea:{i['id']}" for i in payload.get("ideas", []) if i.get("id")]
+            elif tool == "get_idea" and isinstance(payload, dict):
+                idea = payload.get("idea") or {}
+                nodes = [f"idea:{idea['id']}"] if idea.get("id") else []
+            elif tool == "get_idea_map" and isinstance(payload, dict):
+                nodes = [n["id"] for n in payload.get("nodes", [])[:100] if n.get("id")]
+            elif tool == "propose_idea" and isinstance(payload, dict):
+                cand = payload.get("candidate") or {}
+                nodes = [f"candidate:{cand['id']}"] if cand.get("id") else []
+            elif tool in ("generate_idea_candidates", "join_idea_dots") and isinstance(payload, dict):
+                nodes = [f"candidate:{c['id']}" for c in payload.get("candidates", [])
+                         if c.get("id")]
         except (KeyError, TypeError):
             pass
         return [n for n in dict.fromkeys(nodes) if n]

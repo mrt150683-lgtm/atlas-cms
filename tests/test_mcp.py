@@ -50,7 +50,25 @@ def test_initialize_and_list_tools(tmp_path: Path) -> None:
     assert event["label"] == "Claude Code 2.1"
     tools = _call(server, "tools/list")["result"]["tools"]
     names = {t["name"] for t in tools}
-    assert {"query_codebase", "get_feature_trace", "get_impact", "get_anchor_drift", "get_source"} <= names
+    assert {"query_codebase", "get_feature_trace", "get_impact", "get_anchor_drift", "get_source",
+            "search_ideas", "get_idea", "get_idea_map", "propose_idea",
+            "generate_idea_candidates", "join_idea_dots"} <= names
+
+
+def test_project_idea_tools_preserve_candidate_boundary(tmp_path: Path, monkeypatch) -> None:
+    from cms import config
+
+    monkeypatch.setattr(config, "IDEAS_USER_DIR", tmp_path / "global-ideas")
+    server = _server(tmp_path)
+    proposed = _tool(server, "propose_idea", {
+        "title": "Cross-project memory prompts",
+        "overview": "Combine Atlas project cards with the journal.",
+        "kind": "tool",
+    })
+    assert proposed["candidate"]["status"] == "new"
+    assert _tool(server, "search_ideas", {"query": "memory"})["ideas"] == []
+    graph = _tool(server, "get_idea_map", {"include_features": False})
+    assert "nodes" in graph and "edges" in graph
 
 
 def test_query_and_feature_tools(tmp_path: Path) -> None:

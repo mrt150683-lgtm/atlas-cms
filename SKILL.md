@@ -51,7 +51,7 @@ attached or a `.memory/` dir exists, use the tools below first.
 This is the loop Atlas exists to serve. `declare_intent` + `check_alignment` are
 the input and the honest-finish of a change; everything else is grounding.
 
-## 3. MCP tools (31) — the primary agent surface
+## 3. MCP tools (37) — the primary agent surface
 
 Server id `cms` (stdio JSON-RPC). Every call is logged to
 `.memory/activity.jsonl` and rendered live in the UI (glow pulses + a badge —
@@ -200,6 +200,25 @@ the human can literally watch you think). Tools:
 - `get_asset_feedback(id=None)` — read recent and aggregate outcome evidence.
   Human ratings are reported separately from agent self-assessment.
 
+**Project Idea (durable journal + cross-project ideation)**
+- `search_ideas(query="", project=None, kind=None, status=None, limit=50)` — search
+  canonical human-owned ideas before brainstorming. Model candidates are kept out
+  of these results until a human accepts them.
+- `get_idea(id)` — one idea with sub-ideas, append-only sources, typed links,
+  project/feature staleness, and its event trail.
+- `get_idea_map(include_features=True, feature_limit=120)` — graph-ready ideas,
+  projects, features, and their connections. Use it for combination and gap work.
+- `propose_idea(title, overview, kind="concept", payload=None)` — add a
+  model-authored candidate to the review inbox; never a canonical idea edit.
+- `generate_idea_candidates(...)` — structured real-provider synthesis across
+  journal history, selected projects/features, Fusion, Scout, and prior feedback.
+- `join_idea_dots(node_ids, points=None, surprise=0.7, ...)` — preserve the
+  user's ordered squiggle path and seed while generating reproducible combinations.
+
+When the user asks for project ideas, load the published `project-idea` Library
+skill first. It specifies the evidence order, modes, output shape, and the boundary
+between recalling the owner's thinking and proposing new model material.
+
 **The alignment loop (intent → verdict)**
 - `declare_intent(goal=None, assets=None)` — record what the current change is
   meant to do (if `goal` omitted, inferred from git branch / last commit).
@@ -296,7 +315,17 @@ the CLI. `--root PATH` targets a project; the API key is read from
   back as do-not-repropose and stay dismissed.**
 - `cms scout list [--ideas]` / `cms scout status <id> <verdict>`.
 
-**Brainstorm (Discovery UI tab)** — temperature-adjusted generation of ten
+**Idea Journal (`/ideas`, `cms ideas`)** — the durable idea workspace shared
+across every mapped project. Canonical ideas support sub-ideas, long notes,
+append-only brainstorming/source material, typed idea/project/feature links,
+search, portable export, and drift markers when a linked project changes.
+Generation modes cover one project, one feature, cross-project synthesis, gap
+finding, the whole journal, and wild exploration. Structured model output lands
+in a separate candidate inbox until a human accepts, merges, parks, or rejects it.
+Join the Dots records the exact ordered nodes, drawn path, surprise level, and seed.
+CLI: `cms ideas list|capture|show|generate|export`.
+
+**Legacy Brainstorm (Discovery UI tab)** — temperature-adjusted generation of ten
 single-sentence NEW concepts per batch: unconstrained mode deliberately
 avoids everything the builder already works on (projects, plans, fusion
 items, past batches); project mode grounds the batch in one chosen

@@ -1119,6 +1119,40 @@
    "updated_at": "2026-07-15T17:07:14Z"
   },
   {
+   "id": "project-idea",
+   "type": "skill",
+   "name": "Project Idea",
+   "description": "Use the Idea Journal and Atlas project memory together to recall existing thinking, find missing capabilities, combine projects, and propose reviewable new concepts without rewriting the owner's ideas.",
+   "tags": [
+    "ideas",
+    "brainstorming",
+    "projects",
+    "features",
+    "journal",
+    "atlas"
+   ],
+   "path": "project-idea.md",
+   "status": "published",
+   "enabled": true,
+   "trust": "project",
+   "current_version": 1,
+   "versions": [
+    {
+     "version": 1,
+     "content_hash": "0d01593e908c50040194e398",
+     "snapshot": ".versions/project-idea/v1.md",
+     "published_at": "2026-07-15T18:52:27Z",
+     "published_by": "user (explicit plan approval)"
+    }
+   ],
+   "created_by": {
+    "kind": "user",
+    "identity": "user"
+   },
+   "created_at": "2026-07-15T18:52:19Z",
+   "updated_at": "2026-07-15T18:52:27Z"
+  },
+  {
    "id": "real-provider-integration-qa",
    "type": "skill",
    "name": "Verify Real Provider Integrations",

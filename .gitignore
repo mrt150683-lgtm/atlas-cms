@@ -20,3 +20,6 @@ cms.workspace.json
 
 # Raw screenshot drops at the repo root (curated copies live in docs/images/)
 /Images/
+
+# Per-machine agent permissions; never publish local command allowlists.
+/.claude/settings.local.json
