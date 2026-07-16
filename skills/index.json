@@ -770,6 +770,32 @@
    "updated_at": "2026-07-15T17:07:14Z"
   },
   {
+   "id": "lets-get-rich",
+   "type": "skill",
+   "name": "Let's Get Rich: Convert Built Capability Into Revenue",
+   "description": "Turn software and capability that already exists into money \u2014 choose the revenue mechanism, find the buyer already paying to solve this, price on delivered value, and test willingness to pay before building more. Load when the user asks how to make money from a project, monetise, price, package, sell, find customers, go commercial, quit the day job, or when a mature project has users, capability, or output but no revenue. Also load when a \"business\" plan is really a build plan in disguise.",
+   "tags": [
+    "revenue",
+    "pricing",
+    "distribution",
+    "commercial",
+    "leverage"
+   ],
+   "path": "lets-get-rich.md",
+   "status": "draft",
+   "enabled": true,
+   "trust": "project",
+   "current_version": null,
+   "versions": [],
+   "created_by": {
+    "kind": "user",
+    "identity": "viewer",
+    "via": "http"
+   },
+   "created_at": "2026-07-16T07:46:24Z",
+   "updated_at": "2026-07-16T07:46:24Z"
+  },
+  {
    "id": "library-evolution-loop",
    "type": "strategy",
    "name": "Evolve the Library from Real Work",
