@@ -16,7 +16,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from .features import get_features
+from .features import get_features, get_planning_features, is_reference_path
 from .providers import SummaryProvider
 
 KINDS = ("new-feature", "improvement", "hardening")
@@ -51,7 +51,7 @@ prefer high value / low effort; be specific, not generic advice.
 
 
 def _evidence(graph: nx.DiGraph, root: Path) -> dict:
-    features = get_features(graph)
+    features = get_planning_features(graph)
     feature_lines = []
     untested = []
     for f in features:
@@ -67,14 +67,18 @@ def _evidence(graph: nx.DiGraph, root: Path) -> dict:
     hot = sorted(
         ((a["path"], a["git"]["commits"], a["git"]["churn"])
          for _, a in graph.nodes(data=True)
-         if a.get("type") == "file" and a.get("git")),
+         if a.get("type") == "file" and a.get("git")
+         and not is_reference_path(a.get("path", ""))),
         key=lambda x: -x[1],
     )[:6]
     hotspots = ", ".join(f"{p} ({c} commits)" for p, c, _ in hot) or "(no git history)"
 
     coupling = ", ".join(
         f"{graph.nodes[u]['path']}↔{graph.nodes[v]['path']}"
-        for u, v, d in graph.edges(data=True) if d.get("type") == "CO_CHANGES"
+        for u, v, d in graph.edges(data=True)
+        if d.get("type") == "CO_CHANGES"
+        and not is_reference_path(graph.nodes[u].get("path", ""))
+        and not is_reference_path(graph.nodes[v].get("path", ""))
     )[:400] or "(none detected)"
 
     readme = root / "README.md"
@@ -89,6 +93,7 @@ def _evidence(graph: nx.DiGraph, root: Path) -> dict:
         "coupling": coupling,
         "untested": ", ".join(untested) or "(all tested)",
         "untested_list": untested,
+        "excluded_reference_features": len(get_features(graph)) - len(features),
     }
 
 
@@ -116,7 +121,7 @@ def _sanitize(item: dict) -> dict | None:
 def _structural_suggestions(graph: nx.DiGraph, evidence: dict) -> list[dict]:
     """No-LLM fallback: deterministic suggestions from graph facts."""
     out = []
-    features = {f["name"]: f for f in get_features(graph)}
+    features = {f["name"]: f for f in get_planning_features(graph)}
     for name in evidence["untested_list"][:4]:
         conns = len(features.get(name, {}).get("connects", []))
         out.append(_sanitize({
@@ -128,7 +133,9 @@ def _structural_suggestions(graph: nx.DiGraph, evidence: dict) -> list[dict]:
             "value": min(5, 2 + conns // 2), "effort": 2, "builds_on": [name],
         }))
     for u, v, d in graph.edges(data=True):
-        if d.get("type") == "CO_CHANGES" and len(out) < 8:
+        if (d.get("type") == "CO_CHANGES" and len(out) < 8
+                and not is_reference_path(graph.nodes[u].get("path", ""))
+                and not is_reference_path(graph.nodes[v].get("path", ""))):
             out.append(_sanitize({
                 "title": f"Review hidden coupling {graph.nodes[u]['path']} <-> {graph.nodes[v]['path']}",
                 "kind": "improvement",
@@ -159,6 +166,7 @@ def build_suggestions(graph: nx.DiGraph, root: Path, provider: SummaryProvider) 
     graph.add_node(
         "suggestions:app", type="suggestions", name="Suggested Features",
         items=suggestions, provider=provider.name,
+        excluded_reference_features=evidence["excluded_reference_features"],
         summary="; ".join(s["title"] for s in suggestions[:5]),
     )
     return suggestions

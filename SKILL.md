@@ -281,7 +281,10 @@ the CLI. `--root PATH` targets a project; the API key is read from
 - `cms review [Feature]` — build/print the built-vs-expected alignment audit.
   Full real-provider refreshes are atomic: incomplete/malformed provider output
   records `failed`, exits non-zero, and preserves the last complete review.
-- `cms suggest` — ROI-ranked plan of what to build next.
+  Library/reference-only features stay in the graph but are excluded from the
+  app verdict and judgment-staleness hash.
+- `cms suggest` — ROI-ranked product plan; Library/reference-only evidence is
+  excluded from candidate generation.
 - `cms verify` — map tests → features via coverage contexts (`exercised_by`;
   coverage proves the tests *execute* the feature, not that behaviour is correct).
   `cms verify <Feature>` runs exactly the tests mapped as exercising that feature;

@@ -401,8 +401,8 @@ def _ensure_judgment_locked(root, provider, echo, graph_path, ran) -> dict:
         echo("  judgment: waiting for a positively recorded feature discovery")
         return ran
 
-    fsh = ss.feature_set_hash(mem.graph)
-    counts = ss.feature_counts(mem.graph)
+    fsh = ss.judgment_feature_set_hash(mem.graph)
+    counts = ss.judgment_feature_counts(mem.graph)
     common = dict(provider=provider.name, model=getattr(provider, "model", None),
                   real_provider=True, feature_set_hash=fsh, **counts)
 

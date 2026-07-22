@@ -57,6 +57,24 @@ def test_llm_review_lands_on_nodes_and_rollup(tmp_path: Path) -> None:
     assert graph.nodes["review:app"]["counts"]["aligned"] == 1
 
 
+def test_review_rollup_excludes_reference_only_features(tmp_path: Path) -> None:
+    graph = _graph(tmp_path)
+    member = "file:docs/office-authoring.md"
+    graph.add_node(member, type="file", path="docs/office-authoring.md")
+    graph.add_node(
+        "feature:OfficeDocumentAuthoring", type="feature",
+        name="OfficeDocumentAuthoring", source="discovered", members=[member],
+        entry_points=[], connects=[], aliases=[], description="Reference skill",
+    )
+
+    result = build_review(graph, tmp_path, JsonProvider())
+
+    assert set(result["features"]) == {"Greeting"}
+    assert result["excluded_features"] == ["OfficeDocumentAuthoring"]
+    assert result["app"]["excluded_reference_features"] == 1
+    assert graph.nodes["review:app"]["counts"]["aligned"] == 1
+
+
 def test_mock_review_is_unverified_and_exports(tmp_path: Path) -> None:
     graph = _graph(tmp_path)
     build_review(graph, tmp_path, MockProvider())

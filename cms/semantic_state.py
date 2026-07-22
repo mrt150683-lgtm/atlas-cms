@@ -124,6 +124,21 @@ def feature_set_hash(graph) -> str:
     return _sha(feats)
 
 
+def judgment_feature_set_hash(graph) -> str:
+    """Hash only product features evaluated by review and suggestions."""
+    from .features import get_planning_features
+
+    feats = sorted([
+        feature.get("name", ""), feature.get("source", ""),
+        sorted(feature.get("members") or []),
+        sorted(feature.get("entry_points") or []),
+        sorted(feature.get("connects") or []),
+        sorted(feature.get("aliases") or []),
+        (feature.get("description") or "").strip(),
+    ] for feature in get_planning_features(graph))
+    return _sha(["judgment-scope-v1", feats])
+
+
 def feature_counts(graph) -> dict:
     total = declared = discovered = 0
     for _, a in graph.nodes(data=True):
@@ -136,6 +151,19 @@ def feature_counts(graph) -> dict:
             declared += 1
     return {"feature_count": total, "declared_feature_count": declared,
             "discovered_feature_count": discovered}
+
+
+def judgment_feature_counts(graph) -> dict:
+    """Counts for the product feature set a judgment actually evaluates."""
+    from .features import get_planning_features
+
+    features = get_planning_features(graph)
+    discovered = sum(feature.get("source") == "discovered" for feature in features)
+    return {
+        "feature_count": len(features),
+        "declared_feature_count": len(features) - discovered,
+        "discovered_feature_count": discovered,
+    }
 
 
 # ── judgment validity ────────────────────────────────────────────────────
@@ -189,10 +217,10 @@ def judgment_validity(state: dict, graph, node_id: str, stage_name: str) -> tupl
         return "invalid", f"no positive completion evidence (state: {rec.get('status')})"
     if not rec.get("real_provider"):
         return "invalid", "generated without a real provider"
-    counts = feature_counts(graph)
+    counts = judgment_feature_counts(graph)
     if rec.get("feature_count", 0) == 0 and counts["feature_count"] > 0:
         return "invalid", "generated against an empty pre-discovery feature set"
-    if rec.get("feature_set_hash") != feature_set_hash(graph):
+    if rec.get("feature_set_hash") != judgment_feature_set_hash(graph):
         return "stale", "feature set changed since this judgment was generated"
     return "valid", "current"
 
@@ -202,7 +230,7 @@ def derive_staleness(state: dict, graph) -> dict:
     Serves the UI/API; never mutates the durable record."""
     out = {}
     cur_input = discovery_input_hash(graph)
-    cur_fsh = feature_set_hash(graph)
+    cur_fsh = judgment_feature_set_hash(graph)
     feats = stage(state, "features")
     out["features"] = {
         "current": feats.get("status") == "complete" and feats.get("input_hash") == cur_input,

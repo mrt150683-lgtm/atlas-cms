@@ -17,7 +17,7 @@ from pathlib import Path
 
 import networkx as nx
 
-from .features import get_features
+from .features import get_features, get_planning_features
 from .providers import SummaryProvider
 
 VERDICTS = ("aligned", "partial", "drift", "unverified")
@@ -180,7 +180,10 @@ def _provider_error(exc: Exception) -> str:
 def build_review(graph: nx.DiGraph, root: Path, provider: SummaryProvider, on_progress=None) -> dict:
     """Review every feature + app rollup. Returns {"features": {...}, "app": {...}}."""
     app_context = _app_context(root)
-    features = get_features(graph)
+    all_features = get_features(graph)
+    features = get_planning_features(graph)
+    excluded = [feature["name"] for feature in all_features
+                if feature["planning_scope"] == "reference"]
     reviews: dict[str, dict] = {}
     provider_errors: list[str] = []
 
@@ -223,13 +226,20 @@ def build_review(graph: nx.DiGraph, root: Path, provider: SummaryProvider, on_pr
     counts = {v: sum(1 for r in reviews.values() if r["verdict"] == v) for v in VERDICTS}
     semantic_count = sum(r.get("evidence_kind") == "semantic" for r in reviews.values())
     fallback_count = len(reviews) - semantic_count
-    complete = provider.name != "mock" and bool(reviews) and fallback_count == 0
-    if provider.name == "mock" or not reviews:
+    complete = provider.name != "mock" and fallback_count == 0
+    if provider.name == "mock":
         app_review = {
             "verdict": "unverified",
             "headline": "Structural pass only — run `cms review` with an API key for the full alignment review.",
             "summary": f"{len(reviews)} features assembled with evidence. "
                        + ", ".join(f"{n} {v}" for v, n in counts.items() if n),
+        }
+    elif not reviews:
+        app_review = {
+            "verdict": "unverified",
+            "headline": "No core product features are currently available to review.",
+            "summary": (f"Atlas kept {len(excluded)} Library/reference feature(s) in the map, "
+                        "but excluded them from the application alignment verdict."),
         }
     elif fallback_count:
         app_review = {
@@ -270,6 +280,7 @@ def build_review(graph: nx.DiGraph, root: Path, provider: SummaryProvider, on_pr
     app_review["counts"] = counts
     app_review["semantic_features"] = semantic_count
     app_review["fallback_features"] = fallback_count
+    app_review["excluded_reference_features"] = len(excluded)
     status = "complete" if complete else ("structural" if provider.name == "mock" else "failed")
 
     # A real-provider review is transactional: incomplete output must not
@@ -281,13 +292,14 @@ def build_review(graph: nx.DiGraph, root: Path, provider: SummaryProvider, on_pr
             "verdict": app_review["verdict"], "headline": app_review["headline"], "counts": counts,
             "review_status": status, "semantic_features": semantic_count,
             "fallback_features": fallback_count,
+            "excluded_reference_features": len(excluded),
         })
     return {"features": reviews, "app": app_review, "status": status,
-            "provider_errors": provider_errors}
+            "provider_errors": provider_errors, "excluded_features": excluded}
 
 
 def export_review(graph: nx.DiGraph, memory_dir: Path) -> Path | None:
-    features = [f for f in get_features(graph) if f.get("review")]
+    features = [f for f in get_planning_features(graph) if f.get("review")]
     if not features and not graph.has_node("review:app"):
         return None
     lines = ["# App Review — built vs expected\n"]
