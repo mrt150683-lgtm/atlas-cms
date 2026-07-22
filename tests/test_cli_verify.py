@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import networkx as nx
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from cms.cli import app
@@ -52,8 +53,11 @@ def test_targeted_verify_failure_does_not_infer_design_divergence(tmp_path: Path
 def test_verify_help_exposes_forced_coverage_refresh() -> None:
     result = CliRunner().invoke(app, ["verify", "--help"])
     assert result.exit_code == 0
-    assert "--refresh" in result.output
-    assert "Ignore cached coverage" in result.output
+
+    refresh = next(param for param in get_command(app).commands["verify"].params
+                   if param.name == "refresh")
+    assert "--refresh" in refresh.opts
+    assert refresh.help == "Ignore cached coverage and collect it again."
 
 
 def test_flow_output_discloses_truncated_steps(tmp_path: Path, monkeypatch) -> None:
@@ -71,10 +75,3 @@ def test_flow_output_discloses_truncated_steps(tmp_path: Path, monkeypatch) -> N
 
     assert result.exit_code == 0
     assert "long flows truncated" in result.output
-
-
-def test_verify_help_exposes_forced_coverage_refresh() -> None:
-    result = CliRunner().invoke(app, ["verify", "--help"])
-    assert result.exit_code == 0
-    assert "--refresh" in result.output
-    assert "Ignore cached coverage" in result.output

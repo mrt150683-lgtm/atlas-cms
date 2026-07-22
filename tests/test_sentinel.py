@@ -8,7 +8,7 @@ import pytest
 from cms.sentinel import make_finding
 from cms.sentinel.contracts import check_contracts
 from cms.sentinel.domain_rules import check_domain_rules
-from cms.sentinel.inventory import build_inventory
+from cms.sentinel.inventory import build_inventory, graph_features
 from cms.sentinel.ledger import audit_ledger, init_ledger, load_ledger
 from cms.sentinel.providers_check import check_providers
 from cms.sentinel.reports import as_bug_report, export_json, export_markdown
@@ -35,7 +35,6 @@ def test_inventory_detects_real_surfaces():
     assert "/api/sentinel/latest" in inv["http_routes"]
     assert "query_codebase" in inv["mcp_tools"] and "get_sentinel_report" in inv["mcp_tools"]
     assert "sentinel.html" in inv["ui_pages"]
-    assert any(f["name"] == "CleanDirectoryScanner" for f in inv["features"])
 
 
 # ── static risk scanner ──────────────────────────────────────────────────────
@@ -114,6 +113,35 @@ def _write_graph(root, nodes):
     (memory / "graph.json").write_text(
         json.dumps({"directed": True, "nodes": nodes, "links": []}), encoding="utf-8"
     )
+
+
+def test_inventory_loads_feature_evidence_from_graph(tmp_path):
+    _write_graph(tmp_path, [{
+        "id": "feature:CleanDirectoryScanner",
+        "type": "feature",
+        "name": "CleanDirectoryScanner",
+        "source": "declared",
+        "members": ["file:cms/scanner.py"],
+        "exercised_by": ["tests/test_scanner.py"],
+        "review": {"verdict": "aligned"},
+    }])
+
+    assert graph_features(tmp_path) == [{
+        "name": "CleanDirectoryScanner",
+        "source": "declared",
+        "members": 1,
+        "tests": 1,
+        "reviewed": True,
+    }]
+
+
+def test_inventory_without_memory_reports_warning(tmp_path):
+    inventory = build_inventory(tmp_path, records=[])
+
+    assert inventory["features"] == []
+    assert inventory["warnings"] == [
+        "no .memory/graph.json — run `cms run-all` so Sentinel can audit graph evidence"
+    ]
 
 
 def test_ledger_missing_is_flagged(tmp_path):
@@ -242,6 +270,8 @@ def test_domain_rules_flag_provenance_and_ghost_members(tmp_path):
 
 
 def test_domain_rules_clean_on_this_repo():
+    if not (REPO_ROOT / ".memory" / "graph.json").is_file():
+        pytest.skip("requires generated .memory; missing-graph behavior is covered separately")
     findings = [f for f in check_domain_rules(REPO_ROOT)
                 if f["severity"] in ("critical", "high")]
     assert not findings, [f["summary"] for f in findings]
