@@ -320,6 +320,11 @@ partial / drift / unverified**, with a one-line plain-English headline, an
 expected-vs-built explanation, concrete gaps, and an education note teaching
 you how it really works under the hood. Plus an app-level rollup.
 
+Reusable Atlas Library and imported skill-tree features remain searchable in
+the graph, but are excluded from the core application verdict and its
+product-feature hash. Updating reference material therefore does not make the
+product review stale.
+
 ```bash
 cms review                    # build/refresh the full review
 cms review CleanDirectoryScanner   # print one feature's review
@@ -343,6 +348,9 @@ verdicts and gaps, features with no mapped exercising tests, git churn
 hotspots, hidden coupling) and proposes suggestions each scored **value (1–5)
 vs effort (1–5)**, ranked by **ROI = value/effort**, highest return on
 investment first.
+
+The planning evidence follows the same boundary: Library/reference-only
+features, hotspots, and hidden couplings do not become product work items.
 
 ```bash
 cms suggest          # ranked plan -> terminal + .memory/suggestions.md

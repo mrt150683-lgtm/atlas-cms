@@ -512,8 +512,8 @@ def review(
         ss.record_stage(
             memory_dir, "review", status="failed", provider=llm.name,
             model=getattr(llm, "model", None), real_provider=True,
-            feature_set_hash=ss.feature_set_hash(mem.graph), error=str(detail)[:300],
-            **ss.feature_counts(mem.graph),
+            feature_set_hash=ss.judgment_feature_set_hash(mem.graph), error=str(detail)[:300],
+            **ss.judgment_feature_counts(mem.graph),
         )
         app_r = result["app"]
         typer.echo(f"\nOverall: UNVERIFIED — {app_r['headline']}", err=True)
@@ -530,12 +530,14 @@ def review(
         ss.record_stage(
             memory_dir, "review", status="complete", provider=llm.name,
             model=getattr(llm, "model", None), real_provider=True,
-            feature_set_hash=ss.feature_set_hash(mem.graph),
-            **ss.feature_counts(mem.graph),
+            feature_set_hash=ss.judgment_feature_set_hash(mem.graph),
+            **ss.judgment_feature_counts(mem.graph),
         )
     app_r = result["app"]
     typer.echo(f"\nOverall: {app_r['verdict'].upper()} — {app_r['headline']}")
     typer.echo(f"Verdicts: " + ", ".join(f"{n} {v}" for v, n in app_r["counts"].items() if n))
+    if app_r.get("excluded_reference_features"):
+        typer.echo(f"Reference/Library features excluded from rollup: {app_r['excluded_reference_features']}")
     typer.echo(f"Written to {out}")
 
 
@@ -567,8 +569,8 @@ def suggest(
         ss.record_stage(
             memory_dir, "suggestions", status="complete", provider=llm.name,
             model=getattr(llm, "model", None), real_provider=True,
-            feature_set_hash=ss.feature_set_hash(mem.graph),
-            items=len(suggestions), **ss.feature_counts(mem.graph),
+            feature_set_hash=ss.judgment_feature_set_hash(mem.graph),
+            items=len(suggestions), **ss.judgment_feature_counts(mem.graph),
         )
     for i, s in enumerate(suggestions[:top], 1):
         typer.echo(f"{i}. [ROI {s['roi']}×] {s['title']}   ({s['kind']} · value {s['value']} · effort {s['effort']})")

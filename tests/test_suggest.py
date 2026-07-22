@@ -50,3 +50,24 @@ def test_mock_structural_suggestions_and_export(tmp_path: Path) -> None:
     out = export_suggestions(graph, tmp_path)
     text = out.read_text(encoding="utf-8")
     assert "ranked by return on investment" in text and "ROI" in text
+
+
+def test_suggestions_exclude_reference_features(tmp_path: Path) -> None:
+    graph = _graph(tmp_path)
+    member = "file:skills-main/skills/art/SKILL.md"
+    graph.add_node(member, type="file", path="skills-main/skills/art/SKILL.md")
+    graph.add_node(
+        "feature:AlgorithmicArtGeneration", type="feature",
+        name="AlgorithmicArtGeneration", source="discovered", members=[member],
+        entry_points=[], connects=[], aliases=[], description="Reference skill",
+    )
+    graph.add_node("file:README.md", type="file", path="README.md")
+    graph.add_edge("file:README.md", "file:a.py", type="CO_CHANGES", weight=12)
+
+    items = build_suggestions(graph, tmp_path, MockProvider())
+
+    titles = [item["title"] for item in items]
+    assert any("Add tests exercising Alpha" in title for title in titles)
+    assert not any("AlgorithmicArtGeneration" in title for title in titles)
+    assert not any("README.md" in title for title in titles)
+    assert graph.nodes["suggestions:app"]["excluded_reference_features"] == 1

@@ -25,6 +25,32 @@ from .providers import SummaryProvider
 
 MAX_FLOW_DEPTH = 6
 MAX_FLOWS_PER_FEATURE = 8
+REFERENCE_FEATURE_PREFIXES = ("docs/", "skills/", "skills-main/")
+REFERENCE_DOCUMENT_SUFFIXES = (".md", ".txt")
+
+
+def is_reference_path(path: str) -> bool:
+    """Whether a path is reusable agent context rather than product source."""
+    normalized = str(path or "").replace("\\", "/").lstrip("./")
+    return (
+        any(normalized.startswith(prefix) for prefix in REFERENCE_FEATURE_PREFIXES)
+        or normalized.lower().endswith(REFERENCE_DOCUMENT_SUFFIXES)
+    )
+
+
+def feature_planning_scope(graph: nx.DiGraph, members: list[str]) -> str:
+    """Classify a feature for product judgment without removing it from memory.
+
+    Features wholly owned by Atlas Library / imported skill trees remain fully
+    queryable, but do not distort app-level review and planning rollups. Mixed
+    features stay in product scope because they touch real product source.
+    """
+    paths = [
+        str(graph.nodes[member].get("path") or "")
+        for member in members
+        if graph.has_node(member) and graph.nodes[member].get("path")
+    ]
+    return "reference" if paths and all(is_reference_path(path) for path in paths) else "product"
 
 
 @dataclass
@@ -492,6 +518,7 @@ def _write_to_graph(graph: nx.DiGraph, feat: Feature) -> None:
         flows=feat.flows,
         connects=list(feat.connects),
         aliases=list(feat.aliases),
+        planning_scope=feature_planning_scope(graph, feat.members),
     )
     for m in feat.members:
         if graph.has_node(m):
@@ -501,7 +528,19 @@ def _write_to_graph(graph: nx.DiGraph, feat: Feature) -> None:
 
 
 def get_features(graph: nx.DiGraph) -> list[dict]:
-    return sorted(
-        (dict(a, id=n) for n, a in graph.nodes(data=True) if a.get("type") == "feature"),
-        key=lambda a: a["name"],
-    )
+    features = []
+    for node_id, attrs in graph.nodes(data=True):
+        if attrs.get("type") != "feature":
+            continue
+        feature = dict(attrs, id=node_id)
+        feature["planning_scope"] = feature_planning_scope(
+            graph, feature.get("members") or []
+        )
+        features.append(feature)
+    return sorted(features, key=lambda feature: feature["name"])
+
+
+def get_planning_features(graph: nx.DiGraph) -> list[dict]:
+    """Core product features used by app review and ROI planning rollups."""
+    return [feature for feature in get_features(graph)
+            if feature["planning_scope"] == "product"]

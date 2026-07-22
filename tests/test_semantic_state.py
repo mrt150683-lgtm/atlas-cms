@@ -116,7 +116,7 @@ def test_legacy_stranded_project_recovers(tmp_path: Path) -> None:
     assert "Structural pass only" not in g.nodes["review:app"]["headline"]
     assert len(g.nodes["suggestions:app"]["items"]) == 1
     state = ss.load_state(root / ".memory")
-    fsh = ss.feature_set_hash(g)
+    fsh = ss.judgment_feature_set_hash(g)
     assert ss.stage(state, "review")["feature_set_hash"] == fsh
     assert ss.stage(state, "suggestions")["feature_set_hash"] == fsh
 
@@ -193,7 +193,7 @@ def test_judgment_validity_matrix(tmp_path: Path) -> None:
     root = _project(tmp_path)
     incremental_update(root, SemanticProvider(), echo=lambda *a: None)
     g = _graph(root)
-    fsh = ss.feature_set_hash(g)
+    fsh = ss.judgment_feature_set_hash(g)
     mk = lambda **kw: {"stages": {"review": kw}} if kw else {}
 
     # nodes absent
@@ -234,7 +234,7 @@ def test_stale_valid_judgment_is_frozen_not_rebuilt(tmp_path: Path) -> None:
     incremental_update(root, p2, echo=lambda *a: None)
     g = _graph(root)
     state = ss.load_state(root / ".memory")
-    assert ss.stage(state, "review")["feature_set_hash"] != ss.feature_set_hash(g)
+    assert ss.stage(state, "review")["feature_set_hash"] != ss.judgment_feature_set_hash(g)
 
     # frozen: valid-but-stale must NOT be silently regenerated
     assert ensure_judgment(root, p2, echo=lambda *a: None)["review"] is False
@@ -244,6 +244,30 @@ def test_stale_valid_judgment_is_frozen_not_rebuilt(tmp_path: Path) -> None:
     assert live_pipe["status"] == "in_progress"
     assert set(live_pipe["remaining"]) == {"review", "suggestions"}
     assert "explicit refresh" in live_pipe["reason"]
+
+
+def test_reference_feature_change_does_not_stale_product_judgment(tmp_path: Path) -> None:
+    root = _project(tmp_path)
+    provider = SemanticProvider()
+    incremental_update(root, provider, echo=lambda *a: None)
+    ensure_judgment(root, provider, echo=lambda *a: None)
+    graph = _graph(root)
+    state = ss.load_state(root / ".memory")
+    before = ss.judgment_feature_set_hash(graph)
+    full_before = ss.feature_set_hash(graph)
+
+    member = "file:skills-main/skills/docs/SKILL.md"
+    graph.add_node(member, type="file", path="skills-main/skills/docs/SKILL.md")
+    graph.add_node(
+        "feature:OfficeDocumentAuthoring", type="feature",
+        name="OfficeDocumentAuthoring", source="discovered", members=[member],
+        entry_points=[], connects=[], aliases=[], description="Reference skill",
+    )
+
+    assert ss.feature_set_hash(graph) != full_before
+    assert ss.stage(state, "review")["feature_set_hash"] == before
+    assert ss.judgment_feature_set_hash(graph) == before
+    assert ss.judgment_validity(state, graph, "review:app", "review")[0] == "valid"
 
 
 def test_concurrent_updates_charge_discovery_once(tmp_path: Path) -> None:
