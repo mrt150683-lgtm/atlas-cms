@@ -84,11 +84,14 @@ def make_handler(root: Path, cache: _MemoryCache):
         def log_message(self, *args) -> None:  # keep the terminal quiet
             pass
 
-        def _send(self, status: int, body: bytes, content_type: str) -> None:
+        def _send(self, status: int, body: bytes, content_type: str,
+                  headers: dict | None = None) -> None:
             self.send_response(status)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            for name, value in (headers or {}).items():
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body)
 
@@ -267,7 +270,9 @@ def make_handler(root: Path, cache: _MemoryCache):
 
                     payload = json.dumps(default_journal().snapshot(), indent=2,
                                          ensure_ascii=False).encode("utf-8")
-                    self._send(200, payload, "application/json; charset=utf-8")
+                    self._send(200, payload, "application/json; charset=utf-8",
+                               {"Content-Disposition":
+                                'attachment; filename="atlas-idea-journal.json"'})
                 else:
                     self._error(404, "not found")
             except BrokenPipeError:
