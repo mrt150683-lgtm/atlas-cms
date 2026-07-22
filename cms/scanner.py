@@ -16,6 +16,42 @@ from .config import CMSIGNORE_FILENAME, DEFAULT_IGNORES, LANGUAGE_BY_EXTENSION
 from .scope import dir_in_scope, file_in_scope, load_scope
 
 
+class UnsafeRootError(ValueError):
+    """Raised before Atlas walks a filesystem or operating-system root."""
+
+
+def validate_scan_root(root: Path | str) -> Path:
+    """Resolve *root* and reject locations that are never codebase roots.
+
+    A mistyped or omitted ``--root`` must not turn ``cms update`` into a walk
+    of an entire drive or the Windows installation directory.  Project roots
+    inside ordinary user locations remain valid, including non-git projects.
+    """
+    resolved = Path(root).expanduser().resolve()
+    if resolved == Path(resolved.anchor):
+        raise UnsafeRootError(
+            f"Refusing to scan filesystem root {resolved}. "
+            "Choose a project folder and pass it with --root."
+        )
+
+    protected: set[Path] = set()
+    for env_name in ("SystemRoot", "WINDIR"):
+        raw = os.environ.get(env_name)
+        if not raw:
+            continue
+        candidate = Path(raw).expanduser()
+        if candidate.is_absolute():
+            protected.add(candidate.resolve())
+
+    for system_root in protected:
+        if resolved == system_root or system_root in resolved.parents:
+            raise UnsafeRootError(
+                f"Refusing to scan operating-system directory {resolved}. "
+                "Choose a project folder and pass it with --root."
+            )
+    return resolved
+
+
 @dataclass
 class FileRecord:
     rel_path: str  # posix-style, relative to scan root
@@ -61,7 +97,7 @@ def _count_lines(path: Path) -> int:
 # @memory:connects:TreeExport, KnowledgeGraphConstruction
 # @memory:summary:Single source of truth for what belongs to the codebase — walks the tree, prunes junk dirs in place, whitelists source extensions, records metadata.
 def scan(root: Path | str) -> list[FileRecord]:
-    root = Path(root).resolve()
+    root = validate_scan_root(root)
     spec = load_ignore_spec(root)
     scope = load_scope(root)  # None => whole codebase; else only selected dirs/files
     records: list[FileRecord] = []

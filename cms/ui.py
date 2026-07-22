@@ -23,6 +23,8 @@ from .config import LANGUAGE_BY_EXTENSION
 from .library import ASSET_TYPES as _ASSET_TYPES
 from .memory import CodebaseMemory
 
+_CLIENT_DISCONNECT_ERRORS = (BrokenPipeError, ConnectionAbortedError, ConnectionResetError)
+
 if getattr(sys, "frozen", False):  # PyInstaller bundle
     _ASSETS_DIR = Path(sys._MEIPASS) / "cms" / "ui_assets"  # type: ignore[attr-defined]
 else:
@@ -270,7 +272,7 @@ def make_handler(root: Path, cache: _MemoryCache):
                     self._send(200, payload, "application/json; charset=utf-8")
                 else:
                     self._error(404, "not found")
-            except BrokenPipeError:
+            except _CLIENT_DISCONNECT_ERRORS:
                 pass
             except Exception as exc:  # surface server bugs to the client, not a hang
                 self._error(500, f"{type(exc).__name__}: {exc}")
@@ -427,7 +429,7 @@ def make_handler(root: Path, cache: _MemoryCache):
                         self._json({"error": str(exc)}, 400)
                 else:
                     self._error(404, "not found")
-            except BrokenPipeError:
+            except _CLIENT_DISCONNECT_ERRORS:
                 pass
             except json.JSONDecodeError:
                 self._error(400, "invalid JSON body")
