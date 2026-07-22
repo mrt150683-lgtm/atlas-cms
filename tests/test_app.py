@@ -1,5 +1,7 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import ANY
 
 import pytest
 
@@ -81,3 +83,65 @@ def test_saved_workspace_beats_cwd_with_source(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(here)
     (here / "cms.workspace.json").write_text(json.dumps({"root": str(there)}), encoding="utf-8")
     assert resolve_root(None, echo=lambda *a: None) == there.resolve()
+
+
+def test_run_app_syncs_then_starts_watcher_and_ui(tmp_path: Path, monkeypatch) -> None:
+    memory_dir = tmp_path / ".memory"
+    memory_dir.mkdir()
+    (memory_dir / "graph.json").write_text("{}", encoding="utf-8")
+    provider = SimpleNamespace(name="mock")
+    events = []
+
+    monkeypatch.setattr(app_mod, "get_provider", lambda name: provider)
+    monkeypatch.setattr(
+        app_mod,
+        "incremental_update",
+        lambda root, actual_provider, echo: events.append(
+            ("update", root, actual_provider)
+        ) or SimpleNamespace(changed=[]),
+    )
+    monkeypatch.setattr(
+        app_mod,
+        "ensure_judgment",
+        lambda root, actual_provider, echo: events.append(
+            ("judgment", root, actual_provider)
+        ),
+    )
+
+    class _Thread:
+        def __init__(self, *, target, args, kwargs, daemon, name):
+            events.append(("thread", target, args, kwargs, daemon, name))
+
+        def start(self):
+            events.append(("watcher-start",))
+
+    monkeypatch.setattr(app_mod.threading, "Thread", _Thread)
+    monkeypatch.setattr(
+        app_mod,
+        "serve",
+        lambda root, *, port, open_browser, open_path: events.append(
+            ("serve", root, port, open_browser, open_path)
+        ),
+    )
+
+    app_mod.run_app(
+        tmp_path,
+        port=7788,
+        provider_name="mock",
+        interval=0.25,
+        open_browser=False,
+        echo=lambda *args: None,
+    )
+
+    assert events[0] == ("update", tmp_path.resolve(), provider)
+    assert events[1] == ("judgment", tmp_path.resolve(), provider)
+    assert events[2] == (
+        "thread",
+        app_mod.watch,
+        (tmp_path.resolve(), provider),
+        {"interval": 0.25, "echo": ANY},
+        True,
+        "cms-watch",
+    )
+    assert events[3] == ("watcher-start",)
+    assert events[4] == ("serve", tmp_path.resolve(), 7788, False, "/")

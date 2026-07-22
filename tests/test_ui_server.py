@@ -135,6 +135,21 @@ def test_index_and_meta(server) -> None:
     assert json.loads(body)["project"] == root.name
 
 
+@pytest.mark.parametrize("disconnect", [ConnectionAbortedError, ConnectionResetError])
+def test_expected_client_disconnect_does_not_attempt_error_response(
+    tmp_path: Path, disconnect
+) -> None:
+    handler_type = make_handler(tmp_path, _MemoryCache(tmp_path / ".memory" / "graph.json"))
+    handler = object.__new__(handler_type)
+    handler.path = "/api/activity"
+    handler._activity = lambda query: (_ for _ in ()).throw(disconnect("gone"))
+    handler._error = lambda *args: (_ for _ in ()).throw(
+        AssertionError("must not write a 500 response to a disconnected client")
+    )
+
+    handler.do_GET()
+
+
 def test_graph_tree_query_endpoints(server) -> None:
     client, _ = server
     status, body = client.get("/api/graph")

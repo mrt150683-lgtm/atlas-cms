@@ -1,6 +1,8 @@
 from pathlib import Path
 
-from cms.scanner import scan
+import pytest
+
+from cms.scanner import UnsafeRootError, scan
 
 
 def _touch(root: Path, rel: str, content: str = "x\n") -> None:
@@ -74,3 +76,19 @@ def test_cmsignore_can_reinclude_over_gitignore(tmp_path: Path) -> None:
     (tmp_path / ".cmsignore").write_text("!generated/\n", encoding="utf-8")  # user override wins
     rels = {r.rel_path for r in scan(tmp_path)}
     assert "generated/keep.ts" in rels
+
+
+def test_scan_refuses_filesystem_root() -> None:
+    with pytest.raises(UnsafeRootError, match="filesystem root"):
+        scan(Path.cwd().anchor)
+
+
+def test_scan_refuses_windows_system_tree(tmp_path: Path, monkeypatch) -> None:
+    windows = tmp_path / "Windows"
+    system32 = windows / "System32"
+    system32.mkdir(parents=True)
+    _touch(system32, "driver.py")
+    monkeypatch.setenv("SystemRoot", str(windows))
+
+    with pytest.raises(UnsafeRootError, match="operating-system directory"):
+        scan(system32)

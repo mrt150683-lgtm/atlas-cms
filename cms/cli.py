@@ -21,7 +21,7 @@ from .exporter import export_features, export_graph, export_index, export_summar
 from .graph_builder import build_graph
 from .memory import CodebaseMemory
 from .providers import get_provider
-from .scanner import scan as scan_dir
+from .scanner import UnsafeRootError, scan as scan_dir, validate_scan_root
 from .summarizer import generate_summaries
 from .tree_export import export_tree
 
@@ -333,8 +333,13 @@ def update(
     """Incremental update: only changed files are re-summarized/re-traced."""
     from .update import incremental_update
 
+    try:
+        root = validate_scan_root(root)
+    except UnsafeRootError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
     llm = get_provider(provider)
-    stats = incremental_update(root.resolve(), llm, echo=typer.echo, full=full)
+    stats = incremental_update(root, llm, echo=typer.echo, full=full)
     typer.echo(
         f"Updated: {stats.files} files scanned, {len(stats.changed)} changed, "
         f"{stats.summarized} re-summarized, {stats.features} features traced."
